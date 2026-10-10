@@ -1,6 +1,8 @@
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
+import pytest
+
 from tms.services import access, sessions
 
 
@@ -35,3 +37,16 @@ def test_a_driver_token_is_not_a_user_token():
     assert token.startswith("tms_d.")
     assert sessions.read_driver_token(token) == 7
     assert sessions.read_access_token(token) is None
+
+
+@pytest.mark.parametrize("stored", [
+    "pbkdf2_sha256$600000$not-hex$" + "0" * 64,        # salt is not hex
+    "pbkdf2_sha256$many$" + "0" * 32 + "$" + "0" * 64,  # iterations not a number
+    "pbkdf2_sha256$0$" + "0" * 32 + "$" + "0" * 64,     # no iterations at all
+    "pbkdf2_sha256$-5$" + "0" * 32 + "$" + "0" * 64,
+    "pbkdf2_sha256$600000$" + "0" * 32 + "$",           # no digest
+    "$$$",
+    "not a hash",
+])
+def test_a_malformed_stored_hash_is_a_wrong_password_not_a_crash(stored):
+    assert access.verify_password("anything", stored) is False

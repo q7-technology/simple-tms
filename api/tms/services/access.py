@@ -26,9 +26,13 @@ def verify_password(password: str, stored: str | None) -> bool:
         algo, iterations, salt, digest = stored.split("$")
     except ValueError:
         return False
-    if algo != "pbkdf2_sha256":
+    if algo != "pbkdf2_sha256" or not digest:
         return False
-    candidate = hashlib.pbkdf2_hmac(
-        "sha256", password.encode(), bytes.fromhex(salt), int(iterations)
-    )
+    try:
+        candidate = hashlib.pbkdf2_hmac(
+            "sha256", password.encode(), bytes.fromhex(salt), int(iterations)
+        )
+    except (ValueError, OverflowError):
+        # a damaged hash matches nothing; it must not turn a sign-in into a 500
+        return False
     return hmac.compare_digest(candidate.hex(), digest)
