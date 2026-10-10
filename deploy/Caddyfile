@@ -1,3 +1,16 @@
+{
+	# Listen on the host's ports (TMS_HTTP_PORT, TMS_HTTPS_PORT), so Simple TMS
+	# can run beside Simple WMS's Caddy, which already has 80 and 443.
+	http_port {$TMS_HTTP_PORT:80}
+	https_port {$TMS_HTTPS_PORT:443}
+	# Caddy's own redirect leaves the port out, so the one below names it.
+	auto_https disable_redirects
+}
+
+http://{$TMS_DOMAIN} {
+	redir https://{host}:{$TMS_HTTPS_PORT:443}{uri} 308
+}
+
 {$TMS_DOMAIN} {
 	encode gzip
 
