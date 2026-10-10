@@ -1,6 +1,8 @@
 from conftest import bearer
 
 ALEX = {"code": "drv-01", "name": "Alex T.", "pin": "2468"}
+# no tries_left: an unknown code gets the same answer, so it must not differ
+WRONG_PIN = {"detail": "wrong driver code or PIN", "code": "wrong_pin"}
 
 
 def make_driver(client, headers, body=ALEX):
@@ -76,9 +78,9 @@ def test_driver_signs_in_with_code_and_pin(client, manager_headers):
 
 def test_five_wrong_pins_lock_the_driver_until_a_manager_unlocks(client, manager_headers):
     make_driver(client, manager_headers)
-    for left in (4, 3, 2, 1):
+    for _ in range(4):
         r = client.post("/v1/auth/driver-login", json={"code": "drv-01", "pin": "0000"})
-        assert r.status_code == 401 and r.json()["tries_left"] == left
+        assert r.status_code == 401 and r.json() == WRONG_PIN
     r = client.post("/v1/auth/driver-login", json={"code": "drv-01", "pin": "0000"})
     assert r.status_code == 401 and r.json()["code"] == "locked"
     r = client.post("/v1/auth/driver-login", json={"code": "drv-01", "pin": "2468"})
@@ -111,7 +113,7 @@ def test_wrong_pins_sent_all_at_once_still_lock_after_five(client, manager_heade
                                    json={"code": "drv-01", "pin": "0000"}).json()["code"]
 
     codes = all_at_once(10, guess)
-    # only five PINs are ever checked: four are told how many tries are left,
+    # only five PINs are ever checked: four are told the PIN is wrong,
     # the fifth locks the driver, and the rest find them locked
     assert codes.count("wrong_pin") == 4
     assert codes.count("locked") == 6
@@ -153,3 +155,31 @@ def test_a_code_taken_by_another_request_meanwhile_is_refused_not_a_crash(
         r = client.post("/v1/drivers", headers=manager_headers, json=ALEX)
     assert r.status_code == 422
     assert r.json()["errors"] == [{"field": "code", "message": "driver drv-01 already exists"}]
+
+
+def test_an_unknown_or_inactive_code_looks_like_a_wrong_pin(client, manager_headers, monkeypatch):
+    from tms.api.routes import auth
+    from tms.services import access
+
+    checked = []
+    real = access.verify_password
+
+    def spy(pin, stored):
+        checked.append(stored)
+        return real(pin, stored)
+
+    make_driver(client, manager_headers)
+    monkeypatch.setattr(auth.access, "verify_password", spy)
+
+    wrong = client.post("/v1/auth/driver-login", json={"code": "drv-01", "pin": "0000"})
+    unknown = client.post("/v1/auth/driver-login", json={"code": "nobody", "pin": "0000"})
+    client.post("/v1/drivers/drv-01/deactivate", headers=manager_headers)
+    # even the right PIN, once the driver is deactivated
+    inactive = client.post("/v1/auth/driver-login", json={"code": "drv-01", "pin": "2468"})
+
+    for r in (wrong, unknown, inactive):
+        assert r.status_code == 401
+        assert r.json() == WRONG_PIN
+        assert r.headers.get("www-authenticate") == "Bearer"
+    # and each took as long as a wrong PIN, against a hash with the same work
+    assert checked[1:] == [access.DUMMY_HASH, access.DUMMY_HASH]

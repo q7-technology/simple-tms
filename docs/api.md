@@ -66,10 +66,12 @@ runs out within its 15 minutes.
 `{ "code": "drv-01", "pin": "2468" }` →
 `{ "token": "tms_d.…", "expires_in": 43200, "driver": { …as /me… } }`. The
 token lasts a 12-hour shift; there is no refresh. A wrong PIN is `401` with
-`"code": "wrong_pin"` and `tries_left`. Five wrong PINs lock the driver
-(`"code": "locked"`) until a manager unlocks them; as for desktop users,
-PINs sent all at once are counted one at a time. A right PIN clears the
-count. An unknown or deactivated code is `"code": "unknown_driver"`.
+`{ "detail": "wrong driver code or PIN", "code": "wrong_pin" }`, and no
+`tries_left`. An unknown or deactivated code gets exactly the same answer,
+and takes as long, so driver codes cannot be found by trying them. Five wrong
+PINs lock the driver (`"code": "locked"`) until a manager unlocks them; as
+for desktop users, PINs sent all at once are counted one at a time. A right
+PIN clears the count.
 
 ### When a session ends early
 A token stops working at once when its user or driver is deactivated, when a

@@ -18,6 +18,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 PASSWORD_TRIES = 5
 PASSWORD_LOCK_MINUTES = 15
 PIN_TRIES = 5
+WRONG_PIN = "wrong driver code or PIN"
 
 
 class LoginIn(BaseModel):
@@ -150,7 +151,10 @@ def driver_login(body: DriverLoginIn, db: DB):
         select(Driver).where(Driver.code == body.code).with_for_update()
     ).scalar_one_or_none()
     if driver is None or not driver.active:
-        return _refused("no active driver with that code", "unknown_driver")
+        # an unknown code and a wrong PIN look alike, and take as long, so codes
+        # cannot be found by trying them
+        access.verify_password(body.pin, access.DUMMY_HASH)
+        return _refused(WRONG_PIN, "wrong_pin")
     if driver.locked:
         return _refused(f"{driver.code} is locked after too many wrong PINs; a manager can unlock it",
                         "locked")
@@ -162,7 +166,8 @@ def driver_login(body: DriverLoginIn, db: DB):
             return _refused(f"wrong PIN {PIN_TRIES} times; {driver.code} is locked until a "
                             f"manager unlocks it", "locked")
         db.commit()
-        return _refused("wrong PIN", "wrong_pin", tries_left=PIN_TRIES - driver.failed_attempts)
+        # no tries_left: an unknown code could not say it without giving itself away
+        return _refused(WRONG_PIN, "wrong_pin")
     driver.failed_attempts = 0
     db.commit()
     return DriverSessionOut(
