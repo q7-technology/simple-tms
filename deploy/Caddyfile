@@ -1,0 +1,19 @@
+{$TMS_DOMAIN} {
+	encode gzip
+
+	# The API is the only door.
+	handle /v1/* {
+		reverse_proxy api:8000
+	}
+	handle /docs* {
+		reverse_proxy api:8000
+	}
+	handle /openapi.json {
+		reverse_proxy api:8000
+	}
+
+	# The desktop and driver apps arrive with build steps 2 and 3.
+	handle {
+		respond "Simple TMS. The API is at /v1, its docs at /docs." 404
+	}
+}
