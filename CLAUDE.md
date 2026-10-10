@@ -42,10 +42,14 @@ and works without either. Other systems only ever talk to the API.
 ```
 CLAUDE.md            this file
 docs/plans/          the design and the implementation plans
+docs/api.md          every endpoint: keep it in step with the routes
 design/index.html    gallery of every screen; open a screen's HTML
 design/screens/      static HTML of each screen: build to these
+api/                 FastAPI app (package tms), migrations, tests
+deploy/Caddyfile     the only door in
+docker-compose.yml   api, db, caddy
 ```
-The API, worker and apps arrive with their build steps.
+The worker and the apps arrive with their build steps.
 
 When building a screen, open its file in `design/screens/` and match layout,
 copy and states. Do not edit anything under `design/` unless asked.
