@@ -117,3 +117,23 @@ def test_wrong_pins_sent_all_at_once_still_lock_after_five(client, manager_heade
     assert codes.count("locked") == 6
     driver = db.execute(select(Driver).where(Driver.code == "drv-01")).scalar_one()
     assert driver.locked is True and driver.failed_attempts == 5
+
+
+def test_a_new_pin_ends_the_driver_sessions_signed_in_with_the_old_one(client, manager_headers):
+    make_driver(client, manager_headers)
+    old = client.post("/v1/auth/driver-login", json={"code": "drv-01", "pin": "2468"}).json()["token"]
+    assert client.get("/v1/auth/me", headers=bearer(old)).status_code == 200
+
+    r = client.patch("/v1/drivers/drv-01", headers=manager_headers, json={"pin": "8642"})
+    assert r.status_code == 200
+    assert client.get("/v1/auth/me", headers=bearer(old)).status_code == 401
+
+    new = client.post("/v1/auth/driver-login", json={"code": "drv-01", "pin": "8642"}).json()["token"]
+    assert client.get("/v1/auth/me", headers=bearer(new)).status_code == 200
+
+
+def test_a_new_name_keeps_the_driver_signed_in(client, manager_headers):
+    make_driver(client, manager_headers)
+    token = client.post("/v1/auth/driver-login", json={"code": "drv-01", "pin": "2468"}).json()["token"]
+    client.patch("/v1/drivers/drv-01", headers=manager_headers, json={"name": "Alex Tran"})
+    assert client.get("/v1/auth/me", headers=bearer(token)).status_code == 200

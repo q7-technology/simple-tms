@@ -165,7 +165,7 @@ def driver_login(body: DriverLoginIn, db: DB):
     driver.failed_attempts = 0
     db.commit()
     return DriverSessionOut(
-        token=sessions.issue_driver_token(driver.id), expires_in=sessions.DRIVER_TTL_SECONDS,
+        token=sessions.issue_driver_token(driver), expires_in=sessions.DRIVER_TTL_SECONDS,
         driver=MeOut(kind="driver", id=driver.id, name=driver.code, display_name=driver.name,
                      role="driver", scopes=list(sessions.DRIVER_SCOPES)),
     )

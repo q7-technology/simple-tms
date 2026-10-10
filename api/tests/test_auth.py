@@ -84,3 +84,18 @@ def test_wrong_passwords_sent_all_at_once_still_lock_after_five(client, db, disp
     assert codes.count("locked") == 6
     db.refresh(dispatcher)
     assert dispatcher.locked_until is not None
+
+
+def test_a_new_password_ends_every_session_signed_in_with_the_old_one(client, db, dispatcher):
+    from tms.services import sessions
+
+    old = login(client, "dee")
+    sessions.change_password(db, dispatcher, "a brand new password")
+    db.commit()
+
+    assert client.get("/v1/auth/me", headers=bearer(old["token"])).status_code == 401
+    r = client.post("/v1/auth/refresh", json={"refresh_token": old["refresh_token"]})
+    assert r.status_code == 401
+
+    new = login(client, "dee", "a brand new password")
+    assert client.get("/v1/auth/me", headers=bearer(new["token"])).status_code == 200

@@ -10,11 +10,12 @@ import json
 import secrets
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from tms.config import get_settings
-from tms.models import User, UserSession
+from tms.models import Driver, User, UserSession
+from tms.services import access
 
 ACCESS_PREFIX = "tms_s."
 ACCESS_TTL_SECONDS = 15 * 60
@@ -81,9 +82,25 @@ def _read(prefix: str, token: str, now: datetime | None) -> dict | None:
     return data
 
 
+def credential_stamp(secret_hash: str | None) -> str:
+    """A keyed fingerprint of a password or PIN hash, carried in every token. A new
+    password or PIN gives a new hash, so the tokens issued before stop working."""
+    return _sign("credential:" + (secret_hash or ""))[:22]
+
+
+def stamp_matches(token: str, secret_hash: str | None, now: datetime | None = None) -> bool:
+    """True if the token was issued against this password or PIN hash."""
+    prefix = DRIVER_PREFIX if token.startswith(DRIVER_PREFIX) else ACCESS_PREFIX
+    data = _read(prefix, token, now)
+    if not data or not isinstance(data.get("cv"), str):
+        return False
+    return hmac.compare_digest(data["cv"], credential_stamp(secret_hash))
+
+
 def issue_access_token(user: User, now: datetime | None = None,
                        ttl: int = ACCESS_TTL_SECONDS) -> str:
-    return _issue(ACCESS_PREFIX, {"uid": user.id}, ttl, now)
+    return _issue(ACCESS_PREFIX, {"uid": user.id, "cv": credential_stamp(user.password_hash)},
+                  ttl, now)
 
 
 def read_access_token(token: str, now: datetime | None = None) -> int | None:
@@ -91,9 +108,10 @@ def read_access_token(token: str, now: datetime | None = None) -> int | None:
     return int(data["uid"]) if data else None
 
 
-def issue_driver_token(driver_id: int, now: datetime | None = None,
+def issue_driver_token(driver: Driver, now: datetime | None = None,
                        ttl: int = DRIVER_TTL_SECONDS) -> str:
-    return _issue(DRIVER_PREFIX, {"did": driver_id}, ttl, now)
+    return _issue(DRIVER_PREFIX, {"did": driver.id, "cv": credential_stamp(driver.pin_hash)},
+                  ttl, now)
 
 
 def read_driver_token(token: str, now: datetime | None = None) -> int | None:
@@ -135,4 +153,16 @@ def rotate_session(db: Session, row: UserSession) -> str:
 
 def revoke_session(db: Session, row: UserSession) -> None:
     row.revoked_at = datetime.now(UTC)
+    db.flush()
+
+
+def change_password(db: Session, user: User, password: str) -> None:
+    """Set a new password and end every session signed in with the old one: the
+    refresh tokens are revoked here, the access tokens by their stamp."""
+    user.password_hash = access.hash_password(password)
+    db.execute(
+        update(UserSession)
+        .where(UserSession.user_id == user.id, UserSession.revoked_at.is_(None))
+        .values(revoked_at=datetime.now(UTC))
+    )
     db.flush()

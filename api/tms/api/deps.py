@@ -46,7 +46,8 @@ def get_principal(db: DB, authorization: Annotated[str | None, Header()] = None)
     if raw.startswith(sessions.ACCESS_PREFIX):
         user_id = sessions.read_access_token(raw)
         user = db.get(User, user_id) if user_id else None
-        if user is None or not user.active:
+        if (user is None or not user.active
+                or not sessions.stamp_matches(raw, user.password_hash)):
             raise Unauthorised("session expired or invalid")
         return Principal(kind="user", id=user.id, name=user.username,
                          display_name=user.display_name, role=user.role,
@@ -55,7 +56,8 @@ def get_principal(db: DB, authorization: Annotated[str | None, Header()] = None)
     if raw.startswith(sessions.DRIVER_PREFIX):
         driver_id = sessions.read_driver_token(raw)
         driver = db.get(Driver, driver_id) if driver_id else None
-        if driver is None or not driver.active or driver.locked:
+        if (driver is None or not driver.active or driver.locked
+                or not sessions.stamp_matches(raw, driver.pin_hash)):
             raise Unauthorised("driver session expired or invalid")
         return Principal(kind="driver", id=driver.id, name=driver.code,
                          display_name=driver.name, role="driver",

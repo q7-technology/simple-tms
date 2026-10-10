@@ -14,7 +14,7 @@ def test_a_password_hash_checks_the_password_and_nothing_else():
 
 
 def test_an_access_token_names_its_user_until_it_expires():
-    user = SimpleNamespace(id=42)
+    user = SimpleNamespace(id=42, password_hash="pbkdf2_sha256$1$00$00")
     now = datetime.now(UTC)
     token = sessions.issue_access_token(user, now=now)
     assert token.startswith("tms_s.")
@@ -24,14 +24,14 @@ def test_an_access_token_names_its_user_until_it_expires():
 
 
 def test_a_tampered_token_is_refused():
-    token = sessions.issue_access_token(SimpleNamespace(id=42))
+    token = sessions.issue_access_token(SimpleNamespace(id=42, password_hash=None))
     payload, sig = token[len("tms_s."):].split(".", 1)
     assert sessions.read_access_token(f"tms_s.{payload}.{sig[:-2]}xx") is None
     assert sessions.read_access_token("tms_s.nonsense") is None
 
 
 def test_a_driver_token_is_not_a_user_token():
-    token = sessions.issue_driver_token(7)
+    token = sessions.issue_driver_token(SimpleNamespace(id=7, pin_hash=None))
     assert token.startswith("tms_d.")
     assert sessions.read_driver_token(token) == 7
     assert sessions.read_access_token(token) is None
