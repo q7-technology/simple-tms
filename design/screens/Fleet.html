@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Simple TMS fleet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+:root{--page:#F3F6F4;--ink:#17251F;--ink2:#4B5A53;--muted:#5B6B63;--green:#1F8A5B;--green-h:#146B45;--tint:#E7F4EC;--tint-ink:#146B45;
+--line:#DCE7DF;--line2:#C9DBCF;--card-line:#E3EDE6;--row:#EDF3EF;--field:#F7FAF8;
+--amber:#E8A317;--amber-ink:#8A5A00;--amber-bg:#FFF3D6;--amber-line:#F0D08A;
+--red:#C9343D;--red-ink:#A3242C;--red-bg:#FCE9EA;--red-line:#F1B9BD;
+--blue:#2F6FB8;--violet:#7B5CC4;--road:#5B6475;--verge:#E3F1E6;
+--shadow:0 6px 20px rgba(23,37,31,.08);--shadow-lg:0 10px 30px rgba(23,37,31,.12)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);font-family:Manrope,system-ui,sans-serif}
+a{color:#146B45}a:hover{color:#0E5034}
+button,input,select,textarea{font:inherit;color:inherit}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.eyebrow{font-size:12px;font-weight:800;letter-spacing:1.2px;color:var(--muted)}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:800;white-space:nowrap;line-height:1.3}
+.p-green{background:#E3F3EA;color:#146B45}.p-amber{background:var(--amber-bg);color:var(--amber-ink)}.p-red{background:var(--red-bg);color:var(--red-ink)}
+.p-grey{background:#EEF2EF;color:#4B5A53}.p-blue{background:#E4EEF9;color:#235596}.p-violet{background:#EEE9F9;color:#5F44A3}
+.btn{height:44px;padding:0 16px;border-radius:12px;border:1px solid var(--line2);background:#fff;color:var(--ink);font-weight:700;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;white-space:nowrap}
+.btn:hover{color:var(--ink);border-color:var(--green)}
+.btn.primary{border:0;background:var(--green);color:#fff;font-weight:800}.btn.primary:hover{background:var(--green-h);color:#fff}
+.field{height:44px;padding:0 12px;border:1px solid var(--line2);border-radius:12px;background:#fff;font-size:14px;color:var(--ink);width:100%}
+.search{display:flex;align-items:center;gap:8px;height:44px;padding:0 14px;border:1px solid var(--line);border-radius:12px;background:var(--field);color:var(--muted);font-size:14px}
+.search input{flex:1;border:0;background:transparent;outline:none;min-width:0;color:var(--ink)}
+.search input::placeholder{color:var(--muted)}
+.dot{width:10px;height:10px;border-radius:50%;flex:none;display:inline-block}
+.bar{height:10px;border-radius:999px;background:#E3EDE6;overflow:hidden}.bar>span{display:block;height:100%;border-radius:999px;background:var(--green)}
+.num{font-variant-numeric:tabular-nums}
+.small{font-size:12px;color:var(--muted)}
+.muted{color:var(--muted)}
+
+.drawer-wrap{min-height:100vh;position:relative;overflow:hidden}
+.dim{position:absolute;inset:0}
+.dim img{display:block;width:100%;max-width:1540px;height:auto;margin:0 auto;filter:blur(2px)}
+.dim::after{content:"";position:absolute;inset:0;background:rgba(23,37,31,.38)}
+.drawer{position:absolute;top:0;right:0;bottom:0;width:72%;background:#fff;border-radius:24px 0 0 24px;box-shadow:-20px 0 50px rgba(23,37,31,.25);display:flex;flex-direction:column}
+.dhead{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:22px 28px 14px}
+.dhead h1{margin:0;font-size:26px;font-weight:800;letter-spacing:-.3px}
+.dhead .sub{font-size:13px;color:var(--muted)}
+.closebtn{width:44px;height:44px;border-radius:12px;background:var(--page);color:var(--ink);display:grid;place-items:center;text-decoration:none;flex:none}
+.who{display:flex;align-items:center;gap:8px;height:44px;padding:0 12px 0 6px;border-radius:999px;background:var(--page);font-size:13px;font-weight:700;color:var(--ink2)}
+.who b{width:32px;height:32px;border-radius:999px;background:var(--green);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:800}
+.tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:0 28px 14px}
+.dbody{flex:1;min-height:0;overflow:auto;padding:0 28px 40px;display:flex;flex-direction:column;gap:16px}
+.dbody>*{flex:none}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.stat{padding:16px;border-radius:16px;border:1px solid var(--card-line)}
+.stat .v{font-size:30px;font-weight:800}.stat .d{font-size:13px;color:var(--ink2)}
+.stat.amber{border-color:var(--amber-line);background:#FFFBEF}.stat.amber .eyebrow,.stat.amber .v{color:var(--amber-ink)}
+.stat.red{border-color:var(--red-line);background:#FFF6F6}.stat.red .eyebrow,.stat.red .v{color:var(--red-ink)}
+.tabs{display:flex;flex-wrap:wrap;gap:6px}
+.tab{height:40px;padding:0 14px;border-radius:999px;cursor:pointer;font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:#fff;color:var(--ink)}
+.tab i{font-style:normal;min-width:20px;padding:1px 6px;border-radius:999px;font-size:12px;font-weight:800;background:var(--tint);color:var(--tint-ink);text-align:center}
+.tab[aria-selected=true]{background:var(--green);border-color:var(--green);color:#fff}.tab[aria-selected=true] i{background:rgba(255,255,255,.22);color:#fff}
+.tab i.r{background:var(--red-bg);color:var(--red-ink)}.tab i.a{background:var(--amber-bg);color:var(--amber-ink)}
+.split{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start}
+.tablewrap{flex:999 1 460px;min-width:0;overflow-x:auto;border:1px solid var(--card-line);border-radius:16px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{padding:12px 10px;font-weight:800;text-align:left;color:var(--muted);font-size:12px;letter-spacing:1px;white-space:nowrap}
+td{padding:6px 10px;border-top:1px solid var(--row);height:56px}
+tr.sel td{background:#F1F8F4}
+.rowbtn{min-height:44px;padding:0 10px;border-radius:10px;font-weight:800;font-size:14px;cursor:pointer;white-space:nowrap;border:2px solid transparent;background:transparent;color:var(--ink)}
+tr.sel .rowbtn{border-color:var(--green);background:var(--tint)}
+.aside{flex:1 1 300px;max-width:380px;min-width:0;padding:18px;border-radius:18px;background:#F7FAF8;border:1px solid var(--card-line);display:flex;flex-direction:column;gap:14px}
+.box{border-radius:12px;background:#fff;border:1px solid var(--card-line)}
+.box>div{display:flex;justify-content:space-between;gap:8px;padding:8px 12px;border-top:1px solid var(--row);font-size:13px}
+.box>div:first-child{border-top:0}
+@media (max-width:960px){.drawer{position:static !important;width:auto !important;border-radius:0 !important}.dim{display:none !important}}
+
+.drawer{width:80%}
+.aside{flex:0 1 380px;max-width:380px}
+.chk{display:flex;align-items:flex-start;gap:10px;padding:9px 12px;border-top:1px solid var(--row);font-size:13px}
+.chk:first-child{border-top:0}
+.chk .ic{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;flex:none;color:#fff}
+.ok{background:var(--green)}.bad{background:var(--red)}
+tr.sel td{background:#FFF6F6}
+tr.sel .rowbtn{border-color:var(--red);background:var(--red-bg)}
+.due-a{color:var(--amber-ink);font-weight:800}
+.due-r{color:var(--red-ink);font-weight:800}
+</style>
+</head>
+<body>
+<div class="drawer-wrap">
+<div class="dim" aria-hidden="true"><img src="region.svg" alt=""></div>
+<section class="drawer" aria-label="Fleet">
+<header class="dhead">
+  <a href="Main.html" class="closebtn" aria-label="Back to the map"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></a>
+  <div style="flex:1;min-width:200px">
+    <div class="eyebrow" style="color:var(--green)">BALLARAT DEPOT</div>
+    <h1>Fleet</h1>
+    <div class="sub">Your trucks, who drives them, pre-start checks, and when rego and service fall due.</div>
+  </div>
+  <span class="who"><b>JO</b>Dispatcher</span>
+</header>
+<div class="tools">
+  <label class="search" style="flex:1 1 240px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span class="sr">Search vehicles</span><input type="search" placeholder="Rego or driver"></label>
+  <button type="button" class="btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add a driver</button>
+  <button type="button" class="btn primary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add a vehicle</button>
+</div>
+<div class="dbody">
+  <div class="stats">
+    <div class="stat"><div class="eyebrow">VEHICLES</div><div class="v">5</div><div class="d">2 rigid · 2 van · 1 ute</div></div>
+    <div class="stat red"><div class="eyebrow">GROUNDED</div><div class="v">1</div><div class="d">TMS-027 · brake light</div></div>
+    <div class="stat amber"><div class="eyebrow">DUE SOON</div><div class="v">2</div><div class="d">rego in 12 days · service in 640 km</div></div>
+    <div class="stat"><div class="eyebrow">PRE-STARTS TODAY</div><div class="v">4</div><div class="d">3 passed · 1 failed</div></div>
+  </div>
+  <div class="split">
+    <div class="tablewrap">
+      <table style="min-width:720px">
+        <thead><tr><th>REGO</th><th>TYPE</th><th>DRIVER</th><th>REGO EXPIRY</th><th>NEXT SERVICE</th><th>LAST PRE-START</th><th>STATUS</th></tr></thead>
+        <tbody><tr><td><button type="button" class="rowbtn" aria-pressed="false" aria-label="Show TMS-041">TMS-041</button></td>
+<td>Rigid</td><td>Kim</td><td style="white-space:nowrap">3 Mar 2027</td><td style="white-space:nowrap">14 Jan 2027<div class="small">or 61,900 km</div></td><td style="white-space:nowrap">Today 6:52 am<div class="small">Passed</div></td><td><span class="pill p-green">On a run</span></td></tr><tr><td><button type="button" class="rowbtn" aria-pressed="false" aria-label="Show TMS-018">TMS-018</button></td>
+<td>Van</td><td>Raj</td><td style="white-space:nowrap"><span class="due-a">25 Oct 2026</span><div class="small" style="color:var(--amber-ink)">due in 12 days</div></td><td style="white-space:nowrap">2 Feb 2027<div class="small">or 120,400 km</div></td><td style="white-space:nowrap">Today 7:05 am<div class="small">Passed</div></td><td><span class="pill p-amber">Rego due</span></td></tr><tr><td><button type="button" class="rowbtn" aria-pressed="false" aria-label="Show TMS-052">TMS-052</button></td>
+<td>Rigid</td><td>Mel</td><td style="white-space:nowrap">9 Jun 2027</td><td style="white-space:nowrap"><span class="due-a">in 640 km</span><div class="small">or 30 Nov 2026</div></td><td style="white-space:nowrap">Today 10:40 am<div class="small">Passed</div></td><td><span class="pill p-amber">Service due</span></td></tr><tr class="sel"><td><button type="button" class="rowbtn" aria-pressed="true" aria-label="Show TMS-027">TMS-027</button></td>
+<td>Ute</td><td>Tom</td><td style="white-space:nowrap">18 Aug 2027</td><td style="white-space:nowrap">6 Mar 2027<div class="small">or 90,000 km</div></td><td style="white-space:nowrap"><span class="due-r">Today 6:40 am</span><div class="small" style="color:var(--red-ink)">Failed</div></td><td><span class="pill p-red">Grounded</span></td></tr><tr><td><button type="button" class="rowbtn" aria-pressed="false" aria-label="Show TMS-063">TMS-063</button></td>
+<td>Van</td><td>Ava</td><td style="white-space:nowrap">30 Apr 2027</td><td style="white-space:nowrap">19 Dec 2026<div class="small">or 48,200 km</div></td><td style="white-space:nowrap">Mon 6:58 am<div class="small">Passed</div></td><td><span class="pill p-grey">At depot</span></td></tr></tbody>
+      </table>
+    </div>
+    <aside class="aside" aria-label="Pre-start check record">
+  <div>
+    <div class="eyebrow" style="color:var(--red-ink)">PRE-START CHECK · FAILED</div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:22px;font-weight:800">TMS-027</span><span class="pill p-red">Grounded</span></div>
+    <div style="font-size:13px;color:var(--ink2)">Ute · Tom · Tue 13 Oct, 6:40 am · odometer 84,312 km</div>
+  </div>
+  <div class="box">
+    <div class="chk"><span class="ic ok"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></span><div style="flex:1"><b>Tyres</b></div><span class="small" style="font-weight:700;color:var(--muted)">Pass</span></div>
+    <div class="chk"><span class="ic bad"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></span><div style="flex:1"><b>Lights</b><div class="small" style="margin-top:2px">Critical item</div></div><span class="small" style="font-weight:700;color:var(--red-ink)">Fail</span></div>
+    <div class="chk"><span class="ic ok"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></span><div style="flex:1"><b>Brakes</b></div><span class="small" style="font-weight:700;color:var(--muted)">Pass</span></div>
+    <div class="chk"><span class="ic ok"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></span><div style="flex:1"><b>Mirrors</b></div><span class="small" style="font-weight:700;color:var(--muted)">Pass</span></div>
+    <div class="chk"><span class="ic ok"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></span><div style="flex:1"><b>Load restraints</b></div><span class="small" style="font-weight:700;color:var(--muted)">Pass</span></div>
+    <div class="chk"><span class="ic ok"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></span><div style="flex:1"><b>Damage</b></div><span class="small" style="font-weight:700;color:var(--muted)">Pass</span></div>
+  </div>
+  <div style="padding:12px;border-radius:14px;background:#fff;border:1px solid var(--red-line);display:flex;gap:12px;align-items:flex-start">
+    <span role="img" aria-label="Driver's photo of the rear lights, left brake light out"><svg viewBox="0 0 120 80" width="120" height="80" aria-hidden="true" style="border-radius:10px;display:block;flex:none"><rect width="120" height="80" fill="#5E6670"/><rect x="0" y="52" width="120" height="28" fill="#3E454E"/><rect x="18" y="18" width="34" height="22" rx="4" fill="#8B2A30"/><rect x="22" y="22" width="26" height="14" rx="3" fill="#A8474D"/><rect x="72" y="18" width="34" height="22" rx="4" fill="#E2545B"/><rect x="76" y="22" width="26" height="14" rx="3" fill="#FF8C8C"/><rect x="40" y="56" width="40" height="12" rx="2" fill="#E7ECEF"/></svg></span>
+    <div style="font-size:13px"><b>Tom's note</b><div style="color:var(--ink2);margin-top:2px">Left brake light out. Bulb or fuse, not sure.</div></div>
+  </div>
+  <div class="small">A failed critical item grounds the truck. It can't go on a run until a fleet manager marks it fixed.</div>
+  <div style="padding:14px;border-radius:14px;background:#fff;border:1px solid var(--card-line);display:flex;flex-direction:column;gap:10px">
+    <div class="eyebrow">MARK FIXED</div>
+    <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:700">What was done
+      <input class="field" type="text" placeholder="e.g. Replaced left brake globe, tested"></label>
+    <button type="button" class="btn primary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4Z"/></svg>Mark fixed</button>
+    <div class="small">Every check is kept as it was. Marking fixed adds a new record; it never changes this one.</div>
+  </div>
+</aside>
+  </div>
+  <div class="small">Amber 30 days or 1,000 km before it's due, red once it's overdue. Due dates show here only; another system can send email or SMS from the vehicle.due event.</div>
+</div>
+</section>
+</div>
+</body>
+</html>

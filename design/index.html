@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Simple TMS screens</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F3F6F4;color:#17251F;font-family:Manrope,system-ui,sans-serif}
+main{max-width:1180px;margin:0 auto;padding:40px 16px 64px}
+.brand{display:flex;align-items:center;gap:10px}
+.eyebrow{font-size:12px;font-weight:800;letter-spacing:1.2px;color:#1F8A5B;margin:0}
+h1{margin:8px 0;font-size:36px;letter-spacing:-.5px}
+p.lead{color:#4B5A53;margin:0;max-width:760px;line-height:1.55}
+h2{margin:40px 0 14px;font-size:20px} h2 span{font-size:13px;color:#5B6B63;font-weight:700;margin-left:6px}
+.grid{display:grid;gap:12px}
+.desk{grid-template-columns:repeat(auto-fill,minmax(340px,1fr))}
+.drv{grid-template-columns:repeat(auto-fill,minmax(170px,1fr))}
+.card{display:flex;flex-direction:column;gap:4px;padding:12px 12px 14px;border-radius:14px;background:#fff;border:1px solid #E3EDE6;text-decoration:none;color:#17251F;box-shadow:0 2px 6px rgba(23,37,31,.04)}
+.card:hover{border-color:#1F8A5B}
+.card small{color:#5B6B63;font-size:12px} .card small.f{font-weight:700}
+.thumb{display:block;position:relative;overflow:hidden;border-radius:10px;border:1px solid #E3EDE6;background:#F3F6F4;margin-bottom:6px}
+.thumb iframe{position:absolute;top:0;left:0;border:0;transform-origin:0 0;pointer-events:none}
+.note{margin-top:20px;padding:14px 16px;border-radius:14px;background:#E7F4EC;color:#1E3A2D;font-size:14px;line-height:1.5}
+table{border-collapse:collapse;font-size:14px;margin-top:10px} td{padding:6px 14px 6px 0}
+.sw{display:inline-block;width:14px;height:14px;border-radius:4px;vertical-align:-2px;margin-right:6px;border:1px solid rgba(0,0,0,.08)}
+</style></head><body><main>
+<div class="brand"><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 28 10 16 17 4 10Z" fill="#5BC28F"/><path d="M4 10 16 17V30L4 23Z" fill="#1F8A5B"/><path d="M28 10 16 17V30L28 23Z" fill="#146B45"/><path d="M10 6.5 22 13.5v4" fill="none" stroke="#E7F4EC" stroke-width="2"/></svg><p class="eyebrow">SIMPLE TMS · DESIGN</p></div>
+<h1>Screens</h1>
+<p class="lead">The first drawn screens for Simple TMS, a small open-source transport management system for businesses that deliver with their own trucks and also send freight with outside carriers. Like Simple WMS's Game Mode, the dispatcher runs the day from a toy-town map of the depot, the roads and each customer stop, and every job opens as a drawer over it. The driver app works like the WMS scanner: big buttons, one stop at a time, and a "Ding!" when a stop is delivered. Each screen is a static snapshot in its starting state.</p>
+<div class="note">All names, numbers, places and references are made-up samples. The colours are the first draft from the design doc: road green <span class="sw" style="background:#1F8A5B"></span>for buttons and your trucks, amber <span class="sw" style="background:#E8A317"></span>for due soon and waiting, red <span class="sw" style="background:#C9343D"></span>only when a person needs to look.</div>
+<h2>Dispatcher desktop <span>5 · 1440 × 900</span></h2>
+<div class="grid desk"><a class="card" href="screens/Main.html">
+  <span class="thumb" style="width:100%;aspect-ratio:1440/900"><iframe src="screens/Main.html" title="Preview of Today: the map" tabindex="-1" style="width:1440px;height:900px;transform:scale(var(--s))" data-w="1440"></iframe></span>
+  <b>Today: the map</b><small>Counts, today's goal, the selected truck, what just happened</small><small class="f">Main.html · 1440 × 900</small>
+</a><a class="card" href="screens/PlanRuns.html">
+  <span class="thumb" style="width:100%;aspect-ratio:1440/900"><iframe src="screens/PlanRuns.html" title="Preview of Plan runs" tabindex="-1" style="width:1440px;height:900px;transform:scale(var(--s))" data-w="1440"></iframe></span>
+  <b>Plan runs</b><small>Tray of consignments, a column per run, weight and volume limits</small><small class="f">PlanRuns.html · 1440 × 900</small>
+</a><a class="card" href="screens/Consignments.html">
+  <span class="thumb" style="width:100%;aspect-ratio:1440/900"><iframe src="screens/Consignments.html" title="Preview of Consignments" tabindex="-1" style="width:1440px;height:900px;transform:scale(var(--s))" data-w="1440"></iframe></span>
+  <b>Consignments</b><small>Search, status history and proof of delivery</small><small class="f">Consignments.html · 1440 × 900</small>
+</a><a class="card" href="screens/Carriers.html">
+  <span class="thumb" style="width:100%;aspect-ratio:1440/900"><iframe src="screens/Carriers.html" title="Preview of Carriers" tabindex="-1" style="width:1440px;height:900px;transform:scale(var(--s))" data-w="1440"></iframe></span>
+  <b>Carriers</b><small>Con note entry and manifests, grouped by carrier</small><small class="f">Carriers.html · 1440 × 900</small>
+</a><a class="card" href="screens/Fleet.html">
+  <span class="thumb" style="width:100%;aspect-ratio:1440/900"><iframe src="screens/Fleet.html" title="Preview of Fleet" tabindex="-1" style="width:1440px;height:900px;transform:scale(var(--s))" data-w="1440"></iframe></span>
+  <b>Fleet</b><small>Vehicles, rego and service due, a failed pre-start</small><small class="f">Fleet.html · 1440 × 900</small>
+</a></div>
+<h2>Driver app <span>6 · 390 × 844</span></h2>
+<div class="grid drv"><a class="card" href="screens/DriverSignIn.html">
+  <span class="thumb" style="width:100%;aspect-ratio:390/892"><iframe src="screens/DriverSignIn.html" title="Preview of Sign in" tabindex="-1" style="width:390px;height:892px;transform:scale(var(--s))" data-w="390"></iframe></span>
+  <b>Sign in</b><small>Driver code and PIN</small><small class="f">DriverSignIn.html · 390 × 844</small>
+</a><a class="card" href="screens/DriverPrestart.html">
+  <span class="thumb" style="width:100%;aspect-ratio:390/892"><iframe src="screens/DriverPrestart.html" title="Preview of Pre-start check" tabindex="-1" style="width:390px;height:892px;transform:scale(var(--s))" data-w="390"></iframe></span>
+  <b>Pre-start check</b><small>Pick the truck, pass or fail each item</small><small class="f">DriverPrestart.html · 390 × 844</small>
+</a><a class="card" href="screens/DriverStop.html">
+  <span class="thumb" style="width:100%;aspect-ratio:390/892"><iframe src="screens/DriverStop.html" title="Preview of A stop" tabindex="-1" style="width:390px;height:892px;transform:scale(var(--s))" data-w="390"></iframe></span>
+  <b>A stop</b><small>Stop 5 of 12, cartons to drop, Delivered</small><small class="f">DriverStop.html · 390 × 844</small>
+</a><a class="card" href="screens/DriverProof.html">
+  <span class="thumb" style="width:100%;aspect-ratio:390/892"><iframe src="screens/DriverProof.html" title="Preview of Proof of delivery" tabindex="-1" style="width:390px;height:892px;transform:scale(var(--s))" data-w="390"></iframe></span>
+  <b>Proof of delivery</b><small>Signature, printed name, photo, Ding!</small><small class="f">DriverProof.html · 390 × 844</small>
+</a><a class="card" href="screens/DriverCantDeliver.html">
+  <span class="thumb" style="width:100%;aspect-ratio:390/892"><iframe src="screens/DriverCantDeliver.html" title="Preview of Can't deliver" tabindex="-1" style="width:390px;height:892px;transform:scale(var(--s))" data-w="390"></iframe></span>
+  <b>Can't deliver</b><small>A reason and a photo; cartons go back</small><small class="f">DriverCantDeliver.html · 390 × 844</small>
+</a><a class="card" href="screens/DriverOffline.html">
+  <span class="thumb" style="width:100%;aspect-ratio:390/892"><iframe src="screens/DriverOffline.html" title="Preview of No signal" tabindex="-1" style="width:390px;height:892px;transform:scale(var(--s))" data-w="390"></iframe></span>
+  <b>No signal</b><small>Working from memory, confirmations queued</small><small class="f">DriverOffline.html · 390 × 844</small>
+</a></div>
+</main>
+<script>
+// Scale each preview to fit its card.
+function fit(){document.querySelectorAll('.thumb iframe').forEach(function(f){var w=+f.dataset.w;f.style.setProperty('--s',f.parentNode.clientWidth/w);});}
+addEventListener('resize',fit);fit();
+</script>
+</body></html>

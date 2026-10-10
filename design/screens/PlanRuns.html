@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Simple TMS plan runs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+:root{--page:#F3F6F4;--ink:#17251F;--ink2:#4B5A53;--muted:#5B6B63;--green:#1F8A5B;--green-h:#146B45;--tint:#E7F4EC;--tint-ink:#146B45;
+--line:#DCE7DF;--line2:#C9DBCF;--card-line:#E3EDE6;--row:#EDF3EF;--field:#F7FAF8;
+--amber:#E8A317;--amber-ink:#8A5A00;--amber-bg:#FFF3D6;--amber-line:#F0D08A;
+--red:#C9343D;--red-ink:#A3242C;--red-bg:#FCE9EA;--red-line:#F1B9BD;
+--blue:#2F6FB8;--violet:#7B5CC4;--road:#5B6475;--verge:#E3F1E6;
+--shadow:0 6px 20px rgba(23,37,31,.08);--shadow-lg:0 10px 30px rgba(23,37,31,.12)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);font-family:Manrope,system-ui,sans-serif}
+a{color:#146B45}a:hover{color:#0E5034}
+button,input,select,textarea{font:inherit;color:inherit}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.eyebrow{font-size:12px;font-weight:800;letter-spacing:1.2px;color:var(--muted)}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:800;white-space:nowrap;line-height:1.3}
+.p-green{background:#E3F3EA;color:#146B45}.p-amber{background:var(--amber-bg);color:var(--amber-ink)}.p-red{background:var(--red-bg);color:var(--red-ink)}
+.p-grey{background:#EEF2EF;color:#4B5A53}.p-blue{background:#E4EEF9;color:#235596}.p-violet{background:#EEE9F9;color:#5F44A3}
+.btn{height:44px;padding:0 16px;border-radius:12px;border:1px solid var(--line2);background:#fff;color:var(--ink);font-weight:700;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;white-space:nowrap}
+.btn:hover{color:var(--ink);border-color:var(--green)}
+.btn.primary{border:0;background:var(--green);color:#fff;font-weight:800}.btn.primary:hover{background:var(--green-h);color:#fff}
+.field{height:44px;padding:0 12px;border:1px solid var(--line2);border-radius:12px;background:#fff;font-size:14px;color:var(--ink);width:100%}
+.search{display:flex;align-items:center;gap:8px;height:44px;padding:0 14px;border:1px solid var(--line);border-radius:12px;background:var(--field);color:var(--muted);font-size:14px}
+.search input{flex:1;border:0;background:transparent;outline:none;min-width:0;color:var(--ink)}
+.search input::placeholder{color:var(--muted)}
+.dot{width:10px;height:10px;border-radius:50%;flex:none;display:inline-block}
+.bar{height:10px;border-radius:999px;background:#E3EDE6;overflow:hidden}.bar>span{display:block;height:100%;border-radius:999px;background:var(--green)}
+.num{font-variant-numeric:tabular-nums}
+.small{font-size:12px;color:var(--muted)}
+.muted{color:var(--muted)}
+
+.drawer-wrap{min-height:100vh;position:relative;overflow:hidden}
+.dim{position:absolute;inset:0}
+.dim img{display:block;width:100%;max-width:1540px;height:auto;margin:0 auto;filter:blur(2px)}
+.dim::after{content:"";position:absolute;inset:0;background:rgba(23,37,31,.38)}
+.drawer{position:absolute;top:0;right:0;bottom:0;width:72%;background:#fff;border-radius:24px 0 0 24px;box-shadow:-20px 0 50px rgba(23,37,31,.25);display:flex;flex-direction:column}
+.dhead{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:22px 28px 14px}
+.dhead h1{margin:0;font-size:26px;font-weight:800;letter-spacing:-.3px}
+.dhead .sub{font-size:13px;color:var(--muted)}
+.closebtn{width:44px;height:44px;border-radius:12px;background:var(--page);color:var(--ink);display:grid;place-items:center;text-decoration:none;flex:none}
+.who{display:flex;align-items:center;gap:8px;height:44px;padding:0 12px 0 6px;border-radius:999px;background:var(--page);font-size:13px;font-weight:700;color:var(--ink2)}
+.who b{width:32px;height:32px;border-radius:999px;background:var(--green);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:800}
+.tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:0 28px 14px}
+.dbody{flex:1;min-height:0;overflow:auto;padding:0 28px 40px;display:flex;flex-direction:column;gap:16px}
+.dbody>*{flex:none}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.stat{padding:16px;border-radius:16px;border:1px solid var(--card-line)}
+.stat .v{font-size:30px;font-weight:800}.stat .d{font-size:13px;color:var(--ink2)}
+.stat.amber{border-color:var(--amber-line);background:#FFFBEF}.stat.amber .eyebrow,.stat.amber .v{color:var(--amber-ink)}
+.stat.red{border-color:var(--red-line);background:#FFF6F6}.stat.red .eyebrow,.stat.red .v{color:var(--red-ink)}
+.tabs{display:flex;flex-wrap:wrap;gap:6px}
+.tab{height:40px;padding:0 14px;border-radius:999px;cursor:pointer;font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:#fff;color:var(--ink)}
+.tab i{font-style:normal;min-width:20px;padding:1px 6px;border-radius:999px;font-size:12px;font-weight:800;background:var(--tint);color:var(--tint-ink);text-align:center}
+.tab[aria-selected=true]{background:var(--green);border-color:var(--green);color:#fff}.tab[aria-selected=true] i{background:rgba(255,255,255,.22);color:#fff}
+.tab i.r{background:var(--red-bg);color:var(--red-ink)}.tab i.a{background:var(--amber-bg);color:var(--amber-ink)}
+.split{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start}
+.tablewrap{flex:999 1 460px;min-width:0;overflow-x:auto;border:1px solid var(--card-line);border-radius:16px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{padding:12px 10px;font-weight:800;text-align:left;color:var(--muted);font-size:12px;letter-spacing:1px;white-space:nowrap}
+td{padding:6px 10px;border-top:1px solid var(--row);height:56px}
+tr.sel td{background:#F1F8F4}
+.rowbtn{min-height:44px;padding:0 10px;border-radius:10px;font-weight:800;font-size:14px;cursor:pointer;white-space:nowrap;border:2px solid transparent;background:transparent;color:var(--ink)}
+tr.sel .rowbtn{border-color:var(--green);background:var(--tint)}
+.aside{flex:1 1 300px;max-width:380px;min-width:0;padding:18px;border-radius:18px;background:#F7FAF8;border:1px solid var(--card-line);display:flex;flex-direction:column;gap:14px}
+.box{border-radius:12px;background:#fff;border:1px solid var(--card-line)}
+.box>div{display:flex;justify-content:space-between;gap:8px;padding:8px 12px;border-top:1px solid var(--row);font-size:13px}
+.box>div:first-child{border-top:0}
+@media (max-width:960px){.drawer{position:static !important;width:auto !important;border-radius:0 !important}.dim{display:none !important}}
+
+.drawer{width:88%}
+.board{display:grid;grid-template-columns:250px repeat(3,minmax(210px,1fr)) 172px;gap:12px;align-items:start;min-width:1100px}
+.boardwrap{overflow-x:auto;padding-bottom:6px}
+.lane{border-radius:18px;background:#F7FAF8;border:1px solid var(--card-line);padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.lane.tray{background:#FFFBEF;border-color:var(--amber-line)}
+.lane.over{border-color:var(--red-line);background:#FFF8F8}
+.lane.out{background:#F1F3F2;border-style:dashed;border-color:#C9D2CD}
+.lhead{display:flex;align-items:center;gap:8px}
+.swatch{width:12px;height:12px;border-radius:4px;flex:none}
+.lhead .t{font-size:15px;font-weight:800}.lhead .s{font-size:12px;color:var(--muted)}
+.meter{display:flex;flex-direction:column;gap:3px;font-size:12px}
+.meter .row{display:flex;justify-content:space-between;gap:6px;color:var(--ink2)}
+.meter .row b{color:var(--ink)}
+.meter .track{height:8px;border-radius:999px;background:#E3EDE6;overflow:hidden;position:relative}
+.meter .track span{display:block;height:100%;border-radius:999px;background:var(--green)}
+.meter.a .track span{background:var(--amber)}.meter.a .row b{color:var(--amber-ink)}
+.meter.r .track span{background:var(--red)}.meter.r .row b{color:var(--red-ink)}
+.stop{display:flex;align-items:center;gap:8px;padding:8px 10px 8px 4px;border-radius:12px;background:#fff;border:1px solid var(--card-line);font-size:13px;min-height:52px}
+.stop .h{width:24px;height:36px;display:grid;place-items:center;color:#9AA8A0;cursor:grab;flex:none}
+.stop .n{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:800;color:#fff;flex:none}
+.stop .c{flex:1;min-width:0}.stop .c b{display:block;line-height:1.3}.stop .c span{color:var(--muted);font-size:12px}
+.stop .w{font-size:12px;color:var(--ink2);text-align:right;white-space:nowrap}
+.con{padding:10px 12px 10px 4px;border-radius:12px;background:#fff;border:1px solid var(--card-line);display:flex;gap:6px;font-size:13px}
+.con .c{flex:1;min-width:0}.con b{display:block}
+.con .meta{display:flex;flex-wrap:wrap;gap:4px 10px;color:var(--ink2);font-size:12px;margin-top:3px}
+.con .ref{font-size:11px;color:var(--muted);margin-top:3px}
+.drop{border:2px dashed var(--green);border-radius:12px;background:var(--tint);color:var(--tint-ink);font-size:12px;font-weight:800;text-align:center;padding:10px}
+.dragging{transform:rotate(-2.5deg);box-shadow:0 14px 30px rgba(23,37,31,.22);border-color:var(--green)}
+.msg{font-size:12px;border-radius:10px;padding:8px 10px;display:flex;gap:6px;align-items:flex-start}
+.msg.r{background:var(--red-bg);color:var(--red-ink)}.msg.a{background:var(--amber-bg);color:var(--amber-ink)}
+</style>
+</head>
+<body>
+<div class="drawer-wrap">
+<div class="dim" aria-hidden="true"><img src="region.svg" alt=""></div>
+<section class="drawer" aria-label="Plan runs">
+<header class="dhead">
+  <a href="Main.html" class="closebtn" aria-label="Back to the map"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></a>
+  <div style="flex:1;min-width:200px">
+    <div class="eyebrow" style="color:var(--green)">BALLARAT DEPOT</div>
+    <h1>Plan runs</h1>
+    <div class="sub">Drag consignments onto a run, then drag stops into order. You know the roads, so the order is yours.</div>
+  </div>
+  <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--ink2)">Day
+    <select class="field" style="width:auto;font-weight:700"><option>Tomorrow · Wed 14 Oct</option><option>Today · Tue 13 Oct</option></select></label>
+  <span class="small">Saved 11:16 am · 1 truck free: TMS-063</span>
+  <button type="button" class="btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add a run</button>
+  <button type="button" class="btn primary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 9V3h10v6M7 17H4v-7h16v7h-3"/><path d="M7 14h10v7H7Z"/></svg>Print run sheets</button>
+</header>
+<div class="dbody">
+  <div class="boardwrap"><div class="board">
+    <section class="lane tray" aria-label="Consignments to plan">
+  <div class="lhead"><span class="t" style="flex:1">To plan</span><span class="pill p-amber">14</span></div>
+  <label class="search" style="height:40px;background:#fff"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span class="sr">Filter consignments</span><input type="search" placeholder="Customer or suburb"></label>
+  <div class="con "><span class="h" style="width:22px;display:grid;place-items:center;color:#9AA8A0" aria-label="Drag onto a run"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/></svg></span><div class="c"><b>Station Deli</b><span class="small">Ballan</span><div class="meta num"><span>5 ctn</span><span>72 kg</span><span>0.5 m³</span></div><div class="ref">From WMS delivery 0080034519</div></div></div>
+  <div class="con dragging"><span class="h" style="width:22px;display:grid;place-items:center;color:#9AA8A0" aria-label="Drag onto a run"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/></svg></span><div class="c"><b>Paddock Produce</b><span class="small">Clunes</span><div class="meta num"><span>8 ctn</span><span>210 kg</span><span>1.4 m³</span></div><div class="ref">From WMS delivery 0080034522</div></div></div>
+  <div class="con "><span class="h" style="width:22px;display:grid;place-items:center;color:#9AA8A0" aria-label="Drag onto a run"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/></svg></span><div class="c"><b>Gordon Street Newsagency</b><span class="small">Gordon</span><div class="meta num"><span>2 ctn</span><span>18 kg</span><span>0.1 m³</span></div><div class="ref">From WMS delivery 0080034525</div></div></div>
+  <div class="con "><span class="h" style="width:22px;display:grid;place-items:center;color:#9AA8A0" aria-label="Drag onto a run"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/></svg></span><div class="c"><b>Creek Road Nursery</b><span class="small">Creswick</span><div class="meta num"><span>11 ctn</span><span>340 kg</span><span>2.6 m³</span></div><div class="ref">From WMS delivery 0080034527</div></div></div>
+  <div class="con "><span class="h" style="width:22px;display:grid;place-items:center;color:#9AA8A0" aria-label="Drag onto a run"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/></svg></span><div class="c"><b>Kerbside Bikes</b><span class="small">Alfredton</span><div class="meta num"><span>3 ctn</span><span>46 kg</span><span>0.4 m³</span></div><div class="ref">From WMS delivery 0080034530</div></div></div>
+  <div class="small" style="text-align:center">9 more · scroll for all</div>
+</section>
+    <section class="lane" aria-label="Run R-2210">
+  <div class="lhead"><span class="swatch" style="background:#1F8A5B"></span><div style="flex:1;min-width:0"><div class="t">R-2210 · Kim</div><div class="s">TMS-041 · rigid</div></div><span class="pill p-green">5 stops</span></div>
+  <div class="meter "><div class="row"><span>Weight</span><span><b>2,380</b> / 4,500 kg</span></div><div class="track" role="img" aria-label="Weight 2,380 of 4,500 kg"><span style="width:53%"></span></div></div>
+  <div class="meter "><div class="row"><span>Volume</span><span><b>11.2</b> / 22 m³</span></div><div class="track" role="img" aria-label="Volume 11.2 of 22 m³"><span style="width:51%"></span></div></div>
+  <div class="stop"><span class="h" aria-label="Drag to reorder"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/></svg></span><span class="n" style="background:#1F8A5B">1</span><span class="c"><b>Hillside Bakery</b><span><span style="white-space:nowrap">Buninyong</span> · <span style="white-space:nowrap">4 ctn</span> · <span style="white-space:nowrap">84 kg</span></span></span></div>
+  <div class="stop"><span class="h" aria-label="Drag to reorder"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/></svg></span><span class="n" style="background:#1F8A5B">2</span><span class="c"><b>Two Rivers Vet</b><span><span style="white-space:nowrap">Smythesdale</span> · <span style="white-space:nowrap">3 ctn</span> · <span style="white-space:nowrap">41 kg</span></span></span></div>
+  <div class="stop"><span class="h" aria-label="Drag to reorder"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/></svg></span><span class="n" style="background:#1F8A5B">3</span><span class="c"><b>Ridge Auto Workshop</b><span><span style="white-space:nowrap">Wendouree</span> · <span style="white-space:nowrap">9 ctn</span> · <span style="white-space:nowrap">620 kg</span></span></span></div>
+  <div class="drop">Drop here · Paddock Produce fits</div>
+  <div class="stop"><span class="h" aria-label="Drag to reorder"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/></svg></span><span class="n" style="background:#1F8A5B">4</span><span class="c"><b>Lakeside Primary School</b><span><span style="white-space:nowrap">Ballarat North</span> · <span style="white-space:nowrap">14 ctn</span> · <span style="white-space:nowrap">880 kg</span></span></span></div>
+  <div class="stop"><span class="h" aria-label="Drag to reorder"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/></svg></span><span class="n" style="background:#1F8A5B">5</span><span class="c"><b>Gully Road Farm</b><span><span style="white-space:nowrap">Learmonth</span> · <span style="white-space:nowrap">6 ctn</span> · <span style="white-space:nowrap">755 kg</span></span></span></div>
+</section>
+    <section class="lane" aria-label="Run R-2211" style="border-color:var(--amber-line)">
+  <div class="lhead"><span class="swatch" style="background:#2F6FB8"></span><div style="flex:1;min-width:0"><div class="t">R-2211 · Raj</div><div class="s">TMS-018 · van</div></div><span class="pill p-amber">Nearly full</span></div>
+  <div class="meter a"><div class="row"><span>Weight</span><span><b>1,120</b> / 1,200 kg</span></div><div class="track" role="img" aria-label="Weight 1,120 of 1,200 kg"><span style="width:93%"></span></div></div>
+  <div class="meter a"><div class="row"><span>Volume</span><span><b>8.6</b> / 9 m³</span></div><div class="track" role="img" aria-label="Volume 8.6 of 9 m³"><span style="width:96%"></span></div></div>
+  <div class="stop"><span class="h" aria-label="Drag to reorder"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/></svg></span><span class="n" style="background:#2F6FB8">1</span><span class="c"><b>Corner Hardware</b><span><span style="white-space:nowrap">Sebastopol</span> · <span style="white-space:nowrap">12 ctn</span> · <span style="white-space:nowrap">310 kg</span></span></span></div>
+  <div class="stop"><span class="h" aria-label="Drag to reorder"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/></svg></span><span class="n" style="background:#2F6FB8">2</span><span class="c"><b>Little Lane Cafe</b><span><span style="white-space:nowrap">Ballarat Central</span> · <span style="white-space:nowrap">6 ctn</span> · <span style="white-space:nowrap">96 kg</span></span></span></div>
+  <div class="stop"><span class="h" aria-label="Drag to reorder"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/></svg></span><span class="n" style="background:#2F6FB8">3</span><span class="c"><b>Main Street Chemist</b><span><span style="white-space:nowrap">Creswick</span> · <span style="white-space:nowrap">3 ctn</span> · <span style="white-space:nowrap">22 kg</span></span></span></div>
+  <div class="stop"><span class="h" aria-label="Drag to reorder"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/></svg></span><span class="n" style="background:#2F6FB8">4</span><span class="c"><b>Mill Lane Florist</b><span><span style="white-space:nowrap">Daylesford</span> · <span style="white-space:nowrap">9 ctn</span> · <span style="white-space:nowrap">380 kg</span></span></span></div>
+  <div class="stop"><span class="h" aria-label="Drag to reorder"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/></svg></span><span class="n" style="background:#2F6FB8">5</span><span class="c"><b>Springs Road Hardware</b><span><span style="white-space:nowrap">Hepburn</span> · <span style="white-space:nowrap">10 ctn</span> · <span style="white-space:nowrap">312 kg</span></span></span></div>
+  <div class="msg a"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg><span>80 kg and 0.4 m³ left. Small drops only.</span></div>
+</section>
+    <section class="lane over" aria-label="Run R-2212">
+  <div class="lhead"><span class="swatch" style="background:#7B5CC4"></span><div style="flex:1;min-width:0"><div class="t">R-2212 · Mel</div><div class="s">TMS-052 · rigid</div></div><span class="pill p-red">Over</span></div>
+  <div class="meter r"><div class="row"><span>Weight</span><span><b>4,780</b> / 4,500 kg</span></div><div class="track" role="img" aria-label="Weight 4,780 of 4,500 kg"><span style="width:100%"></span></div></div>
+  <div class="meter "><div class="row"><span>Volume</span><span><b>19.4</b> / 22 m³</span></div><div class="track" role="img" aria-label="Volume 19.4 of 22 m³"><span style="width:88%"></span></div></div>
+  <div class="msg r"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20Z"/><path d="M12 10v4M12 17h.01"/></svg><span><b>280 kg too heavy.</b> Move a stop to another run before printing the run sheet.</span></div>
+  <div class="stop"><span class="h" aria-label="Drag to reorder"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/></svg></span><span class="n" style="background:#7B5CC4">1</span><span class="c"><b>Wattle Flat Stockfeed</b><span><span style="white-space:nowrap">Ballarat East</span> · <span style="white-space:nowrap">22 ctn</span> · <span style="white-space:nowrap">1,640 kg</span></span></span></div>
+  <div class="stop"><span class="h" aria-label="Drag to reorder"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/></svg></span><span class="n" style="background:#7B5CC4">2</span><span class="c"><b>Union Street Bakehouse</b><span><span style="white-space:nowrap">Brown Hill</span> · <span style="white-space:nowrap">5 ctn</span> · <span style="white-space:nowrap">70 kg</span></span></span></div>
+  <div class="stop"><span class="h" aria-label="Drag to reorder"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/></svg></span><span class="n" style="background:#7B5CC4">3</span><span class="c"><b>Clarkes Hill Builders</b><span><span style="white-space:nowrap">Dean</span> · <span style="white-space:nowrap">18 ctn</span> · <span style="white-space:nowrap">2,210 kg</span></span></span></div>
+  <div class="stop"><span class="h" aria-label="Drag to reorder"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/></svg></span><span class="n" style="background:#7B5CC4">4</span><span class="c"><b>Lal Lal Garden Centre</b><span><span style="white-space:nowrap">Lal Lal</span> · <span style="white-space:nowrap">9 ctn</span> · <span style="white-space:nowrap">860 kg</span></span></span></div>
+</section>
+    <section class="lane out" aria-label="TMS-027, unavailable">
+  <div class="lhead"><span class="swatch" style="background:#A9B3AE"></span><div style="flex:1;min-width:0"><div class="t" style="color:var(--ink2)">TMS-027 · Tom</div><div class="s">ute · 600 kg</div></div></div>
+  <span class="pill p-red" style="align-self:flex-start"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></svg>Grounded</span>
+  <div style="font-size:13px;color:var(--ink2)">Failed pre-start at 6:40 am: <b style="color:var(--ink)">brake light</b>.</div>
+  <div class="small">Can't take a run until a fleet manager marks it fixed.</div>
+  <a href="Fleet.html" style="font-size:13px;font-weight:700">Open in Fleet</a>
+</section>
+  </div></div>
+  <div class="small">Print run sheets sends each run to the dispatch printer through Platen. When a run leaves, each consignment is marked shipped in Simple WMS.</div>
+</div>
+</section>
+</div>
+</body>
+</html>

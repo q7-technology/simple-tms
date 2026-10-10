@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Simple TMS carriers</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+:root{--page:#F3F6F4;--ink:#17251F;--ink2:#4B5A53;--muted:#5B6B63;--green:#1F8A5B;--green-h:#146B45;--tint:#E7F4EC;--tint-ink:#146B45;
+--line:#DCE7DF;--line2:#C9DBCF;--card-line:#E3EDE6;--row:#EDF3EF;--field:#F7FAF8;
+--amber:#E8A317;--amber-ink:#8A5A00;--amber-bg:#FFF3D6;--amber-line:#F0D08A;
+--red:#C9343D;--red-ink:#A3242C;--red-bg:#FCE9EA;--red-line:#F1B9BD;
+--blue:#2F6FB8;--violet:#7B5CC4;--road:#5B6475;--verge:#E3F1E6;
+--shadow:0 6px 20px rgba(23,37,31,.08);--shadow-lg:0 10px 30px rgba(23,37,31,.12)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);font-family:Manrope,system-ui,sans-serif}
+a{color:#146B45}a:hover{color:#0E5034}
+button,input,select,textarea{font:inherit;color:inherit}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.eyebrow{font-size:12px;font-weight:800;letter-spacing:1.2px;color:var(--muted)}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:800;white-space:nowrap;line-height:1.3}
+.p-green{background:#E3F3EA;color:#146B45}.p-amber{background:var(--amber-bg);color:var(--amber-ink)}.p-red{background:var(--red-bg);color:var(--red-ink)}
+.p-grey{background:#EEF2EF;color:#4B5A53}.p-blue{background:#E4EEF9;color:#235596}.p-violet{background:#EEE9F9;color:#5F44A3}
+.btn{height:44px;padding:0 16px;border-radius:12px;border:1px solid var(--line2);background:#fff;color:var(--ink);font-weight:700;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;white-space:nowrap}
+.btn:hover{color:var(--ink);border-color:var(--green)}
+.btn.primary{border:0;background:var(--green);color:#fff;font-weight:800}.btn.primary:hover{background:var(--green-h);color:#fff}
+.field{height:44px;padding:0 12px;border:1px solid var(--line2);border-radius:12px;background:#fff;font-size:14px;color:var(--ink);width:100%}
+.search{display:flex;align-items:center;gap:8px;height:44px;padding:0 14px;border:1px solid var(--line);border-radius:12px;background:var(--field);color:var(--muted);font-size:14px}
+.search input{flex:1;border:0;background:transparent;outline:none;min-width:0;color:var(--ink)}
+.search input::placeholder{color:var(--muted)}
+.dot{width:10px;height:10px;border-radius:50%;flex:none;display:inline-block}
+.bar{height:10px;border-radius:999px;background:#E3EDE6;overflow:hidden}.bar>span{display:block;height:100%;border-radius:999px;background:var(--green)}
+.num{font-variant-numeric:tabular-nums}
+.small{font-size:12px;color:var(--muted)}
+.muted{color:var(--muted)}
+
+.drawer-wrap{min-height:100vh;position:relative;overflow:hidden}
+.dim{position:absolute;inset:0}
+.dim img{display:block;width:100%;max-width:1540px;height:auto;margin:0 auto;filter:blur(2px)}
+.dim::after{content:"";position:absolute;inset:0;background:rgba(23,37,31,.38)}
+.drawer{position:absolute;top:0;right:0;bottom:0;width:72%;background:#fff;border-radius:24px 0 0 24px;box-shadow:-20px 0 50px rgba(23,37,31,.25);display:flex;flex-direction:column}
+.dhead{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:22px 28px 14px}
+.dhead h1{margin:0;font-size:26px;font-weight:800;letter-spacing:-.3px}
+.dhead .sub{font-size:13px;color:var(--muted)}
+.closebtn{width:44px;height:44px;border-radius:12px;background:var(--page);color:var(--ink);display:grid;place-items:center;text-decoration:none;flex:none}
+.who{display:flex;align-items:center;gap:8px;height:44px;padding:0 12px 0 6px;border-radius:999px;background:var(--page);font-size:13px;font-weight:700;color:var(--ink2)}
+.who b{width:32px;height:32px;border-radius:999px;background:var(--green);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:800}
+.tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:0 28px 14px}
+.dbody{flex:1;min-height:0;overflow:auto;padding:0 28px 40px;display:flex;flex-direction:column;gap:16px}
+.dbody>*{flex:none}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.stat{padding:16px;border-radius:16px;border:1px solid var(--card-line)}
+.stat .v{font-size:30px;font-weight:800}.stat .d{font-size:13px;color:var(--ink2)}
+.stat.amber{border-color:var(--amber-line);background:#FFFBEF}.stat.amber .eyebrow,.stat.amber .v{color:var(--amber-ink)}
+.stat.red{border-color:var(--red-line);background:#FFF6F6}.stat.red .eyebrow,.stat.red .v{color:var(--red-ink)}
+.tabs{display:flex;flex-wrap:wrap;gap:6px}
+.tab{height:40px;padding:0 14px;border-radius:999px;cursor:pointer;font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:#fff;color:var(--ink)}
+.tab i{font-style:normal;min-width:20px;padding:1px 6px;border-radius:999px;font-size:12px;font-weight:800;background:var(--tint);color:var(--tint-ink);text-align:center}
+.tab[aria-selected=true]{background:var(--green);border-color:var(--green);color:#fff}.tab[aria-selected=true] i{background:rgba(255,255,255,.22);color:#fff}
+.tab i.r{background:var(--red-bg);color:var(--red-ink)}.tab i.a{background:var(--amber-bg);color:var(--amber-ink)}
+.split{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start}
+.tablewrap{flex:999 1 460px;min-width:0;overflow-x:auto;border:1px solid var(--card-line);border-radius:16px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{padding:12px 10px;font-weight:800;text-align:left;color:var(--muted);font-size:12px;letter-spacing:1px;white-space:nowrap}
+td{padding:6px 10px;border-top:1px solid var(--row);height:56px}
+tr.sel td{background:#F1F8F4}
+.rowbtn{min-height:44px;padding:0 10px;border-radius:10px;font-weight:800;font-size:14px;cursor:pointer;white-space:nowrap;border:2px solid transparent;background:transparent;color:var(--ink)}
+tr.sel .rowbtn{border-color:var(--green);background:var(--tint)}
+.aside{flex:1 1 300px;max-width:380px;min-width:0;padding:18px;border-radius:18px;background:#F7FAF8;border:1px solid var(--card-line);display:flex;flex-direction:column;gap:14px}
+.box{border-radius:12px;background:#fff;border:1px solid var(--card-line)}
+.box>div{display:flex;justify-content:space-between;gap:8px;padding:8px 12px;border-top:1px solid var(--row);font-size:13px}
+.box>div:first-child{border-top:0}
+@media (max-width:960px){.drawer{position:static !important;width:auto !important;border-radius:0 !important}.dim{display:none !important}}
+
+.drawer{width:74%}
+.grp{border:1px solid var(--card-line);border-radius:16px;overflow:hidden}
+.ghead{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:14px 16px;background:#F7FAF8}
+.ghead .t{font-size:16px;font-weight:800}
+.ghead .s{font-size:13px;color:var(--ink2)}
+.grp table td{height:52px}
+.grp.done{opacity:.95}
+.connote{padding:16px;border-radius:16px;border:2px dashed var(--green);background:#fff;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
+.connote label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:700}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
+tr.wait td{background:#FFFBEF}
+</style>
+</head>
+<body>
+<div class="drawer-wrap">
+<div class="dim" aria-hidden="true"><img src="region.svg" alt=""></div>
+<section class="drawer" aria-label="Carriers">
+<header class="dhead">
+  <a href="Main.html" class="closebtn" aria-label="Back to the map"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></a>
+  <div style="flex:1;min-width:200px">
+    <div class="eyebrow" style="color:var(--green)">BALLARAT DEPOT · TODAY</div>
+    <h1>Carriers</h1>
+    <div class="sub">Freight going with outside carriers. Choose the carrier, type or scan the con note, print the manifest.</div>
+  </div>
+  <span class="who"><b>JO</b>Dispatcher</span>
+</header>
+<div class="dbody">
+  <div class="stats">
+    <div class="stat amber"><div class="eyebrow">NEEDS A CON NOTE</div><div class="v">1</div><div class="d">C-30426 · Mill Lane Florist</div></div>
+    <div class="stat"><div class="eyebrow">WAITING FOR PICKUP</div><div class="v">4</div><div class="d">on the carrier bay · 2 carriers</div></div>
+    <div class="stat"><div class="eyebrow">COLLECTED TODAY</div><div class="v">2</div><div class="d">Plains Parcels · 10:15 am</div></div>
+  </div>
+
+  <section class="connote" aria-label="Add a con note">
+    <div style="display:flex;align-items:center;gap:12px;flex:1 1 100%">
+      <span style="color:var(--green)"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M8 7v10M12 7v10M16 7v10"/></svg></span>
+      <div><div style="font-size:16px;font-weight:800">Con note for C-30426 · Mill Lane Florist</div><div class="small">Scan the carrier's label with the desk scanner, or type the number.</div></div>
+    </div>
+    <label style="flex:1 1 200px">Carrier<select class="field"><option>Ridgeline Express (sample)</option><option>Valley Freight (sample)</option><option>Plains Parcels (sample)</option></select></label>
+    <label style="flex:2 1 240px">Con note number<input class="field mono" type="text" placeholder="e.g. RX-77310049" autocomplete="off"></label>
+    <button type="button" class="btn primary">Save con note</button>
+  </section>
+
+  <section class="grp" aria-label="Ridgeline Express">
+    <div class="ghead">
+      <span style="width:40px;height:40px;border-radius:12px;background:#fff;border:1px solid var(--card-line);display:grid;place-items:center;color:var(--ink2)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6h12v10H2Z"/><path d="M14 9h4.5L22 12.5V16h-8Z"/><circle cx="6.5" cy="17.5" r="2"/><circle cx="17.5" cy="17.5" r="2"/></svg></span>
+      <div style="flex:1;min-width:200px"><div class="t">Ridgeline Express (sample)</div><div class="s">Pickup about 3:30 pm · 2 consignments · 7 cartons · 96 kg</div></div>
+      <span class="pill p-amber">1 needs a con note</span>
+      <button type="button" class="btn" disabled style="opacity:.55;cursor:not-allowed" aria-describedby="rx-why"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 9V3h10v6M7 17H4v-7h16v7h-3"/><path d="M7 14h10v7H7Z"/></svg>Print manifest</button>
+      <span id="rx-why" class="small" style="flex-basis:100%;text-align:right">Add the missing con note to print this manifest.</span>
+    </div>
+    <div style="overflow-x:auto"><table style="min-width:620px;table-layout:fixed"><colgroup><col style="width:16%"><col style="width:28%"><col style="width:8%"><col style="width:8%"><col style="width:20%"><col style="width:20%"></colgroup><thead><tr><th>CONSIGNMENT</th><th>CUSTOMER</th><th>CTN</th><th>KG</th><th>CON NOTE</th><th>STATUS</th></tr></thead><tbody>
+      <tr class="wait"><td style="font-weight:800;white-space:nowrap">C-30426</td><td style="white-space:nowrap"><b>Mill Lane Florist</b><div class="small">Daylesford</div></td><td class="num">2</td><td class="num">24</td><td><span class="small" style="color:var(--amber-ink);font-weight:700">Not added yet</span></td><td><span class="pill p-amber">Needs con note</span></td></tr>
+      <tr><td style="font-weight:800;white-space:nowrap">C-30433</td><td style="white-space:nowrap"><b>Hilltop Joinery</b><div class="small">Bacchus Marsh</div></td><td class="num">5</td><td class="num">72</td><td><span class="mono">RX-77310042</span></td><td><span class="pill p-grey">On the bay</span></td></tr>
+    </tbody></table></div>
+  </section>
+
+  <section class="grp" aria-label="Valley Freight">
+    <div class="ghead">
+      <span style="width:40px;height:40px;border-radius:12px;background:#fff;border:1px solid var(--card-line);display:grid;place-items:center;color:var(--ink2)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6h12v10H2Z"/><path d="M14 9h4.5L22 12.5V16h-8Z"/><circle cx="6.5" cy="17.5" r="2"/><circle cx="17.5" cy="17.5" r="2"/></svg></span>
+      <div style="flex:1;min-width:200px"><div class="t">Valley Freight (sample)</div><div class="s">Pickup about 2:00 pm · 2 consignments · 9 cartons · 142 kg</div></div>
+      <span class="pill p-green">Ready</span>
+      <button type="button" class="btn primary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 9V3h10v6M7 17H4v-7h16v7h-3"/><path d="M7 14h10v7H7Z"/></svg>Print manifest</button>
+    </div>
+    <div style="overflow-x:auto"><table style="min-width:620px;table-layout:fixed"><colgroup><col style="width:16%"><col style="width:28%"><col style="width:8%"><col style="width:8%"><col style="width:20%"><col style="width:20%"></colgroup><thead><tr><th>CONSIGNMENT</th><th>CUSTOMER</th><th>CTN</th><th>KG</th><th>CON NOTE</th><th>STATUS</th></tr></thead><tbody>
+      <tr><td style="font-weight:800;white-space:nowrap">C-30424</td><td style="white-space:nowrap"><b>Paddock Produce</b><div class="small">Clunes</div></td><td class="num">4</td><td class="num">88</td><td><span class="mono">VF-00418821</span></td><td><span class="pill p-grey">On the bay</span></td></tr>
+      <tr><td style="font-weight:800;white-space:nowrap">C-30428</td><td style="white-space:nowrap"><b>Old Mill Books</b><div class="small">Castlemaine</div></td><td class="num">5</td><td class="num">54</td><td><span class="mono">VF-00418822</span></td><td><span class="pill p-grey">On the bay</span></td></tr>
+    </tbody></table></div>
+  </section>
+
+  <section class="grp done" aria-label="Plains Parcels">
+    <div class="ghead">
+      <span style="width:40px;height:40px;border-radius:12px;background:#fff;border:1px solid var(--card-line);display:grid;place-items:center;color:var(--ink2)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6h12v10H2Z"/><path d="M14 9h4.5L22 12.5V16h-8Z"/><circle cx="6.5" cy="17.5" r="2"/><circle cx="17.5" cy="17.5" r="2"/></svg></span>
+      <div style="flex:1;min-width:200px"><div class="t">Plains Parcels (sample)</div><div class="s">Collected 10:15 am · manifest M-0192 printed by Platen · marked shipped in Simple WMS</div></div>
+      <span class="pill p-green"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>Collected</span>
+      <button type="button" class="btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 9V3h10v6M7 17H4v-7h16v7h-3"/><path d="M7 14h10v7H7Z"/></svg>Reprint</button>
+    </div>
+  </section>
+
+  <div class="small">Manifests print on the dispatch printer through Platen. Carrier bookings are by hand in this version: no carrier connections yet.</div>
+</div>
+</section>
+</div>
+</body>
+</html>

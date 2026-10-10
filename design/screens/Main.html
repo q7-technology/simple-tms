@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Simple TMS map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+:root{--page:#F3F6F4;--ink:#17251F;--ink2:#4B5A53;--muted:#5B6B63;--green:#1F8A5B;--green-h:#146B45;--tint:#E7F4EC;--tint-ink:#146B45;
+--line:#DCE7DF;--line2:#C9DBCF;--card-line:#E3EDE6;--row:#EDF3EF;--field:#F7FAF8;
+--amber:#E8A317;--amber-ink:#8A5A00;--amber-bg:#FFF3D6;--amber-line:#F0D08A;
+--red:#C9343D;--red-ink:#A3242C;--red-bg:#FCE9EA;--red-line:#F1B9BD;
+--blue:#2F6FB8;--violet:#7B5CC4;--road:#5B6475;--verge:#E3F1E6;
+--shadow:0 6px 20px rgba(23,37,31,.08);--shadow-lg:0 10px 30px rgba(23,37,31,.12)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);font-family:Manrope,system-ui,sans-serif}
+a{color:#146B45}a:hover{color:#0E5034}
+button,input,select,textarea{font:inherit;color:inherit}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.eyebrow{font-size:12px;font-weight:800;letter-spacing:1.2px;color:var(--muted)}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:800;white-space:nowrap;line-height:1.3}
+.p-green{background:#E3F3EA;color:#146B45}.p-amber{background:var(--amber-bg);color:var(--amber-ink)}.p-red{background:var(--red-bg);color:var(--red-ink)}
+.p-grey{background:#EEF2EF;color:#4B5A53}.p-blue{background:#E4EEF9;color:#235596}.p-violet{background:#EEE9F9;color:#5F44A3}
+.btn{height:44px;padding:0 16px;border-radius:12px;border:1px solid var(--line2);background:#fff;color:var(--ink);font-weight:700;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;white-space:nowrap}
+.btn:hover{color:var(--ink);border-color:var(--green)}
+.btn.primary{border:0;background:var(--green);color:#fff;font-weight:800}.btn.primary:hover{background:var(--green-h);color:#fff}
+.field{height:44px;padding:0 12px;border:1px solid var(--line2);border-radius:12px;background:#fff;font-size:14px;color:var(--ink);width:100%}
+.search{display:flex;align-items:center;gap:8px;height:44px;padding:0 14px;border:1px solid var(--line);border-radius:12px;background:var(--field);color:var(--muted);font-size:14px}
+.search input{flex:1;border:0;background:transparent;outline:none;min-width:0;color:var(--ink)}
+.search input::placeholder{color:var(--muted)}
+.dot{width:10px;height:10px;border-radius:50%;flex:none;display:inline-block}
+.bar{height:10px;border-radius:999px;background:#E3EDE6;overflow:hidden}.bar>span{display:block;height:100%;border-radius:999px;background:var(--green)}
+.num{font-variant-numeric:tabular-nums}
+.small{font-size:12px;color:var(--muted)}
+.muted{color:var(--muted)}
+
+.drawer-wrap{min-height:100vh;position:relative;overflow:hidden}
+.dim{position:absolute;inset:0}
+.dim img{display:block;width:100%;max-width:1540px;height:auto;margin:0 auto;filter:blur(2px)}
+.dim::after{content:"";position:absolute;inset:0;background:rgba(23,37,31,.38)}
+.drawer{position:absolute;top:0;right:0;bottom:0;width:72%;background:#fff;border-radius:24px 0 0 24px;box-shadow:-20px 0 50px rgba(23,37,31,.25);display:flex;flex-direction:column}
+.dhead{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:22px 28px 14px}
+.dhead h1{margin:0;font-size:26px;font-weight:800;letter-spacing:-.3px}
+.dhead .sub{font-size:13px;color:var(--muted)}
+.closebtn{width:44px;height:44px;border-radius:12px;background:var(--page);color:var(--ink);display:grid;place-items:center;text-decoration:none;flex:none}
+.who{display:flex;align-items:center;gap:8px;height:44px;padding:0 12px 0 6px;border-radius:999px;background:var(--page);font-size:13px;font-weight:700;color:var(--ink2)}
+.who b{width:32px;height:32px;border-radius:999px;background:var(--green);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:800}
+.tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:0 28px 14px}
+.dbody{flex:1;min-height:0;overflow:auto;padding:0 28px 40px;display:flex;flex-direction:column;gap:16px}
+.dbody>*{flex:none}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.stat{padding:16px;border-radius:16px;border:1px solid var(--card-line)}
+.stat .v{font-size:30px;font-weight:800}.stat .d{font-size:13px;color:var(--ink2)}
+.stat.amber{border-color:var(--amber-line);background:#FFFBEF}.stat.amber .eyebrow,.stat.amber .v{color:var(--amber-ink)}
+.stat.red{border-color:var(--red-line);background:#FFF6F6}.stat.red .eyebrow,.stat.red .v{color:var(--red-ink)}
+.tabs{display:flex;flex-wrap:wrap;gap:6px}
+.tab{height:40px;padding:0 14px;border-radius:999px;cursor:pointer;font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:#fff;color:var(--ink)}
+.tab i{font-style:normal;min-width:20px;padding:1px 6px;border-radius:999px;font-size:12px;font-weight:800;background:var(--tint);color:var(--tint-ink);text-align:center}
+.tab[aria-selected=true]{background:var(--green);border-color:var(--green);color:#fff}.tab[aria-selected=true] i{background:rgba(255,255,255,.22);color:#fff}
+.tab i.r{background:var(--red-bg);color:var(--red-ink)}.tab i.a{background:var(--amber-bg);color:var(--amber-ink)}
+.split{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start}
+.tablewrap{flex:999 1 460px;min-width:0;overflow-x:auto;border:1px solid var(--card-line);border-radius:16px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{padding:12px 10px;font-weight:800;text-align:left;color:var(--muted);font-size:12px;letter-spacing:1px;white-space:nowrap}
+td{padding:6px 10px;border-top:1px solid var(--row);height:56px}
+tr.sel td{background:#F1F8F4}
+.rowbtn{min-height:44px;padding:0 10px;border-radius:10px;font-weight:800;font-size:14px;cursor:pointer;white-space:nowrap;border:2px solid transparent;background:transparent;color:var(--ink)}
+tr.sel .rowbtn{border-color:var(--green);background:var(--tint)}
+.aside{flex:1 1 300px;max-width:380px;min-width:0;padding:18px;border-radius:18px;background:#F7FAF8;border:1px solid var(--card-line);display:flex;flex-direction:column;gap:14px}
+.box{border-radius:12px;background:#fff;border:1px solid var(--card-line)}
+.box>div{display:flex;justify-content:space-between;gap:8px;padding:8px 12px;border-top:1px solid var(--row);font-size:13px}
+.box>div:first-child{border-top:0}
+@media (max-width:960px){.drawer{position:static !important;width:auto !important;border-radius:0 !important}.dim{display:none !important}}
+
+.app{height:100vh;min-height:680px;display:flex;flex-direction:column}
+.hdr{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;padding:14px 24px;background:#fff;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px;font-size:19px;font-weight:800;letter-spacing:-.2px}
+.hdr .search{flex:1 1 280px;max-width:460px}
+.hright{display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap}
+.live{display:flex;align-items:center;gap:6px;height:36px;padding:0 12px;border-radius:999px;background:#E3F3EA;color:#146B45;font-size:13px;font-weight:700}
+.tog{width:44px;height:44px;border-radius:12px;cursor:pointer;display:grid;place-items:center;border:1px solid var(--green);background:var(--tint);color:var(--tint-ink)}
+.togtext{height:44px;padding:0 14px;border-radius:12px;cursor:pointer;display:flex;align-items:center;gap:8px;border:1px solid var(--green);background:var(--tint);color:var(--tint-ink);font-weight:800;font-size:13px}
+.avatar{width:44px;height:44px;border-radius:50%;border:0;background:var(--green);color:#fff;font-weight:800;font-size:14px;cursor:pointer}
+.stage{position:relative;flex:1;overflow:hidden}
+.stage>img{display:block;width:100%;max-width:1540px;height:auto;margin:0 auto}
+.ov{position:absolute}
+.col{display:flex;flex-direction:column;gap:12px}
+.hud{padding:10px 12px;border-radius:14px;background:#fff;box-shadow:var(--shadow)}
+.hud .eyebrow{font-size:11px}
+.hud .v{font-size:24px;font-weight:800}
+.panel{padding:16px;border-radius:16px;background:#fff;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:10px}
+.zoom{display:flex;flex-direction:column;gap:6px;padding:6px;border-radius:14px;background:#fff;box-shadow:var(--shadow)}
+.zoom button{width:44px;height:44px;border:0;border-radius:10px;background:transparent;color:var(--ink);cursor:pointer;display:grid;place-items:center}
+.zoom button:hover{background:var(--page)}
+.feed{display:flex;gap:10px;align-items:flex-start;font-size:13px}
+.feed .dot{margin-top:4px}
+.feed time{color:var(--muted);white-space:nowrap}
+.nav{display:flex;flex-wrap:wrap;gap:6px;padding:6px;border-radius:16px;background:#17251F;box-shadow:0 10px 30px rgba(23,37,31,.25)}
+.nav a{height:48px;padding:0 16px;border-radius:12px;color:#fff;font-weight:700;font-size:14px;text-decoration:none;display:flex;align-items:center;gap:8px}
+.nav a:hover{background:rgba(255,255,255,.08);color:#fff}
+.nav a.on{background:var(--green);font-weight:800}
+.nav a i{font-style:normal;padding:1px 7px;border-radius:999px;background:rgba(255,255,255,.22);font-size:12px;font-weight:800}
+.nav a i.a{background:var(--amber);color:#17251F}
+dl.kv{margin:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px;font-size:13px}
+dl.kv dt{color:var(--muted)}dl.kv dd{margin:2px 0 0;font-weight:700}
+@media (max-width:960px){.app{height:auto}.ov{position:static;width:auto !important;max-width:none !important;transform:none !important}.stage{display:flex;flex-direction:column;gap:12px;padding:12px}.hide-sm{display:none !important}}
+</style>
+</head>
+<body>
+<div class="app">
+<header class="hdr">
+  <div class="brand"><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 28 10 16 17 4 10Z" fill="#5BC28F"/><path d="M4 10 16 17V30L4 23Z" fill="#1F8A5B"/><path d="M28 10 16 17V30L28 23Z" fill="#146B45"/><path d="M10 6.5 22 13.5v4" fill="none" stroke="#E7F4EC" stroke-width="2"/></svg><span>Simple TMS</span></div>
+  <label class="search"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span class="sr">Search</span><input type="search" placeholder="Find a consignment, customer or con note"></label>
+  <div class="hright">
+    <span class="live"><span class="dot" style="width:8px;height:8px;background:#1F8A5B"></span>Live · Tue 11:18 am</span>
+    <button type="button" class="togtext" aria-pressed="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/></svg>Game touches on</button>
+    <button type="button" class="tog" aria-pressed="true" aria-label="Day and night follow the depot clock"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z"/></svg></button>
+    <button type="button" class="tog" aria-pressed="true" aria-label="Game sounds"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg></button>
+    <button type="button" class="avatar" aria-label="Account: Jo">JO</button>
+  </div>
+</header>
+
+<main class="stage">
+  <img src="region.svg" alt="Pretend region: the green Simple TMS depot with a carrier bay, roads, customer stops with numbered pins and delivery trucks on their runs">
+
+  <div class="ov col" style="top:20px;left:24px;width:318px">
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+      <a href="PlanRuns.html" class="hud" style="text-decoration:none;color:inherit"><div class="eyebrow" style="color:var(--amber-ink)">TO PLAN</div><div class="v">14</div></a>
+      <div class="hud"><div class="eyebrow" style="color:var(--green)">ON ROAD</div><div class="v">21</div></div>
+      <div class="hud"><div class="eyebrow" style="color:var(--ink2)">DELIVERED</div><div class="v">17</div></div>
+    </div>
+    <section class="panel" aria-label="Today's goal">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span class="eyebrow">TODAY'S GOAL</span><a href="#goal" style="font-size:13px;font-weight:700">Edit</a></div>
+      <div style="font-size:18px;font-weight:800">Deliver 38 stops</div>
+      <div class="bar" style="height:12px" role="progressbar" aria-label="Stops delivered" aria-valuemin="0" aria-valuemax="38" aria-valuenow="17"><span style="width:45%"></span></div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--ink2)"><span><b style="color:var(--ink)">17</b> delivered</span><span>21 to go</span></div>
+      <div class="small">Suggested from your last 4 weeks. You usually deliver about 35.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <span class="pill p-green" style="padding:6px 10px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3c1 4 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-6 1-9Z"/></svg>5-day no-fail streak</span>
+        <span class="pill p-grey" style="padding:6px 10px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0Z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M9 20h6"/></svg>Badge: Early Bird</span>
+      </div>
+    </section>
+  </div>
+
+  <section class="ov panel" aria-label="Selected truck" style="top:20px;right:24px;width:330px;padding:18px;border-radius:18px;box-shadow:var(--shadow-lg);gap:14px">
+    <div style="display:flex;align-items:center;gap:12px">
+      <div style="width:44px;height:44px;border-radius:12px;background:var(--tint);display:grid;place-items:center;color:var(--green)"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6h12v10H2Z"/><path d="M14 9h4.5L22 12.5V16h-8Z"/><circle cx="6.5" cy="17.5" r="2"/><circle cx="17.5" cy="17.5" r="2"/></svg></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;color:var(--muted);font-weight:700">TMS-041 · Kim · rigid</div>
+        <div style="font-size:18px;font-weight:800">Run R-2207</div>
+      </div>
+      <button type="button" aria-label="Close" style="width:36px;height:36px;border:0;border-radius:10px;background:var(--page);color:var(--ink2);cursor:pointer;display:grid;place-items:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span class="pill p-green">On the road</span><span class="small" style="display:flex;align-items:center;gap:4px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 21 3l-8 18-2-8Z"/></svg>Last heard 30 s ago</span></div>
+    <div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px"><b>7 of 12 stops</b><span class="muted">5 to go</span></div>
+      <div role="img" aria-label="7 of 12 stops done" style="display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:3px"><span style="height:8px;border-radius:999px;background:#1F8A5B"></span><span style="height:8px;border-radius:999px;background:#1F8A5B"></span><span style="height:8px;border-radius:999px;background:#1F8A5B"></span><span style="height:8px;border-radius:999px;background:#1F8A5B"></span><span style="height:8px;border-radius:999px;background:#1F8A5B"></span><span style="height:8px;border-radius:999px;background:#1F8A5B"></span><span style="height:8px;border-radius:999px;background:#1F8A5B"></span><span style="height:8px;border-radius:999px;background:#7FC3A0"></span><span style="height:8px;border-radius:999px;background:#E3EDE6"></span><span style="height:8px;border-radius:999px;background:#E3EDE6"></span><span style="height:8px;border-radius:999px;background:#E3EDE6"></span><span style="height:8px;border-radius:999px;background:#E3EDE6"></span></div>
+    </div>
+    <dl class="kv">
+      <div><dt>Next stop</dt><dd>8 · Ridge Auto Workshop</dd></div>
+      <div><dt>Arrives</dt><dd>about 11:40</dd></div>
+      <div><dt>Load left</dt><dd>2,140 kg · 9.8 m³</dd></div>
+      <div><dt>Back at depot</dt><dd>about 2:15 pm</dd></div>
+    </dl>
+    <div class="small" style="margin-top:-4px">Times are estimates from the stop order and Kim's average time per stop today.</div>
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
+      <a href="PlanRuns.html" class="btn primary" style="height:46px;font-size:15px">Open run<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+      <button type="button" class="btn" style="height:46px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>Where is it</button>
+    </div>
+  </section>
+
+  <div class="ov zoom hide-sm" style="top:50%;right:24px;transform:translateY(60px)">
+    <button type="button" aria-label="Zoom in"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+    <button type="button" aria-label="Zoom out"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+    <button type="button" aria-label="Back to the whole region"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
+  </div>
+
+  <section class="ov panel" aria-label="What just happened" style="bottom:24px;left:24px;width:350px">
+    <span class="eyebrow">WHAT JUST HAPPENED</span>
+    <div class="feed"><span class="dot" style="background:var(--green)"></span><span style="flex:1">Kim delivered stop 7 · Main Street Chemist</span><time>2 min</time></div>
+    <div class="feed"><span class="dot" style="background:var(--violet)"></span><span style="flex:1">Mel passed the pre-start on TMS-052</span><time>9 min</time></div>
+    <div class="feed"><span class="dot" style="background:#B4844A"></span><span style="flex:1">C-30431 packed in Simple WMS</span><time>14 min</time></div>
+    <div class="feed"><span class="dot" style="background:var(--red)"></span><span style="flex:1">TMS-027 grounded · brake light out</span><time>4 h</time></div>
+  </section>
+
+  <nav class="ov nav" aria-label="Main drawers" style="bottom:24px;left:50%;transform:translateX(-28%)">
+    <a href="PlanRuns.html" class="on"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M8 19h8a3.5 3.5 0 0 0 0-7H8a3.5 3.5 0 0 1 0-7h8"/></svg>Plan runs<i>14</i></a>
+    <a href="Consignments.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 20 7.5v9L12 21 4 16.5v-9Z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></svg>Consignments</a>
+    <a href="Carriers.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l4-4 4 2 3-2 7 5-3 3"/><path d="M7 7v6l4 4 3-1 4-2"/></svg>Carriers<i class="a">1</i></a>
+    <a href="Fleet.html"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6h12v10H2Z"/><path d="M14 9h4.5L22 12.5V16h-8Z"/><circle cx="6.5" cy="17.5" r="2"/><circle cx="17.5" cy="17.5" r="2"/></svg>Fleet</a>
+  </nav>
+</main>
+</div>
+</body>
+</html>

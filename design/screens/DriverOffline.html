@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=390">
+<title>Simple TMS driver offline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+:root{--page:#F3F6F4;--ink:#17251F;--ink2:#4B5A53;--muted:#5B6B63;--green:#1F8A5B;--green-h:#146B45;--tint:#E7F4EC;--tint-ink:#146B45;
+--line:#DCE7DF;--line2:#C9DBCF;--card-line:#E3EDE6;--row:#EDF3EF;--field:#F7FAF8;
+--amber:#E8A317;--amber-ink:#8A5A00;--amber-bg:#FFF3D6;--amber-line:#F0D08A;
+--red:#C9343D;--red-ink:#A3242C;--red-bg:#FCE9EA;--red-line:#F1B9BD;
+--blue:#2F6FB8;--violet:#7B5CC4;--road:#5B6475;--verge:#E3F1E6;
+--shadow:0 6px 20px rgba(23,37,31,.08);--shadow-lg:0 10px 30px rgba(23,37,31,.12)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);font-family:Manrope,system-ui,sans-serif}
+a{color:#146B45}a:hover{color:#0E5034}
+button,input,select,textarea{font:inherit;color:inherit}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.eyebrow{font-size:12px;font-weight:800;letter-spacing:1.2px;color:var(--muted)}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:800;white-space:nowrap;line-height:1.3}
+.p-green{background:#E3F3EA;color:#146B45}.p-amber{background:var(--amber-bg);color:var(--amber-ink)}.p-red{background:var(--red-bg);color:var(--red-ink)}
+.p-grey{background:#EEF2EF;color:#4B5A53}.p-blue{background:#E4EEF9;color:#235596}.p-violet{background:#EEE9F9;color:#5F44A3}
+.btn{height:44px;padding:0 16px;border-radius:12px;border:1px solid var(--line2);background:#fff;color:var(--ink);font-weight:700;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;white-space:nowrap}
+.btn:hover{color:var(--ink);border-color:var(--green)}
+.btn.primary{border:0;background:var(--green);color:#fff;font-weight:800}.btn.primary:hover{background:var(--green-h);color:#fff}
+.field{height:44px;padding:0 12px;border:1px solid var(--line2);border-radius:12px;background:#fff;font-size:14px;color:var(--ink);width:100%}
+.search{display:flex;align-items:center;gap:8px;height:44px;padding:0 14px;border:1px solid var(--line);border-radius:12px;background:var(--field);color:var(--muted);font-size:14px}
+.search input{flex:1;border:0;background:transparent;outline:none;min-width:0;color:var(--ink)}
+.search input::placeholder{color:var(--muted)}
+.dot{width:10px;height:10px;border-radius:50%;flex:none;display:inline-block}
+.bar{height:10px;border-radius:999px;background:#E3EDE6;overflow:hidden}.bar>span{display:block;height:100%;border-radius:999px;background:var(--green)}
+.num{font-variant-numeric:tabular-nums}
+.small{font-size:12px;color:var(--muted)}
+.muted{color:var(--muted)}
+
+html,body{min-height:100%}body{display:flex;justify-content:center;padding:24px 0;background:#E1ECE4}
+.phone{position:relative;width:390px;height:844px;padding:18px 18px 16px;background:var(--page);display:flex;flex-direction:column;gap:12px;overflow:hidden}
+.top{display:flex;align-items:center;gap:10px;flex:none}
+.back{width:44px;height:44px;flex:none;border-radius:14px;background:#fff;border:1px solid var(--line);color:var(--ink);display:grid;place-items:center;text-decoration:none}
+.ttl{font-size:18px;font-weight:800;line-height:1.2}.st{font-size:12px;color:var(--ink2)}
+.chip{padding:6px 10px;border-radius:999px;background:#fff;border:1px solid var(--line);font-size:12px;font-weight:800;color:var(--ink2);white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+.scroll{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:10px}
+.scroll>*{flex:none}
+.card{padding:14px 16px;border-radius:18px;background:#fff;border:1px solid var(--line)}
+.big{height:58px;border-radius:16px;font-weight:800;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;border:0}
+.big.primary{background:var(--green);color:#fff}.big.primary:hover{background:var(--green-h);color:#fff}
+.big.ghost{background:#fff;color:var(--ink);border:2px solid var(--line2);font-size:16px}
+.big.amber{background:var(--amber-bg);color:var(--amber-ink);font-size:16px}
+.scanbox{min-height:62px;padding:10px 14px;border-radius:16px;border:2px dashed var(--green);background:#fff;display:flex;align-items:center;gap:12px;cursor:pointer;color:var(--ink);text-align:left;width:100%}
+.scanbox b{display:block;font-size:16px;font-weight:800}.scanbox small{display:block;font-size:12px;color:var(--ink2)}
+.lbl{font-size:13px;font-weight:800;letter-spacing:.6px;color:var(--ink2)}
+.input{height:54px;width:100%;padding:0 16px;border-radius:14px;font-size:17px;font-weight:600;color:var(--ink);background:#fff;border:2px solid var(--line2)}
+.goal{display:flex;flex-direction:column;gap:6px;flex:none}
+.segs{display:grid;gap:4px}.segs span{height:10px;border-radius:999px;background:#D5E3D9}.segs .d{background:var(--green)}.segs .c{background:#7FC3A0}
+</style>
+</head>
+<body>
+<main class="phone" aria-label="Offline">
+
+  <div class="top">
+    <span style="width:44px;height:44px;border-radius:14px;background:var(--green);color:#fff;display:grid;place-items:center;flex:none"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6h12v10H2Z"/><path d="M14 9h4.5L22 12.5V16h-8Z"/><circle cx="6.5" cy="17.5" r="2"/><circle cx="17.5" cy="17.5" r="2"/></svg></span>
+    <div style="flex:1;min-width:0"><div class="ttl">Run R-2207</div><div class="st">TMS-041 · Kim · 11:52 am</div></div>
+    <span class="chip" style="color:var(--tint-ink);background:var(--tint);border-color:#BFDCCB"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 21 3l-8 18-2-8Z"/></svg>Sharing location</span>
+  </div>
+  <div role="status" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:16px;flex:none;background:var(--amber-bg);color:var(--amber-ink)">
+    <span style="flex:none"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 20h.01M7 20v-4M12 20v-8M17 20V8M22 4v16"/><path d="M3 3l18 18"/></svg></span>
+    <span style="flex:1;min-width:0"><span style="display:block;font-size:15px;font-weight:800">No signal · working from memory</span><span style="display:block;font-size:12px;font-weight:600">2 confirmations waiting · they send by themselves when you're back in range</span></span>
+  </div>
+  <div class="goal">
+  <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:13px;font-weight:800"><span>Today's goal · 12 stops</span><span style="color:var(--muted)">8 done · 4 to go</span></div>
+  <div class="segs" role="img" aria-label="8 of 12 stops done" style="grid-template-columns:repeat(12,minmax(0,1fr))"><span class="d"></span><span class="d"></span><span class="d"></span><span class="d"></span><span class="d"></span><span class="d"></span><span class="d"></span><span class="d"></span><span class="c"></span><span class=""></span><span class=""></span><span class=""></span></div>
+</div>
+  <div class="scroll">
+    <section aria-label="Next stop" style="padding:16px;border-radius:18px;background:#fff;border:1px solid var(--line);display:flex;flex-direction:column;gap:8px">
+      <div class="lbl">STOP 9 OF 12</div>
+      <div style="font-size:26px;font-weight:800;letter-spacing:-.4px;line-height:1.1">Lakeside Primary School</div>
+      <div style="font-size:14px;color:var(--ink2)">Ballarat North · office at the front gate · 14 cartons</div>
+      <a href="#maps" class="big ghost" style="height:48px;font-size:15px"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2Z"/><path d="M9 4v14M15 6v14"/></svg>Open in Maps</a>
+    </section>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <span class="lbl">WAITING TO SEND</span>
+      <div style="border-radius:16px;background:#fff;border:1px solid var(--line);overflow:hidden">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 14px;border-top:1px solid var(--row)"><span style="font-size:14px;font-weight:700">Stop 8 · delivered · 9 cartons</span><span class="pill p-amber" style="font-size:11px">Waiting since 11:41</span></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 14px;border-top:1px solid var(--row)"><span style="font-size:14px;font-weight:700">Stop 8 · signature and photo</span><span class="pill p-amber" style="font-size:11px">Waiting since 11:41</span></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 14px;border-top:1px solid var(--row)"><span style="font-size:14px;font-weight:700">Stop 7 · delivered · 3 cartons</span><span class="pill p-green" style="font-size:11px">Sent 11:16</span></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--muted)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none;margin-top:1px"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+      <span>Your whole run is saved on this phone, so keep going. Each confirmation has its own number, so sending it twice never records it twice.</span>
+    </div>
+  </div>
+  <div style="display:flex;gap:10px;flex:none">
+    <button type="button" class="big ghost" style="width:130px">Retry now</button>
+    <a href="DriverStop.html" class="big primary" style="flex:1">Start stop 9<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+  </div>
+</main>
+</body>
+</html>
