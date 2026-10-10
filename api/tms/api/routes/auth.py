@@ -10,13 +10,14 @@ from sqlalchemy import select
 
 from tms.api.deps import DB, Who
 from tms.api.errors import Unauthorised
-from tms.models import User
+from tms.models import Driver, User
 from tms.services import access, sessions
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 PASSWORD_TRIES = 5
 PASSWORD_LOCK_MINUTES = 15
+PIN_TRIES = 5
 
 
 class LoginIn(BaseModel):
@@ -51,6 +52,18 @@ class MeOut(BaseModel):
     display_name: str
     role: str
     scopes: list[str]
+
+
+class DriverLoginIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    code: str = Field(max_length=32)
+    pin: str = Field(max_length=8)
+
+
+class DriverSessionOut(BaseModel):
+    token: str
+    expires_in: int
+    driver: MeOut
 
 
 def user_out(u: User) -> UserOut:
@@ -122,3 +135,30 @@ def logout(body: RefreshIn, db: DB):
 def me(who: Who):
     return MeOut(kind=who.kind, id=who.id, name=who.name, display_name=who.display_name,
                  role=who.role, scopes=who.scopes)
+
+
+@router.post("/driver-login", response_model=DriverSessionOut)
+def driver_login(body: DriverLoginIn, db: DB):
+    """Five wrong PINs lock the driver until a manager unlocks them."""
+    driver = db.execute(select(Driver).where(Driver.code == body.code)).scalar_one_or_none()
+    if driver is None or not driver.active:
+        return _refused("no active driver with that code", "unknown_driver")
+    if driver.locked:
+        return _refused(f"{driver.code} is locked after too many wrong PINs; a manager can unlock it",
+                        "locked")
+    if not access.verify_password(body.pin, driver.pin_hash):
+        driver.failed_attempts += 1
+        if driver.failed_attempts >= PIN_TRIES:
+            driver.locked = True
+            db.commit()
+            return _refused(f"wrong PIN {PIN_TRIES} times; {driver.code} is locked until a "
+                            f"manager unlocks it", "locked")
+        db.commit()
+        return _refused("wrong PIN", "wrong_pin", tries_left=PIN_TRIES - driver.failed_attempts)
+    driver.failed_attempts = 0
+    db.commit()
+    return DriverSessionOut(
+        token=sessions.issue_driver_token(driver.id), expires_in=sessions.DRIVER_TTL_SECONDS,
+        driver=MeOut(kind="driver", id=driver.id, name=driver.code, display_name=driver.name,
+                     role="driver", scopes=list(sessions.DRIVER_SCOPES)),
+    )
