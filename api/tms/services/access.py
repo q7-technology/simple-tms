@@ -8,6 +8,10 @@ import secrets
 # PBKDF2 from the standard library, no extra dependency. Same scheme as Simple WMS.
 _ITERATIONS = 600_000
 
+# Checked when there is no real hash to check, so an unknown name takes as long as
+# a wrong password. Same work as a real hash; no password matches it.
+DUMMY_HASH = f"pbkdf2_sha256${_ITERATIONS}${'0' * 32}${'0' * 64}"
+
 
 def hash_password(password: str) -> str:
     salt = secrets.token_hex(16)

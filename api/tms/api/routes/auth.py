@@ -87,7 +87,8 @@ def login(body: LoginIn, db: DB):
         select(User).where(User.username == body.username).with_for_update()
     ).scalar_one_or_none()
     if user is None or not user.active:
-        # an unknown name and a wrong password look alike
+        # an unknown name and a wrong password look alike, and take as long
+        access.verify_password(body.password, access.DUMMY_HASH)
         return _refused("wrong username or password", "wrong_password")
     if _is_locked(user):
         return _refused("this account is locked; try again later or ask an admin", "locked")

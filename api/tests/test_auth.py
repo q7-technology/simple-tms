@@ -99,3 +99,28 @@ def test_a_new_password_ends_every_session_signed_in_with_the_old_one(client, db
 
     new = login(client, "dee", "a brand new password")
     assert client.get("/v1/auth/me", headers=bearer(new["token"])).status_code == 200
+
+
+def test_an_unknown_or_inactive_user_costs_a_password_check_too(client, db, dispatcher, monkeypatch):
+    from tms.api.routes import auth
+    from tms.services import access
+
+    checked = []
+    real = access.verify_password
+
+    def spy(password, stored):
+        checked.append(stored)
+        return real(password, stored)
+
+    monkeypatch.setattr(auth.access, "verify_password", spy)
+
+    r = client.post("/v1/auth/login", json={"username": "nobody", "password": "nope"})
+    assert r.json() == {"detail": "wrong username or password", "code": "wrong_password"}
+    dispatcher.active = False
+    db.commit()
+    r = client.post("/v1/auth/login", json={"username": "dee", "password": PASSWORD})
+    assert r.json() == {"detail": "wrong username or password", "code": "wrong_password"}
+
+    # both took as long as a wrong password would, against a hash with the same work
+    assert checked == [access.DUMMY_HASH, access.DUMMY_HASH]
+    assert access.DUMMY_HASH.split("$")[1] == access.hash_password("x").split("$")[1]
