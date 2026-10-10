@@ -1,6 +1,7 @@
 """The calls Simple TMS makes to Simple WMS. Step 1 only reads a delivery."""
 from __future__ import annotations
 
+import logging
 from datetime import date
 from urllib.parse import quote
 
@@ -8,6 +9,19 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from tms.config import get_settings
+
+log = logging.getLogger("tms.wms")
+
+# Answers that will not mend themselves on a retry: someone has to fix the key
+# or the subscriber. Never put the key itself in these.
+_REFUSALS = {
+    401: "Simple WMS does not know our API key: check TMS_WMS_API_KEY is a live "
+         "Simple WMS key",
+    403: "Simple WMS will not let our API key read this delivery: the key needs the "
+         "tasks:read scope, and its warehouses and owner must cover the delivery",
+    404: "Simple WMS has no such delivery for that owner: check the event's owner is the "
+         "delivery's, and the key is not limited to another owner",
+}
 
 
 class WmsDelivery(BaseModel):
@@ -49,6 +63,9 @@ def get_delivery(ref: str, owner: str) -> dict:
                          timeout=settings.wms_timeout_seconds)
     except httpx.HTTPError as exc:
         raise WmsUnavailable(f"{type(exc).__name__}: {exc}"[:300]) from exc
+    if resp.status_code in _REFUSALS:
+        log.error("HTTP %s reading delivery %s (owner %s). %s",
+                  resp.status_code, ref, owner, _REFUSALS[resp.status_code])
     if resp.status_code != 200:
         raise WmsUnavailable(f"HTTP {resp.status_code}: {resp.text[:200]}")
     try:
