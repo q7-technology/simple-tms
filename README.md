@@ -27,7 +27,7 @@ docker-compose.yml   api, db, caddy
 ```
 git clone https://github.com/q7-technology/simple-tms
 cd simple-tms
-cp .env.example .env            # set POSTGRES_PASSWORD and TMS_SECRET_KEY
+cp .env.example .env            # set POSTGRES_PASSWORD, and TMS_SECRET_KEY to: openssl rand -hex 32
 docker compose up -d
 docker compose exec api tms create-user --username you --role admin
 ```

@@ -1,12 +1,16 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+MIN_SECRET_KEY = 32
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="TMS_", extra="ignore")
 
     database_url: str = "postgresql+psycopg://tms:tms@127.0.0.1:5432/tms"
+    # Signs session tokens. No usable default: start-up refuses a weak one.
     secret_key: str = "change-me"
 
     # Simple WMS. The webhook secret is the one its subscriber row signs with;
@@ -16,6 +20,15 @@ class Settings(BaseSettings):
     wms_api_key: str = ""
     # Shorter than the WMS worker's own 10 s wait, so it hears our answer.
     wms_timeout_seconds: float = 5.0
+
+    @field_validator("secret_key")
+    @classmethod
+    def _strong_secret_key(cls, value: str) -> str:
+        if len(value) < MIN_SECRET_KEY or value.startswith("change-me"):
+            raise ValueError(
+                f"TMS_SECRET_KEY must be at least {MIN_SECRET_KEY} random characters, not the "
+                "example; make one with: openssl rand -hex 32")
+        return value
 
 
 @lru_cache
