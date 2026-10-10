@@ -220,3 +220,24 @@ def test_decimals_never_pass_through_a_float(client, db, wms):
     p = db.execute(select(Consignment)).scalar_one().packages[0]
     assert p.weight_kg == Decimal("123456789012.123456")
     assert p.length_cm == Decimal("123456789012.123456")
+
+
+def test_no_transaction_is_held_while_simple_wms_is_asked(client, db, engine, monkeypatch):
+    """The WMS may take seconds to answer; no row lock or snapshot waits on it."""
+    from sqlalchemy import text
+
+    from tms.services import wms_client
+
+    held = []
+
+    def get_delivery(ref, owner):
+        with engine.connect() as conn:
+            held.extend(conn.execute(text(
+                "select pid, query from pg_stat_activity where datname = current_database() "
+                "and state like 'idle in transaction%' and pid <> pg_backend_pid()")).all())
+        return delivery(ref)
+
+    monkeypatch.setattr(wms_client, "get_delivery", get_delivery)
+    r = post_event(client, packed_event(), WEBHOOK_SECRET)
+    assert r.status_code == 200 and r.json()["status"] == "created", r.text
+    assert held == []
