@@ -70,3 +70,59 @@ def client(engine):
 
     with TestClient(app) as c:
         yield c
+
+
+# --- people -----------------------------------------------------------------
+
+PASSWORD = "correct horse battery"
+
+
+def make_user(db, username: str, role: str):
+    from tms.models import User
+    from tms.services.access import hash_password
+
+    user = User(username=username, display_name=username.title(), role=role,
+                password_hash=hash_password(PASSWORD), failed_attempts=0, active=True)
+    db.add(user)
+    db.commit()
+    return user
+
+
+@pytest.fixture
+def admin(db):
+    return make_user(db, "leighton", "admin")
+
+
+@pytest.fixture
+def manager(db):
+    return make_user(db, "fleet.mgr", "manager")
+
+
+@pytest.fixture
+def dispatcher(db):
+    return make_user(db, "dee", "dispatcher")
+
+
+def login(client, username: str, password: str = PASSWORD) -> dict:
+    r = client.post("/v1/auth/login", json={"username": username, "password": password})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def bearer(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def admin_headers(client, admin):
+    return bearer(login(client, admin.username)["token"])
+
+
+@pytest.fixture
+def manager_headers(client, manager):
+    return bearer(login(client, manager.username)["token"])
+
+
+@pytest.fixture
+def dispatcher_headers(client, dispatcher):
+    return bearer(login(client, dispatcher.username)["token"])

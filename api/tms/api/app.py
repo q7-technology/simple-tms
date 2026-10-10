@@ -5,6 +5,7 @@ from sqlalchemy import text
 
 from tms.api import errors
 from tms.api.deps import DB
+from tms.api.routes import auth
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
@@ -18,6 +19,7 @@ app = FastAPI(
 errors.install(app)
 
 v1 = APIRouter(prefix="/v1")
+v1.include_router(auth.router)
 
 
 @v1.get("/health", tags=["system"])
