@@ -36,8 +36,75 @@ The API runs its migrations each time it starts. It is at
 `https://<TMS_DOMAIN>/v1` (default `https://localhost/`, self-signed) and its
 interactive docs at `/docs`. Sign in with `POST /v1/auth/login`. The API is
 also published on `127.0.0.1:8022` (`TMS_API_PORT`) for local work and health
-checks. On a machine that already runs Simple WMS, its Caddy has ports 80 and
-443: set `TMS_HTTP_PORT` and `TMS_HTTPS_PORT` in `.env` (say 8180 and 8543).
+checks.
+
+## Production on a real domain
+
+Let's Encrypt only checks a domain on ports 80 and 443, so Caddy gets a
+certificate for a real domain only when it listens on those two ports. There
+are two supported set-ups.
+
+**On its own server.** Leave `TMS_HTTP_PORT` and `TMS_HTTPS_PORT` at their
+defaults (80 and 443), set `TMS_DOMAIN=tms.example.com` with its DNS pointing
+at the server, and `docker compose up -d`. Caddy gets the certificate itself.
+Give Simple WMS the subscriber URL `https://tms.example.com/v1/wms/events`.
+
+**Beside Simple WMS on one server.** Only one program can hold 80 and 443,
+and Simple WMS's Caddy already does. Put the TMS domain on that Caddy and do
+not run the TMS one: start Simple TMS with `docker compose up -d db api`
+(the TMS caddy stays down), so the TMS API listens on `127.0.0.1:8022` only.
+
+- If the Caddy that holds 80 and 443 runs on the host (a shared front Caddy,
+  installed from a package), add a site to its Caddyfile:
+
+  ```
+  tms.example.com {
+  	encode gzip
+  	reverse_proxy 127.0.0.1:8022
+  }
+  ```
+
+- If it is Simple WMS's own Caddy, which runs in Docker, `127.0.0.1` inside
+  that container is the container itself, not the host. Join it to the TMS
+  network with a `docker-compose.override.yml` beside Simple WMS's
+  `docker-compose.yml`:
+
+  ```yaml
+  services:
+    caddy:
+      networks: [default, simple-tms]
+  networks:
+    simple-tms:
+      external: true
+      name: simple-tms_default   # <TMS compose project>_default
+  ```
+
+  and add a site to Simple WMS's `deploy/Caddyfile` that names the TMS API
+  container (`docker ps` shows its name; `simple-tms-api-1` when the TMS
+  project is called `simple-tms`). Not `api:8000`: that is Simple WMS's own
+  API.
+
+  ```
+  tms.example.com {
+  	encode gzip
+  	reverse_proxy simple-tms-api-1:8000
+  }
+  ```
+
+  Then `docker compose up -d caddy` in the Simple WMS folder. Its Caddy gets
+  the certificate for `tms.example.com` as it does for its own domain.
+
+Either way, give Simple WMS the subscriber URL
+`https://tms.example.com/v1/wms/events`.
+
+**Other ports are for local work and a LAN only.** `TMS_HTTP_PORT` and
+`TMS_HTTPS_PORT` (say 8180 and 8543) let the TMS caddy run beside Simple
+WMS's on one machine, but no real domain gets a certificate there: Caddy
+uses its own local certificate, which browsers and Simple WMS do not trust
+unless you install its root. For a Simple WMS on the same machine, the
+subscriber URL is the published API port instead:
+`http://host.docker.internal:8022/v1/wms/events` with Docker Desktop (Mac,
+Windows).
 
 ## Connecting Simple WMS
 
