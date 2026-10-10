@@ -61,3 +61,18 @@ def test_deactivated_not_deleted(client, manager_headers):
 
 def test_an_unknown_vehicle_is_404(client, manager_headers):
     assert client.get("/v1/vehicles/NOPE", headers=manager_headers).status_code == 404
+
+
+def test_a_plate_taken_by_another_request_meanwhile_is_refused_not_a_crash(
+        client, manager_headers, engine):
+    from conftest import beaten_to_it
+    from tms.models import Vehicle
+
+    def rival(obj):
+        if isinstance(obj, Vehicle):
+            return Vehicle(rego=obj.rego, type="ute", max_kg=1, max_m3=1, active=True)
+
+    with beaten_to_it(engine, rival):
+        r = client.post("/v1/vehicles", headers=manager_headers, json=VAN)
+    assert r.status_code == 422
+    assert r.json()["errors"] == [{"field": "rego", "message": "vehicle 1AB2CD already exists"}]

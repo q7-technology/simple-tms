@@ -1,3 +1,4 @@
+import contextlib
 import os
 
 import pytest
@@ -150,3 +151,31 @@ def fresh_client():
     from tms.api.app import app
 
     return TestClient(app)
+
+
+@contextlib.contextmanager
+def beaten_to_it(engine, rival_for):
+    """Just before the API writes a new row, another connection commits the row
+    rival_for(new_object) returns: two requests racing for the same key."""
+    from sqlalchemy import event
+
+    done = []
+
+    def before_flush(session, flush_context, instances):
+        if done:
+            return
+        for obj in list(session.new):
+            rival = rival_for(obj)
+            if rival is not None:
+                done.append(rival)
+                with Session(engine) as other:
+                    other.add(rival)
+                    other.commit()
+                return
+
+    event.listen(Session, "before_flush", before_flush)
+    try:
+        yield
+    finally:
+        event.remove(Session, "before_flush", before_flush)
+    assert done, "nothing raced"

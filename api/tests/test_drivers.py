@@ -137,3 +137,19 @@ def test_a_new_name_keeps_the_driver_signed_in(client, manager_headers):
     token = client.post("/v1/auth/driver-login", json={"code": "drv-01", "pin": "2468"}).json()["token"]
     client.patch("/v1/drivers/drv-01", headers=manager_headers, json={"name": "Alex Tran"})
     assert client.get("/v1/auth/me", headers=bearer(token)).status_code == 200
+
+
+def test_a_code_taken_by_another_request_meanwhile_is_refused_not_a_crash(
+        client, manager_headers, engine):
+    from conftest import beaten_to_it
+    from tms.models import Driver
+
+    def rival(obj):
+        if isinstance(obj, Driver):
+            return Driver(code=obj.code, name="Someone else", pin_hash="x",
+                          failed_attempts=0, locked=False, active=True)
+
+    with beaten_to_it(engine, rival):
+        r = client.post("/v1/drivers", headers=manager_headers, json=ALEX)
+    assert r.status_code == 422
+    assert r.json()["errors"] == [{"field": "code", "message": "driver drv-01 already exists"}]

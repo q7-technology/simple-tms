@@ -9,9 +9,10 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from tms.api.deps import DB, Principal, require
-from tms.api.errors import FieldError, NotFound
+from tms.api.errors import FieldError, NotFound, violated_constraint
 from tms.api.schemas import Dec, Page
 from tms.models import Vehicle
 
@@ -74,7 +75,14 @@ def create_vehicle(body: VehicleIn, db: DB, who: Principal = require("fleet:writ
     v = Vehicle(rego=body.rego, type=body.type, max_kg=body.max_kg, max_m3=body.max_m3,
                 active=True)
     db.add(v)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as e:
+        # another request took the rego between the check above and this insert
+        db.rollback()
+        if violated_constraint(e) == "uq_vehicle_rego":
+            raise FieldError("rego", f"vehicle {body.rego} already exists") from None
+        raise
     return JSONResponse(status_code=201, content=vehicle_out(v).model_dump(mode="json"))
 
 

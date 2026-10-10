@@ -33,6 +33,12 @@ class Forbidden(Exception):
         super().__init__(message)
 
 
+def violated_constraint(exc: Exception) -> str | None:
+    """The name of the database constraint an IntegrityError broke, if known."""
+    diag = getattr(getattr(exc, "orig", None), "diag", None)
+    return getattr(diag, "constraint_name", None)
+
+
 def field_errors(errors: list[dict]) -> list[dict]:
     out = []
     for e in errors:
