@@ -1,0 +1,38 @@
+[project]
+name = "simple-tms-api"
+version = "0.1.0"
+description = "Simple TMS API"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "pydantic>=2.8",
+  "pydantic-settings>=2.4",
+  "sqlalchemy>=2.0.30",
+  "psycopg[binary]>=3.2",
+  "alembic>=1.13",
+  "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+# httpx2: what newer Starlette test clients want, as in Simple WMS
+dev = ["pytest>=8", "pytest-timeout>=2.3", "httpx2>=0.1"]
+
+[project.scripts]
+tms = "tms.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["tms"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+timeout = 60
+filterwarnings = [
+  "error",
+  # third-party: Starlette's test client still uses an old anyio alias
+  "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
+]
