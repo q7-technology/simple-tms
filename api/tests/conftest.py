@@ -126,3 +126,27 @@ def manager_headers(client, manager):
 @pytest.fixture
 def dispatcher_headers(client, dispatcher):
     return bearer(login(client, dispatcher.username)["token"])
+
+
+def all_at_once(n: int, call):
+    """Run call() n times on n threads released together; return the results."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    start = threading.Barrier(n)
+
+    def one():
+        start.wait()
+        return call()
+
+    with ThreadPoolExecutor(max_workers=n) as pool:
+        return [f.result() for f in [pool.submit(one) for _ in range(n)]]
+
+
+def fresh_client():
+    """A test client of its own, for one thread."""
+    from fastapi.testclient import TestClient
+
+    from tms.api.app import app
+
+    return TestClient(app)

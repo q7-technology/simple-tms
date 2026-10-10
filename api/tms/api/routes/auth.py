@@ -81,7 +81,11 @@ def _is_locked(user: User) -> bool:
 
 @router.post("/login", response_model=SessionOut)
 def login(body: LoginIn, db: DB):
-    user = db.execute(select(User).where(User.username == body.username)).scalar_one_or_none()
+    # the row stays locked until this attempt is counted, so guesses sent all at once
+    # are weighed one after another and cannot get past the limit
+    user = db.execute(
+        select(User).where(User.username == body.username).with_for_update()
+    ).scalar_one_or_none()
     if user is None or not user.active:
         # an unknown name and a wrong password look alike
         return _refused("wrong username or password", "wrong_password")
@@ -140,7 +144,10 @@ def me(who: Who):
 @router.post("/driver-login", response_model=DriverSessionOut)
 def driver_login(body: DriverLoginIn, db: DB):
     """Five wrong PINs lock the driver until a manager unlocks them."""
-    driver = db.execute(select(Driver).where(Driver.code == body.code)).scalar_one_or_none()
+    # as for users: one attempt at a time per driver, so five means five
+    driver = db.execute(
+        select(Driver).where(Driver.code == body.code).with_for_update()
+    ).scalar_one_or_none()
     if driver is None or not driver.active:
         return _refused("no active driver with that code", "unknown_driver")
     if driver.locked:

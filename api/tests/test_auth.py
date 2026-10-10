@@ -68,3 +68,19 @@ def test_a_deactivated_user_loses_their_session(client, db, dispatcher):
     dispatcher.active = False
     db.commit()
     assert client.get("/v1/auth/me", headers=bearer(token)).status_code == 401
+
+
+def test_wrong_passwords_sent_all_at_once_still_lock_after_five(client, db, dispatcher):
+    from conftest import all_at_once, fresh_client
+
+    def guess():
+        return fresh_client().post("/v1/auth/login",
+                                   json={"username": "dee", "password": "nope"}).json()["code"]
+
+    codes = all_at_once(10, guess)
+    # each guess is weighed one after another: four are told how many tries are left,
+    # the fifth locks the account, and the rest find it locked
+    assert codes.count("wrong_password") == 4
+    assert codes.count("locked") == 6
+    db.refresh(dispatcher)
+    assert dispatcher.locked_until is not None

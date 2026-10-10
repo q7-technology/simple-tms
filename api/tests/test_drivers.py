@@ -96,3 +96,24 @@ def test_a_right_pin_clears_the_count(client, manager_headers, db):
     client.post("/v1/auth/driver-login", json={"code": "drv-01", "pin": "2468"})
     r = client.get("/v1/drivers/drv-01", headers=manager_headers)
     assert r.json()["failed_attempts"] == 0
+
+
+def test_wrong_pins_sent_all_at_once_still_lock_after_five(client, manager_headers, db):
+    from conftest import all_at_once, fresh_client
+    from sqlalchemy import select
+
+    from tms.models import Driver
+
+    make_driver(client, manager_headers)
+
+    def guess():
+        return fresh_client().post("/v1/auth/driver-login",
+                                   json={"code": "drv-01", "pin": "0000"}).json()["code"]
+
+    codes = all_at_once(10, guess)
+    # only five PINs are ever checked: four are told how many tries are left,
+    # the fifth locks the driver, and the rest find them locked
+    assert codes.count("wrong_pin") == 4
+    assert codes.count("locked") == 6
+    driver = db.execute(select(Driver).where(Driver.code == "drv-01")).scalar_one()
+    assert driver.locked is True and driver.failed_attempts == 5
