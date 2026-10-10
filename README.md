@@ -143,3 +143,7 @@ cd api && .venv/bin/pytest
 
 Python 3.12 + FastAPI · PostgreSQL 16 · Docker Compose · Caddy. The same
 choices as Simple WMS, so one person can look after both.
+
+## Licence
+
+MIT © 2026 Q7 Technology
