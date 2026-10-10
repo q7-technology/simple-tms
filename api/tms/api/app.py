@@ -5,7 +5,7 @@ from sqlalchemy import text
 
 from tms.api import errors
 from tms.api.deps import DB
-from tms.api.routes import auth
+from tms.api.routes import auth, vehicles
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
@@ -20,6 +20,7 @@ errors.install(app)
 
 v1 = APIRouter(prefix="/v1")
 v1.include_router(auth.router)
+v1.include_router(vehicles.router)
 
 
 @v1.get("/health", tags=["system"])
