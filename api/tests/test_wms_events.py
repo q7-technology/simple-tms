@@ -308,3 +308,27 @@ def test_package_numbers_that_do_not_fit_are_422_not_rounded_or_a_crash(
     assert [e["field"] for e in r.json()["errors"]] == [f"data.packages.0.{key}"]
     assert count(db, Consignment) == 0 and count(db, InboundEvent) == 0
     assert wms.calls == []
+
+
+@pytest.mark.parametrize("secret", ["   ", "fifteen-chars-x", "  fifteen-chars-x  "])
+def test_a_secret_simple_wms_would_not_take_is_not_configured(client, db, wms, monkeypatch,
+                                                              secret):
+    """Simple WMS takes 16 to 128 characters, stripped; anything shorter here is a
+    mistake in .env, not a secret."""
+    from tms.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "wms_webhook_secret", secret)
+    wms.deliveries["0080012345"] = delivery()
+    r = post_event(client, packed_event(), secret.strip())
+    assert r.status_code == 503 and r.json()["code"] == "not_configured"
+    assert count(db, InboundEvent) == 0 and wms.calls == []
+
+
+def test_spaces_around_the_secret_are_not_part_of_it(client, db, wms, monkeypatch):
+    """Simple WMS strips the secret it is given, so it signs without them."""
+    from tms.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "wms_webhook_secret", f"  {WEBHOOK_SECRET}\n")
+    wms.deliveries["0080012345"] = delivery()
+    r = post_event(client, packed_event(), WEBHOOK_SECRET)
+    assert r.status_code == 200 and r.json()["status"] == "created"

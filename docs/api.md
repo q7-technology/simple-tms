@@ -186,7 +186,7 @@ Every `200` answer is `{ "status", "event_id", "consignment_id" }`;
 | `401 { "detail" }` | missing or wrong signature |
 | `422 { "errors" }` | signed, but not JSON, not an event envelope, a `delivery.packed` whose packages do not read, or one with no `delivery_ref` or `external_ref`; or Simple WMS answered with a delivery that does not read (fields named `delivery.…`). Nothing is kept |
 | `503 { "detail", "code": "wms_unavailable" }` | the delivery could not be read from Simple WMS (unreachable, no answer within 5 s, or not a `200` with a delivery); nothing is kept, not even the event id, so Simple WMS's retry (1 min, 5, 30, 2 h) tries again |
-| `503 { "detail", "code": "not_configured" }` | `TMS_WMS_WEBHOOK_SECRET` is not set; Simple WMS keeps the event and retries |
+| `503 { "detail", "code": "not_configured" }` | `TMS_WMS_WEBHOOK_SECRET` is not set, or is shorter than 16 characters once spaces around it are taken off (Simple WMS takes 16 to 128); Simple WMS keeps the event and retries |
 
 On `delivery.packed` the packages (number, type, weight, dimensions, SSCC)
 come from the event; the customer, ship-to address and required-by date come

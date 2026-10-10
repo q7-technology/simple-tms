@@ -26,6 +26,7 @@ router = APIRouter(tags=["wms"])
 log = logging.getLogger("tms.wms")
 
 HANDLED = {"delivery.packed"}
+MIN_WEBHOOK_SECRET = 16
 
 
 class WmsEvent(BaseModel):
@@ -105,11 +106,15 @@ def receive_wms_event(
     db: DB, body: Annotated[bytes, Depends(raw_body)],
     x_wms_signature: Annotated[str | None, Header()] = None,
 ):
-    secret = get_settings().wms_webhook_secret
-    if not secret:
+    # Simple WMS strips a subscriber's secret and takes 16 to 128 characters, so
+    # anything shorter here is a slip in .env, not a secret to check against
+    secret = get_settings().wms_webhook_secret.strip()
+    if len(secret) < MIN_WEBHOOK_SECRET:
         # 503, not 401: the WMS keeps the event and retries once it is set
         return JSONResponse(status_code=503, content={
-            "detail": "TMS_WMS_WEBHOOK_SECRET is not set", "code": "not_configured"})
+            "detail": f"TMS_WMS_WEBHOOK_SECRET is not set (at least {MIN_WEBHOOK_SECRET} "
+                      "characters, the same as the subscriber's in Simple WMS)",
+            "code": "not_configured"})
     if not signature.verify(secret, body, x_wms_signature):
         raise Unauthorised("missing or wrong X-WMS-Signature")
     try:
