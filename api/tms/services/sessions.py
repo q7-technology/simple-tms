@@ -132,10 +132,14 @@ def start_session(db: Session, user: User) -> tuple[UserSession, str]:
     return row, raw
 
 
-def find_session(db: Session, raw_refresh: str) -> UserSession | None:
-    row = db.execute(
-        select(UserSession).where(UserSession.refresh_hash == _hash(raw_refresh))
-    ).scalar_one_or_none()
+def find_session(db: Session, raw_refresh: str, *, lock: bool = False) -> UserSession | None:
+    """The live session for this refresh token. With lock, the row stays locked
+    until the transaction ends, so a second refresh with the same token waits,
+    then finds it spent."""
+    query = select(UserSession).where(UserSession.refresh_hash == _hash(raw_refresh))
+    if lock:
+        query = query.with_for_update()
+    row = db.execute(query).scalar_one_or_none()
     if row is None or row.revoked_at is not None or row.expires_at <= datetime.now(UTC):
         return None
     return row

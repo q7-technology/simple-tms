@@ -124,3 +124,53 @@ def test_an_unknown_or_inactive_user_costs_a_password_check_too(client, db, disp
     # both took as long as a wrong password would, against a hash with the same work
     assert checked == [access.DUMMY_HASH, access.DUMMY_HASH]
     assert access.DUMMY_HASH.split("$")[1] == access.hash_password("x").split("$")[1]
+
+
+def test_one_refresh_token_sent_twice_at_once_is_spent_once(client, dispatcher):
+    from conftest import all_at_once, fresh_client
+
+    refresh_token = login(client, "dee")["refresh_token"]
+
+    def refresh():
+        r = fresh_client().post("/v1/auth/refresh", json={"refresh_token": refresh_token})
+        return r.status_code, r.json().get("refresh_token")
+
+    results = all_at_once(8, refresh)
+    won = [new for status, new in results if status == 200]
+    assert len(won) == 1, results
+    assert sorted(status for status, _ in results) == [200] + [401] * 7
+    # and the one new refresh token is the one that works
+    r = client.post("/v1/auth/refresh", json={"refresh_token": won[0]})
+    assert r.status_code == 200
+
+
+def test_a_refresh_that_comes_in_while_another_is_spending_the_token_fails(
+        client, dispatcher, monkeypatch):
+    """The second refresh arrives just after the first has found the session and
+    before it has spent the token: it waits, then finds the token spent."""
+    import threading
+
+    from conftest import fresh_client
+    from tms.api.routes import auth
+
+    refresh_token = login(client, "dee")["refresh_token"]
+    real = auth.sessions.find_session
+    rival = []
+
+    def rival_refresh():
+        r = fresh_client().post("/v1/auth/refresh", json={"refresh_token": refresh_token})
+        rival.append(r.status_code)
+
+    def find_then_rival(db, raw, **kw):
+        row = real(db, raw, **kw)
+        if not hasattr(find_then_rival, "thread"):
+            find_then_rival.thread = threading.Thread(target=rival_refresh)
+            find_then_rival.thread.start()
+            # long enough for the rival to finish, unless it is made to wait for us
+            find_then_rival.thread.join(timeout=1.0)
+        return row
+
+    monkeypatch.setattr(auth.sessions, "find_session", find_then_rival)
+    first = client.post("/v1/auth/refresh", json={"refresh_token": refresh_token})
+    find_then_rival.thread.join(timeout=10)
+    assert sorted([first.status_code, *rival]) == [200, 401]

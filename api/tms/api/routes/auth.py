@@ -117,7 +117,8 @@ def login(body: LoginIn, db: DB):
 
 @router.post("/refresh", response_model=SessionOut)
 def refresh(body: RefreshIn, db: DB):
-    row = sessions.find_session(db, body.refresh_token)
+    # one at a time: the same token sent twice at once is spent once
+    row = sessions.find_session(db, body.refresh_token, lock=True)
     user = db.get(User, row.user_id) if row else None
     if row is None or user is None or not user.active:
         raise Unauthorised("session expired or invalid")

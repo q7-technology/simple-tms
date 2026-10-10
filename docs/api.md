@@ -50,8 +50,9 @@ An unknown or deactivated username looks like a wrong password (without
 
 ### POST /v1/auth/refresh
 `{ "refresh_token" }` → the same as login, with a new refresh token good for
-another 14 days. The old one is spent. A spent, revoked or expired refresh
-token, or one whose user is deactivated, is `401`.
+another 14 days. The old one is spent, once: the same refresh token sent
+twice at once gets one new pair, and the other request a `401`. A spent,
+revoked or expired refresh token, or one whose user is deactivated, is `401`.
 
 ### POST /v1/auth/logout
 `{ "refresh_token" }` → `204`, whether or not the refresh token was still
