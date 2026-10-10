@@ -35,7 +35,7 @@ services:
     # Caddy is the only door in a real install. Published on the host as well
     # for local work, CI and a Simple WMS on the same machine.
     ports:
-      - "127.0.0.1:${TMS_API_PORT:-8021}:8000"
+      - "127.0.0.1:${TMS_API_PORT:-8022}:8000"
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/v1/health')\""]
       interval: 10s

@@ -43,6 +43,7 @@ and works without either. Other systems only ever talk to the API.
 CLAUDE.md            this file
 docs/plans/          the design and the implementation plans
 docs/api.md          every endpoint: keep it in step with the routes
+.github/workflows/   CI: the tests, and a Compose start
 design/index.html    gallery of every screen; open a screen's HTML
 design/screens/      static HTML of each screen: build to these
 api/                 FastAPI app (package tms), migrations, tests

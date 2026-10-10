@@ -58,7 +58,7 @@ jobs:
       - name: The API answers and the migrations ran
         run: |
           for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8021/v1/health 2>/dev/null; then ok=1; break; fi
+            if curl -fsS http://127.0.0.1:8022/v1/health 2>/dev/null; then ok=1; break; fi
             sleep 2
           done
           test "${ok:-0}" = 1 || (docker compose logs api; exit 1)

@@ -15,6 +15,7 @@ with the next steps in `docs/plans/2026-10-10-simple-tms-design.md`.
 CLAUDE.md            rules for Claude Code when working here
 docs/plans/          the design and the implementation plans
 docs/api.md          every endpoint
+.github/workflows/   CI: the tests, and a Compose start
 design/              static HTML of each screen, and a gallery
 api/                 FastAPI app, migrations, tests
 deploy/Caddyfile     the only door in
@@ -34,10 +35,9 @@ docker compose exec api tms create-user --username you --role admin
 The API runs its migrations each time it starts. It is at
 `https://<TMS_DOMAIN>/v1` (default `https://localhost/`, self-signed) and its
 interactive docs at `/docs`. Sign in with `POST /v1/auth/login`. The API is
-also published on `127.0.0.1:8021` (`TMS_API_PORT`) for local work and health
+also published on `127.0.0.1:8022` (`TMS_API_PORT`) for local work and health
 checks. On a machine that already runs Simple WMS, its Caddy has ports 80 and
 443: set `TMS_HTTP_PORT` and `TMS_HTTPS_PORT` in `.env` (say 8180 and 8543).
-On a Mac, the system's ftp-proxy holds 8021: set `TMS_API_PORT=8022`.
 
 ## Connecting Simple WMS
 
@@ -57,7 +57,7 @@ uv venv -p 3.12 && uv pip install -e ".[dev]"
 export TMS_DATABASE_URL=postgresql+psycopg://tms:<POSTGRES_PASSWORD>@127.0.0.1:5434/tms
 .venv/bin/alembic upgrade head
 .venv/bin/tms create-user --username you --role admin
-.venv/bin/uvicorn tms.api.app:app --reload --port 8021   # 8022 on a Mac
+.venv/bin/uvicorn tms.api.app:app --reload --port 8022
 ```
 
 ## Tests
