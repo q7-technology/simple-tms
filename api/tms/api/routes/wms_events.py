@@ -42,14 +42,19 @@ class WmsEvent(BaseModel):
     data: dict = Field(default_factory=dict)
 
 
+# What a package's numeric(18, 6) columns hold: a 7th decimal place or a 13th
+# digit before the point is refused, never rounded or left to the database.
+Measure = Annotated[Decimal | None, Field(default=None, max_digits=18, decimal_places=6, ge=0)]
+
+
 class PackedPackage(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    package_no: int
+    package_no: int = Field(ge=1, lt=2 ** 31)
     type: str | None = Field(default=None, max_length=16)
-    weight_kg: Decimal | None = None
-    length_cm: Decimal | None = None
-    width_cm: Decimal | None = None
-    height_cm: Decimal | None = None
+    weight_kg: Measure = None
+    length_cm: Measure = None
+    width_cm: Measure = None
+    height_cm: Measure = None
     sscc: str | None = Field(default=None, max_length=18)
 
 
@@ -152,6 +157,18 @@ def receive_wms_event(
             "detail": f"could not read delivery {ref} from Simple WMS: {exc}",
             "code": "wms_unavailable"})
 
+    try:
+        delivery = wms_client.WmsDelivery.model_validate(delivery)
+    except ValidationError as exc:
+        # it will read no better on a retry, so 422, not 503; nothing is kept, and
+        # Simple WMS shows the event as failed with this reason
+        errors = [{"field": ".".join(["delivery", *(str(x) for x in e["loc"])]),
+                   "message": f"delivery {ref} from Simple WMS: {e['msg']}"}
+                  for e in exc.errors()]
+        log.warning("event %s: delivery %s from Simple WMS does not read: %s",
+                    event.event_id, ref, errors)
+        return _invalid(errors)
+
     # the event id first, so a twin of this event fails on it, not on the consignment
     db.add(InboundEvent(event_id=event.event_id, event_type=event.event_type,
                         external_ref=event.external_ref, outcome="created"))
@@ -159,7 +176,7 @@ def receive_wms_event(
         db.flush()
         consignment = consignments.from_delivery_packed(
             db, event_id=str(event.event_id), occurred_at=event.occurred_at, owner=event.owner,
-            warehouse=event.warehouse or delivery.get("warehouse") or "", ref=ref,
+            warehouse=event.warehouse or delivery.warehouse or "", ref=ref,
             packages=[p.model_dump() for p in data.packages], delivery=delivery)
         db.commit()
     except IntegrityError as exc:

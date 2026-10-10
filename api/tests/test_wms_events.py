@@ -241,3 +241,70 @@ def test_no_transaction_is_held_while_simple_wms_is_asked(client, db, engine, mo
     r = post_event(client, packed_event(), WEBHOOK_SECRET)
     assert r.status_code == 200 and r.json()["status"] == "created", r.text
     assert held == []
+
+
+def _with(d: dict, **changes) -> dict:
+    return {**d, **changes}
+
+
+@pytest.mark.parametrize("bad, field", [
+    (_with(delivery(), ship_to="12 Sturt St, Ballarat"), "delivery.ship_to"),
+    (_with(delivery(), ship_to=None), "delivery.ship_to"),
+    ({k: v for k, v in delivery().items() if k != "ship_to"}, "delivery.ship_to"),
+    (_with(delivery(), ship_to={**delivery()["ship_to"], "name": 42}), "delivery.ship_to"),
+    (_with(delivery(), ship_to={**delivery()["ship_to"], "name": {"first": "B"}}),
+     "delivery.ship_to"),
+    (_with(delivery(), required_by="next Tuesday"), "delivery.required_by"),
+    (_with(delivery(), required_by="2026-13-45"), "delivery.required_by"),
+    (_with(delivery(), warehouse="W" * 33), "delivery.warehouse"),
+])
+def test_a_delivery_simple_wms_answers_in_a_shape_we_cannot_read_is_422(
+        client, db, wms, bad, field):
+    """It will not read any better on a retry, so not a 503; nothing is kept and
+    Simple WMS shows the event as failed, with our reason."""
+    wms.deliveries["0080012345"] = bad
+    r = post_event(client, packed_event(), WEBHOOK_SECRET)
+    assert r.status_code == 422, r.text
+    errors = r.json()["errors"]
+    assert [e["field"] for e in errors] == [field]
+    assert "0080012345" in errors[0]["message"] and "Simple WMS" in errors[0]["message"]
+    assert count(db, Consignment) == 0 and count(db, InboundEvent) == 0
+
+
+def test_a_long_customer_name_is_cut_to_200(client, db, wms):
+    d = delivery()
+    d["ship_to"]["name"] = "B" * 300
+    wms.deliveries["0080012345"] = d
+    r = post_event(client, packed_event(), WEBHOOK_SECRET)
+    assert r.status_code == 200, r.text
+    c = db.execute(select(Consignment)).scalar_one()
+    assert c.customer == "B" * 200
+    assert c.ship_to["name"] == "B" * 300  # the ship-to is kept as Simple WMS gave it
+
+
+def test_a_delivery_with_no_required_by_is_fine(client, db, wms):
+    wms.deliveries["0080012345"] = _with(delivery(), required_by=None)
+    r = post_event(client, packed_event(), WEBHOOK_SECRET)
+    assert r.status_code == 200, r.text
+    assert db.execute(select(Consignment)).scalar_one().required_by is None
+
+
+@pytest.mark.parametrize("key, value", [
+    ("weight_kg", "9.1234567"),             # a 7th decimal place: refused, not rounded
+    ("length_cm", "1234567890123.5"),        # 13 digits before the point: no room
+    ("width_cm", "1E+20"),
+    ("height_cm", "-1"),
+    ("weight_kg", "NaN"),
+    ("package_no", 2 ** 31),
+    ("package_no", 0),
+])
+def test_package_numbers_that_do_not_fit_are_422_not_rounded_or_a_crash(
+        client, db, wms, key, value):
+    wms.deliveries["0080012345"] = delivery()
+    event = packed_event()
+    event["data"]["packages"][0][key] = value
+    r = post_event(client, event, WEBHOOK_SECRET)
+    assert r.status_code == 422, r.text
+    assert [e["field"] for e in r.json()["errors"]] == [f"data.packages.0.{key}"]
+    assert count(db, Consignment) == 0 and count(db, InboundEvent) == 0
+    assert wms.calls == []

@@ -1,11 +1,35 @@
 """The calls Simple TMS makes to Simple WMS. Step 1 only reads a delivery."""
 from __future__ import annotations
 
+from datetime import date
 from urllib.parse import quote
 
 import httpx
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from tms.config import get_settings
+
+
+class WmsDelivery(BaseModel):
+    """The parts of Simple WMS's GET /v1/deliveries/{ref} (its DeliveryOut) that
+    Simple TMS keeps. An answer that does not fit is refused, not guessed at."""
+
+    model_config = ConfigDict(extra="ignore")
+    warehouse: str | None = Field(default=None, max_length=32)
+    required_by: date | None = None
+    ship_to: dict
+
+    @field_validator("ship_to")
+    @classmethod
+    def _name_is_text(cls, ship_to: dict) -> dict:
+        name = ship_to.get("name")
+        if name is not None and not isinstance(name, str):
+            raise ValueError("its name should be text")
+        return ship_to
+
+    def customer(self, ref: str) -> str:
+        """The ship-to's name, cut to fit; the ref when there is none."""
+        return (self.ship_to.get("name") or ref)[:200]
 
 
 class WmsUnavailable(Exception):

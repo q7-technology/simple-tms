@@ -1,12 +1,13 @@
 """Consignments from Simple WMS deliveries."""
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
 from tms.models import Consignment, ConsignmentEvent, Package
+from tms.services.wms_client import WmsDelivery
 
 
 def _dec(value) -> Decimal | None:
@@ -20,15 +21,12 @@ def _dec(value) -> Decimal | None:
 
 def from_delivery_packed(db: Session, *, event_id: str, occurred_at: datetime, owner: str,
                          warehouse: str, ref: str, packages: list[dict],
-                         delivery: dict) -> Consignment:
+                         delivery: WmsDelivery) -> Consignment:
     """The packages come from the event, the ship-to from the delivery."""
-    ship_to = delivery.get("ship_to") or {}
-    required_by = delivery.get("required_by")
     consignment = Consignment(
         wms_ref=ref, warehouse=warehouse, owner=owner,
-        customer=(ship_to.get("name") or ref)[:200], ship_to=ship_to,
-        required_by=date.fromisoformat(required_by) if required_by else None,
-        status="packed",
+        customer=delivery.customer(ref), ship_to=delivery.ship_to,
+        required_by=delivery.required_by, status="packed",
     )
     for p in packages:
         consignment.packages.append(Package(

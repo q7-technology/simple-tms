@@ -184,7 +184,7 @@ Every `200` answer is `{ "status", "event_id", "consignment_id" }`;
 | `200 { "status": "duplicate", … }` | this `event_id` was seen before, or arrived twice at once and the other copy won; nothing happens |
 | `200 { "status": "ignored", … }` | an event Simple TMS does not act on (logged), or a `delivery.packed` for a delivery that already has a consignment (logged; `consignment_id` is that one). The event id is remembered, so a repeat is a `duplicate` |
 | `401 { "detail" }` | missing or wrong signature |
-| `422 { "errors" }` | signed, but not JSON, not an event envelope, a `delivery.packed` whose packages do not read, or one with no `delivery_ref` or `external_ref`. Nothing is kept |
+| `422 { "errors" }` | signed, but not JSON, not an event envelope, a `delivery.packed` whose packages do not read, or one with no `delivery_ref` or `external_ref`; or Simple WMS answered with a delivery that does not read (fields named `delivery.…`). Nothing is kept |
 | `503 { "detail", "code": "wms_unavailable" }` | the delivery could not be read from Simple WMS (unreachable, no answer within 5 s, or not a `200` with a delivery); nothing is kept, not even the event id, so Simple WMS's retry (1 min, 5, 30, 2 h) tries again |
 | `503 { "detail", "code": "not_configured" }` | `TMS_WMS_WEBHOOK_SECRET` is not set; Simple WMS keeps the event and retries |
 
@@ -193,6 +193,15 @@ come from the event; the customer, ship-to address and required-by date come
 from `GET /v1/deliveries/{ref}?owner=…` on Simple WMS, because the event does
 not carry them. The ref is `data.delivery_ref`, or the envelope's
 `external_ref` without it; the owner is `DEFAULT` when the envelope has none.
+
+Both are read strictly, because a retry would not read them any better. A
+package's `package_no` is 1 or more; its weight and dimensions are 0 or more,
+with at most 12 digits before the point and 6 after: a 7th decimal place is
+refused, not rounded. The delivery needs `ship_to` as an object (its `name`,
+if any, as text; the customer is that name cut to 200 characters),
+`required_by` as a date or `null`, and `warehouse` of at most 32 characters.
+Anything else is a `422`, nothing is kept, and Simple WMS shows the event as
+failed, with the reason, once its retries run out.
 A delivery has at most one consignment per owner, however many events arrive
 for it, and at once. Transfers are not consignments yet.
 
