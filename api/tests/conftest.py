@@ -1,5 +1,10 @@
 import contextlib
+import json
 import os
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from types import SimpleNamespace
+from urllib.parse import unquote, urlparse
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -179,3 +184,51 @@ def beaten_to_it(engine, rival_for):
     finally:
         event.remove(Session, "before_flush", before_flush)
     assert done, "nothing raced"
+
+
+# --- a stand-in Simple WMS ----------------------------------------------------
+
+class _FakeWms(BaseHTTPRequestHandler):
+    deliveries: dict = {}
+    statuses: list = []
+    calls: list = []
+
+    def do_GET(self):
+        url = urlparse(self.path)
+        self.calls.append({"path": url.path, "query": url.query,
+                           "authorization": self.headers.get("Authorization")})
+        ref = unquote(url.path.rsplit("/", 1)[-1])
+        status = self.statuses.pop(0) if self.statuses else 200
+        body = self.deliveries.get(ref)
+        if status == 200 and body is None:
+            status = 404
+            body = {"detail": f"no delivery {ref}"}
+        if isinstance(body, bytes):  # not JSON at all, e.g. a proxy's error page
+            payload = body
+        else:
+            payload = json.dumps(body if body is not None else {"detail": "unavailable"}).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def log_message(self, *args):
+        pass
+
+
+@pytest.fixture
+def wms(monkeypatch):
+    """Answers GET /v1/deliveries/{ref} from `deliveries` (JSON, or bytes sent
+    as they are). Queue a status in `statuses` (e.g. 503) to make the next call fail."""
+    from tms.config import get_settings
+
+    handler = type("Handler", (_FakeWms,), {"deliveries": {}, "statuses": [], "calls": []})
+    server = HTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    monkeypatch.setattr(get_settings(), "wms_url", f"http://127.0.0.1:{server.server_port}")
+    yield SimpleNamespace(deliveries=handler.deliveries, statuses=handler.statuses,
+                          calls=handler.calls)
+    server.shutdown()
+    server.server_close()
