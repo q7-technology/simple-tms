@@ -37,3 +37,12 @@ def test_a_key_needs_known_scopes_and_its_own_name(db, capsys):
     _key(capsys)
     assert main(["create-api-key", "--name", "platen", "--scopes", "printing:write"]) == 1
     assert "already exists" in capsys.readouterr().err
+
+
+def test_a_key_may_record_deliveries_as_the_driver_app_does(client, db, capsys):
+    raw = _key(capsys, name="handhelds", scopes="deliveries:read,deliveries:write")
+    me = client.get("/v1/auth/me", headers=bearer(raw)).json()
+    assert me["scopes"] == ["deliveries:read", "deliveries:write"]
+    # but has no runs of its own to list
+    assert client.get("/v1/driver/runs", params={"date": "2026-10-14"},
+                      headers=bearer(raw)).status_code == 403
