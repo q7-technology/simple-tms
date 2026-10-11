@@ -80,3 +80,41 @@ def test_the_models_match_the_migrations(blank_database):
         diff = compare_metadata(MigrationContext.configure(conn), Base.metadata)
     engine.dispose()
     assert diff == [], f"the models and the migrations disagree: {diff}"
+
+
+def _driver_row(conn, code: str) -> None:
+    conn.execute(text("insert into driver (code, name, pin_hash, failed_attempts, locked, active) "
+                      "values (:c, :c, 'x', 0, false, true)"), {"c": code})
+
+
+def test_existing_driver_codes_become_lower_case(blank_database):
+    from sqlalchemy.exc import IntegrityError
+
+    cfg = alembic_config(blank_database)
+    command.upgrade(cfg, "0003")
+    engine = create_engine(blank_database)
+    with engine.begin() as conn:
+        _driver_row(conn, "KIM-07")
+        _driver_row(conn, "sam")
+    command.upgrade(cfg, "head")
+    with engine.connect() as conn:
+        assert sorted(conn.execute(text("select code from driver")).scalars()) == ["kim-07", "sam"]
+    with pytest.raises(IntegrityError, match="ck_driver_code_lower"):
+        with engine.begin() as conn:
+            _driver_row(conn, "MEL")
+    engine.dispose()
+
+
+def test_codes_that_differ_only_by_case_stop_the_upgrade_and_say_which(blank_database):
+    cfg = alembic_config(blank_database)
+    command.upgrade(cfg, "0003")
+    engine = create_engine(blank_database)
+    with engine.begin() as conn:
+        _driver_row(conn, "Kim")
+        _driver_row(conn, "KIM")
+    with pytest.raises(RuntimeError, match="differ only by case") as refused:
+        command.upgrade(cfg, "head")
+    assert "Kim" in str(refused.value) and "KIM" in str(refused.value)
+    with engine.connect() as conn:
+        assert sorted(conn.execute(text("select code from driver")).scalars()) == ["KIM", "Kim"]
+    engine.dispose()

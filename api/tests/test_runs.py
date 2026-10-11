@@ -114,3 +114,9 @@ def test_a_driver_cannot_plan_and_nobody_without_a_session_can_look(client, db):
     day = {"date": DAY.isoformat()}
     assert client.get("/v1/runs", params=day, headers=bearer(token)).status_code == 403
     assert client.get("/v1/runs", params=day).status_code == 401
+
+
+def test_the_driver_is_read_however_the_code_is_typed(client, db, dispatcher_headers):
+    vehicle(db)
+    driver(db)
+    assert new_run(client, dispatcher_headers, code="KIM")["driver"]["code"] == "kim"

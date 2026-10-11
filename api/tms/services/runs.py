@@ -72,7 +72,7 @@ def _vehicle(db: Session, rego: str) -> Vehicle:
 
 
 def _driver(db: Session, code: str) -> Driver:
-    d = db.execute(select(Driver).where(Driver.code == code)).scalar_one_or_none()
+    d = db.execute(select(Driver).where(Driver.code == code.lower())).scalar_one_or_none()
     if d is None:
         raise FieldError("driver", f"no driver {code}")
     if not d.active:

@@ -149,7 +149,7 @@ def driver_login(body: DriverLoginIn, db: DB):
     """Five wrong PINs lock the driver until a manager unlocks them."""
     # as for users: one attempt at a time per driver, so five means five
     driver = db.execute(
-        select(Driver).where(Driver.code == body.code).with_for_update()
+        select(Driver).where(Driver.code == body.code.lower()).with_for_update()
     ).scalar_one_or_none()
     if driver is None or not driver.active:
         # an unknown code and a wrong PIN look alike, and take as long, so codes

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -48,6 +48,8 @@ class Driver(Base):
     the driver until a manager unlocks them."""
 
     __tablename__ = "driver"
+    # codes are kept lower case, so KIM-07 and kim-07 are one driver
+    __table_args__ = (CheckConstraint("code = lower(code)", name="code_lower"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     code: Mapped[str] = mapped_column(String(32), unique=True)

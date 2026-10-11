@@ -184,3 +184,25 @@ def test_an_unknown_or_inactive_code_looks_like_a_wrong_pin(client, manager_head
         assert r.headers.get("www-authenticate") == "Bearer"
     # and each took as long as a wrong PIN, against a hash with the same work
     assert checked[1:] == [access.DUMMY_HASH, access.DUMMY_HASH]
+
+
+def test_a_code_is_kept_lower_case_and_is_one_code_whatever_the_case(client, manager_headers):
+    out = make_driver(client, manager_headers, {**ALEX, "code": "KIM-07"})
+    assert out["code"] == "kim-07"
+    r = client.post("/v1/drivers", headers=manager_headers, json={**ALEX, "code": "Kim-07"})
+    assert r.status_code == 422
+    assert r.json()["errors"] == [{"field": "code", "message": "driver kim-07 already exists"}]
+
+
+def test_a_code_in_the_address_is_read_whatever_the_case(client, manager_headers):
+    make_driver(client, manager_headers)
+    assert client.get("/v1/drivers/DRV-01", headers=manager_headers).json()["code"] == "drv-01"
+    r = client.patch("/v1/drivers/Drv-01", headers=manager_headers, json={"name": "Alex Tran"})
+    assert r.status_code == 200 and r.json()["name"] == "Alex Tran"
+
+
+def test_a_driver_signs_in_whatever_the_case_of_the_code(client, manager_headers):
+    make_driver(client, manager_headers)
+    for typed in ("DRV-01", "Drv-01", " drv-01 "):
+        r = client.post("/v1/auth/driver-login", json={"code": typed, "pin": "2468"})
+        assert r.status_code == 200, typed

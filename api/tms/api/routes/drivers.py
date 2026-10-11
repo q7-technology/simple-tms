@@ -5,7 +5,7 @@ from datetime import datetime
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
@@ -25,6 +25,12 @@ class DriverIn(BaseModel):
     code: str = Field(min_length=1, max_length=32, pattern=r"^[A-Za-z0-9._-]+$")
     name: str = Field(min_length=1, max_length=120)
     pin: str = Field(pattern=PIN)
+
+    @field_validator("code")
+    @classmethod
+    def _lower(cls, code: str) -> str:
+        # a driver types their code however the phone's keyboard likes
+        return code.lower()
 
 
 class DriverPatch(BaseModel):
@@ -49,7 +55,7 @@ def driver_out(d: Driver) -> DriverOut:
 
 
 def _get(db, code: str) -> Driver:
-    d = db.execute(select(Driver).where(Driver.code == code)).scalar_one_or_none()
+    d = db.execute(select(Driver).where(Driver.code == code.lower())).scalar_one_or_none()
     if d is None:
         raise NotFound(f"no driver {code}")
     return d
