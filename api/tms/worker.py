@@ -144,8 +144,22 @@ def wait_for_schema(session: Session, timeout: float = 120, poll: float = 2) -> 
             time.sleep(poll)
 
 
-def run_once(session: Session, http: httpx.Client) -> int:
-    return send_ship_calls(session, http) + send_print_jobs(session, http)
+def run_once(session: Session, http: httpx.Client, now: datetime | None = None,
+             limit: int = 50) -> int:
+    """One pass over both queues, a row from each in turn (up to `limit`
+    each), so a run's worth of ship calls does not hold up a run sheet that
+    a driver is waiting on, nor the other way round. Returns how many were
+    tried."""
+    ships, prints = _ships_set_up(), _printing_set_up()
+    tried = {"ship": 0, "print": 0}
+    while ships or prints:
+        if ships:
+            ships = tried["ship"] < limit and _ship_one(session, http, now)
+            tried["ship"] += ships
+        if prints:
+            prints = tried["print"] < limit and _print_one(session, http, now)
+            tried["print"] += prints
+    return tried["ship"] + tried["print"]
 
 
 def main() -> None:

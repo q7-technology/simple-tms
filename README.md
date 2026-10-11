@@ -40,8 +40,8 @@ The desktop is at `https://<TMS_DOMAIN>/` (default `https://localhost/`,
 self-signed): sign in, then **Plan runs**. The API runs its migrations each
 time it starts; it is at `/v1`, its interactive docs at `/docs`, and it is
 also published on `127.0.0.1:8022` (`TMS_API_PORT`) for local work. The
-`worker` makes the calls to Simple WMS and sends run sheets to Platen; it
-needs no port. Rebuild the desktop (`npm run build`) after pulling changes to
+`worker` makes the calls to Simple WMS and sends run sheets to Platen, taking
+one of each in turn so neither queue holds up the other; it needs no port. Rebuild the desktop (`npm run build`) after pulling changes to
 `apps/desktop`; Caddy serves `apps/desktop/dist` as it is.
 
 ## Production on a real domain

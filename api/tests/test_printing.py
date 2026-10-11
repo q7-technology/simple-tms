@@ -172,3 +172,30 @@ def test_sent_at_is_when_platen_answered(client, db, platen, run, dispatcher_hea
     with httpx.Client(transport=clock.transport([])) as h:
         assert worker.send_print_jobs(db, h) == 1
     assert _job(db).sent_at == T0 + timedelta(minutes=5)
+
+
+def test_a_run_sheet_is_not_kept_waiting_behind_ship_calls(client, db, platen,
+                                                           dispatcher_headers, monkeypatch):
+    """Many ship calls due (a big run left) and a run sheet to print: the
+    worker takes them in turn, so the sheet goes out early in the pass."""
+    from tms.config import get_settings
+    from tms.models import OutboundCall
+    monkeypatch.setattr(get_settings(), "wms_url", "http://wms.test/")
+    vehicle(db, max_kg="100000", max_m3="1000")
+    vehicle(db, rego="TMS018")
+    driver(db)
+    big = new_run(client, dispatcher_headers)
+    for i in range(12):
+        assign(client, dispatcher_headers, big["id"],
+               consignment(db, ref=f"00800346{i:02d}", kg="10").id)
+    client.post(f"/v1/runs/{big['id']}/depart", headers=dispatcher_headers)
+    other = new_run(client, dispatcher_headers, rego="TMS018")
+    assign(client, dispatcher_headers, other["id"], consignment(db, ref="0080034700").id)
+    _print(client, dispatcher_headers, other["id"])
+    db.execute(OutboundCall.__table__.update().values(next_attempt_at=T0))
+    db.execute(PrintJob.__table__.update().values(next_attempt_at=T0))
+    db.commit()
+    assert worker.run_once(db, platen.client, now=T0) == 13
+    hosts = [r.url.host for r in platen.requests]
+    assert "platen.test" in hosts[:2], hosts
+    assert _job(db).status == "accepted"
