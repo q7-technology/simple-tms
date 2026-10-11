@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from tms.api.errors import Forbidden, Unauthorised
 from tms.db import get_sessionmaker
 from tms.models import Driver, User
-from tms.services import sessions
+from tms.services import api_keys, sessions
 
 
 def get_db():
@@ -22,9 +22,10 @@ DB = Annotated[Session, Depends(get_db)]
 
 @dataclass(slots=True)
 class Principal:
-    """Whoever is calling: a desktop user or a driver, each with a session."""
+    """Whoever is calling: a desktop user or a driver with a session, or a
+    system with an API key."""
 
-    kind: str  # user | driver
+    kind: str  # user | driver | key
     id: int
     name: str
     display_name: str
@@ -62,6 +63,13 @@ def get_principal(db: DB, authorization: Annotated[str | None, Header()] = None)
         return Principal(kind="driver", id=driver.id, name=driver.code,
                          display_name=driver.name, role="driver",
                          scopes=list(sessions.DRIVER_SCOPES), driver=driver)
+
+    if raw.startswith(api_keys.PREFIX):
+        key = api_keys.find(db, raw)
+        if key is None:
+            raise Unauthorised("unknown or revoked API key")
+        return Principal(kind="key", id=key.id, name=key.name, display_name=key.name,
+                         role="key", scopes=list(key.scopes))
 
     raise Unauthorised("not a Simple TMS token")
 
