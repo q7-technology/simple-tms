@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from tms.models.base import Base, created_at_column
@@ -56,3 +57,19 @@ class Driver(Base):
     locked: Mapped[bool] = mapped_column(Boolean, default=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = created_at_column()
+
+
+class ApiKey(Base):
+    """A key for a system, not a person: Platen saying a run sheet printed.
+    Only its hash is kept; the key itself is shown once, when it is made.
+    Revoked, never deleted."""
+
+    __tablename__ = "api_key"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True)
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    scopes: Mapped[list] = mapped_column(JSONB, default=list)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = created_at_column()
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
