@@ -10,13 +10,17 @@ to get wrong and no deadlock. The partial unique indexes on run and stop
 stand behind it."""
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, date, datetime
+from urllib.parse import quote
 
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session, selectinload
 
 from tms.api.errors import Conflict, FieldError, NotFound
-from tms.models import Consignment, ConsignmentEvent, Driver, Run, Stop, Vehicle
+from tms.models import (
+    Consignment, ConsignmentEvent, Driver, OutboundCall, Run, Stop, Vehicle,
+)
 from tms.services.load import Load, consignment_totals, load, total
 
 PLANNING_LOCK = 7_302_201
@@ -222,5 +226,47 @@ def reorder(db: Session, run_id: int, consignment_ids: list[int]) -> Run:
         raise Conflict("stale", f"{run.number} changed while you were looking; it has been "
                                 "reloaded, so try that again")
     _renumber([stops[cid] for cid in consignment_ids])
+    db.flush()
+    return run
+
+
+# ---- leaving -----------------------------------------------------------------
+
+# what Simple WMS records as the carrier when our own truck takes it
+OWN_FLEET = "Own fleet"
+
+
+def depart(db: Session, run_id: int, by: str) -> Run:
+    """The truck has left: each consignment is departed, and a ship call to
+    Simple WMS waits in the queue for each, in the same transaction, so none
+    is lost and none is made twice. A run that has already left is left as
+    it is."""
+    lock_planning(db)
+    run = get_run(db, run_id)
+    if run.status == "departed":
+        return run
+    run = _planned(db, run_id)
+    if not run.stops:
+        raise Conflict("run_empty", f"{run.number} has no stops")
+    if not run.vehicle.active:
+        raise Conflict("vehicle_unavailable", f"{run.vehicle.rego} is deactivated")
+    over = run_load(run)
+    if over.state == "over":
+        raise Conflict("over_capacity", f"{run.number}: {over.message}")
+    now = _now()
+    for stop in run.stops:
+        c = stop.consignment
+        c.status = "departed"
+        _event(c, "departed", run=run.number, run_id=run.id, vehicle=run.vehicle.rego,
+               driver=run.driver.code, by=by)
+        message_id = uuid.uuid4()
+        db.add(OutboundCall(
+            message_id=message_id, kind="ship", run_id=run.id, consignment_id=c.id,
+            path=f"/v1/deliveries/{quote(c.wms_ref, safe='')}/ship",
+            body={"message_id": str(message_id), "owner": c.owner, "carrier": OWN_FLEET,
+                  "tracking_no": run.number, "shipped_by": by[:64]},
+            status="pending", attempts=0, next_attempt_at=now))
+    run.status = "departed"
+    run.departed_at = now
     db.flush()
     return run

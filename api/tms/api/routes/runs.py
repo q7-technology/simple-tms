@@ -213,3 +213,9 @@ def unassign(id: int, body: UnassignIn, db: DB, who: Principal = require("runs:w
 def reorder(id: int, body: ReorderIn, db: DB, who: Principal = require("runs:write")):
     runs.reorder(db, id, body.consignment_ids)
     return _fresh(db, id)
+
+
+@router.post("/runs/{id}/depart", response_model=RunOut)
+def depart(id: int, db: DB, who: Principal = require("runs:write")):
+    runs.depart(db, id, by=who.name)
+    return _fresh(db, id)
