@@ -1,0 +1,89 @@
+import { useEffect, useState } from "react";
+import { Link, Navigate, useLocation, useParams } from "react-router-dom";
+import { api } from "../api/client";
+import type { RunStops } from "../api/types";
+import { useQueueItems, useSession } from "../auth/Session";
+import { addressLine, mapsLink } from "../lib/maps";
+import { finished, loadRun, nextStop, outcomes, plural, saveRun } from "../lib/run";
+import { Icon } from "../ui/icons";
+import { Goal, OfflineBanner, Phone, RunTop, WaitingList } from "../ui/kit";
+
+/** Between stops (DriverOffline.html): the next stop, what is waiting to
+ * send, and the run's end. Works from the phone's copy of the run; reloads
+ * it from the office when there is signal. */
+export function RunHome() {
+  const runId = Number(useParams().runId);
+  const { online, waiting, queue } = useSession();
+  const items = useQueueItems(runId);
+  const note = (useLocation().state as { note?: string } | null)?.note;
+  const [run, setRun] = useState<RunStops | null>(() => loadRun(runId));
+
+  useEffect(() => {
+    if (!online) return;
+    api.get<RunStops>(`/v1/runs/${runId}/stops`)
+      .then((fresh) => { saveRun(fresh); setRun(fresh); })
+      .catch(() => undefined);   // the phone's copy will do
+  }, [runId, online]);
+
+  if (!run) return <Navigate to="/" replace />;
+  const done = outcomes(run, items);
+  const next = nextStop(run, done);
+  const over = finished(run, items);
+  const delivered = [...done.values()].filter((o) => o === "delivered").length;
+  const back = done.size - delivered;
+
+  function finish() {
+    void queue.submit({ path: `/v1/runs/${runId}/finish`, body: {}, label: `${run!.run_no} · finished`,
+                        run_id: runId, consignment_id: null, outcome: "finished" });
+  }
+
+  return (
+    <Phone label={`Run ${run.run_no}`}>
+      <RunTop run={run} />
+      <OfflineBanner online={online} waiting={waiting} />
+      <Goal run={run} done={done} current={next?.consignment_id} />
+      <div className="scroll">
+        {note && <div className="msg a" role="status">{note}</div>}
+        {next && (
+          <section aria-label="Next stop" className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div className="lbl">Stop {next.sequence} of {run.stops.length}</div>
+            <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1.1 }}>{next.customer}</div>
+            <div style={{ fontSize: 14, color: "var(--color-ink-2)" }}>
+              {[addressLine(next.ship_to), plural(next.packages.length, "carton")].filter(Boolean).join(" · ")}</div>
+            <a href={mapsLink(next.ship_to)} target="_blank" rel="noopener noreferrer" className="big ghost" style={{ height: 48, fontSize: 15 }}>
+              <Icon name="map" />Open in Maps</a>
+          </section>
+        )}
+        {!next && !over && (
+          <section className="card" aria-label="Every stop done">
+            <b style={{ fontSize: 20 }}>Every stop is done.</b>
+            <div style={{ fontSize: 14, color: "var(--color-ink-2)", marginTop: 4 }}>
+              {delivered} delivered{back ? `, ${back} coming back to the depot` : ""}. Finish the run when you're back.</div>
+          </section>
+        )}
+        {over && (
+          <section className="card" aria-label="Run finished">
+            <b style={{ fontSize: 20 }}>{run.run_no} is finished.</b>
+            <div style={{ fontSize: 14, color: "var(--color-ink-2)", marginTop: 4 }}>
+              {delivered} delivered{back ? `, ${back} back at the depot` : ""}. Thanks, {run.driver.name}.</div>
+          </section>
+        )}
+        <WaitingList items={items} />
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12, color: "var(--color-muted)" }}>
+          <Icon name="info" size={16} width={2.2} />
+          <span>Your whole run is saved on this phone, so keep going. Each confirmation has its own number, so sending it twice never records it twice.</span>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 10, flex: "none" }}>
+        {waiting > 0 && (
+          <button type="button" className="big ghost" style={{ width: 130 }} onClick={() => void queue.drain()}>Retry now</button>)}
+        {next && (
+          <Link to={`/run/${runId}/stop/${next.consignment_id}`} className="big primary" style={{ flex: 1 }}>
+            Start stop {next.sequence}<Icon name="go" size={20} width={2.6} /></Link>)}
+        {!next && !over && (
+          <button type="button" className="big primary" style={{ flex: 1 }} onClick={finish}>Finish the run</button>)}
+        {over && <Link to="/" className="big ghost" style={{ flex: 1 }}>Back to today's runs</Link>}
+      </div>
+    </Phone>
+  );
+}
