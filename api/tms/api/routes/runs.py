@@ -11,7 +11,7 @@ from sqlalchemy import func, select, update
 
 from tms.api.deps import DB, Principal, require
 from tms.api.schemas import Dec, Page
-from tms.models import Consignment, OutboundCall, PrintJob, Run
+from tms.models import Consignment, OutboundCall, Pod, PrintJob, Run
 from tms.services import runs
 from tms.services.load import consignment_totals
 
@@ -46,6 +46,10 @@ class StopConsignment(BaseModel):
 class StopOut(BaseModel):
     sequence: int
     consignment: StopConsignment
+    # what the driver recorded: delivered or failed (with the reason), or null
+    outcome: str | None = None
+    outcome_at: dt.datetime | None = None
+    reason: str | None = None
 
 
 class LoadOut(BaseModel):
@@ -97,6 +101,7 @@ class RunOut(BaseModel):
     created_by: str
     created_at: dt.datetime
     departed_at: dt.datetime | None
+    finished_at: dt.datetime | None
     stops: list[StopOut]
     load: LoadOut
     run_sheet: RunSheetOut | None
@@ -115,6 +120,8 @@ def run_out(db, run: Run) -> RunOut:
     ld = runs.run_load(run)
     sheet = db.execute(select(PrintJob).where(PrintJob.run_id == run.id)
                        .order_by(PrintJob.id.desc()).limit(1)).scalar_one_or_none()
+    reasons = dict(db.execute(select(Pod.stop_id, Pod.reason).where(
+        Pod.run_id == run.id, Pod.outcome == "failed")).all())
     calls = dict(db.execute(select(OutboundCall.status, func.count())
                             .where(OutboundCall.run_id == run.id)
                             .group_by(OutboundCall.status)).all())
@@ -125,7 +132,9 @@ def run_out(db, run: Run) -> RunOut:
                            active=v.active),
         driver=RunDriver(code=run.driver.code, name=run.driver.name),
         created_by=run.created_by, created_at=run.created_at, departed_at=run.departed_at,
-        stops=[StopOut(sequence=s.sequence, consignment=stop_consignment(s.consignment))
+        finished_at=run.finished_at,
+        stops=[StopOut(sequence=s.sequence, consignment=stop_consignment(s.consignment),
+                       outcome=s.outcome, outcome_at=s.outcome_at, reason=reasons.get(s.id))
                for s in run.stops],
         load=LoadOut(weight_kg=ld.weight_kg, volume_m3=ld.volume_m3, max_kg=ld.max_kg,
                      max_m3=ld.max_m3, unknown_weight=ld.unknown_weight,

@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from decimal import Decimal
+from typing import Literal
 
 from fastapi import APIRouter, Query
-from pydantic import BaseModel, ConfigDict
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 from tms.api.deps import DB, Principal, require, require_any
 from tms.api.errors import Forbidden
@@ -125,3 +127,100 @@ def start_run(id: int, body: MessageIn, db: DB, who: Principal = require("delive
         return StartOut(message_id=body.message_id, run_id=run.id, run_no=run.number,
                         status=run.status, departed_at=run.departed_at)
     return handle(db, who, body.message_id, f"/v1/runs/{id}/start", work)
+
+
+class Position(BaseModel):
+    """Where the phone was, as decimal strings ("-37.562210"); more than six
+    places is rounded, never refused."""
+
+    model_config = ConfigDict(extra="forbid")
+    latitude: Decimal = Field(ge=-90, le=90)
+    longitude: Decimal = Field(ge=-180, le=180)
+    accuracy_m: Decimal | None = Field(default=None, ge=0, le=1_000_000)
+
+    def where(self) -> deliveries.Where:
+        return deliveries.Where(self.latitude, self.longitude, self.accuracy_m)
+
+
+class PackageTick(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    package_no: int = Field(ge=1)
+    how: Literal["scan", "tick"]
+
+
+class DeliverIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    message_id: uuid.UUID
+    at: AwareDatetime
+    packages: list[PackageTick] = Field(max_length=500)
+    signed_name: str | None = Field(default=None, max_length=120)
+    signature_file: uuid.UUID | None = None
+    photo_file: uuid.UUID | None = None
+    note: str | None = Field(default=None, max_length=500)
+    position: Position | None = None
+
+    @model_validator(mode="after")
+    def _proof(self):
+        if self.signature_file and not self.signed_name:
+            raise ValueError("a signature needs the printed name with it")
+        if self.signed_name and not self.signature_file:
+            raise ValueError("a printed name needs the signature with it")
+        if not self.signature_file and not self.photo_file:
+            raise ValueError("a delivery needs a signature with a printed name, a photo, or both")
+        return self
+
+
+class FailIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    message_id: uuid.UUID
+    at: AwareDatetime
+    reason: Literal["closed", "refused", "damaged", "wrong_address"]
+    note: str | None = Field(default=None, max_length=500)
+    photo_file: uuid.UUID | None = None
+    position: Position | None = None
+
+
+class StopDoneOut(BaseModel):
+    message_id: uuid.UUID
+    run_id: int
+    run_no: str
+    consignment_id: int
+    sequence: int
+    outcome: str
+    at: dt.datetime
+    pod_id: int
+    done: int
+    left: int
+
+
+def _stop_done(db, message_id, run, stop, pod) -> StopDoneOut:
+    t = deliveries.tally(db, run.id)
+    return StopDoneOut(message_id=message_id, run_id=run.id, run_no=run.number,
+                       consignment_id=stop.consignment_id, sequence=stop.sequence,
+                       outcome=pod.outcome, at=pod.at, pod_id=pod.id,
+                       done=t.get("delivered", 0) + t.get("failed", 0), left=t.get(None, 0))
+
+
+@router.post("/runs/{id}/stops/{consignment_id}/deliver", response_model=StopDoneOut)
+def deliver(id: int, consignment_id: int, body: DeliverIn, db: DB,
+            who: Principal = require("deliveries:write")):
+    def work():
+        run, stop, pod = deliveries.deliver(
+            db, who, id, consignment_id, message_id=body.message_id, at=body.at,
+            packages=[p.model_dump() for p in body.packages], signed_name=body.signed_name,
+            signature_file=body.signature_file, photo_file=body.photo_file, note=body.note,
+            where=body.position.where() if body.position else None)
+        return _stop_done(db, body.message_id, run, stop, pod)
+    return handle(db, who, body.message_id, f"/v1/runs/{id}/stops/{consignment_id}/deliver", work)
+
+
+@router.post("/runs/{id}/stops/{consignment_id}/fail", response_model=StopDoneOut)
+def fail(id: int, consignment_id: int, body: FailIn, db: DB,
+         who: Principal = require("deliveries:write")):
+    def work():
+        run, stop, pod = deliveries.fail(
+            db, who, id, consignment_id, message_id=body.message_id, at=body.at,
+            reason=body.reason, note=body.note, photo_file=body.photo_file,
+            where=body.position.where() if body.position else None)
+        return _stop_done(db, body.message_id, run, stop, pod)
+    return handle(db, who, body.message_id, f"/v1/runs/{id}/stops/{consignment_id}/fail", work)
