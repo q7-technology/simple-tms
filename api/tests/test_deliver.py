@@ -154,3 +154,29 @@ def test_a_driver_delivers_only_on_their_own_run(client, db, dispatcher_headers)
     driver(db, code="mel", name="Mel")
     r = delivered(client, driver_headers(client, code="mel"), run["id"], a)
     assert r.status_code == 404
+
+
+def test_a_message_id_used_for_another_action_is_refused(client, db, dispatcher_headers):
+    run, (a, b) = planned_run(client, db, dispatcher_headers)
+    kim = driver_headers(client)
+    message_id = uuid.uuid4()
+    started = client.post(f"/v1/runs/{run['id']}/start", headers=kim,
+                          json={"message_id": str(message_id)})
+    assert started.status_code == 200, started.text
+    # the start's id, sent again on a delivery: not a repeat, a mistake
+    r = delivered(client, kim, run["id"], a, message_id=message_id)
+    assert r.status_code == 409 and r.json() == {
+        "code": "message_id_reused",
+        "detail": "that message_id was already used for another confirmation"}
+    assert db.execute(select(Pod)).first() is None
+    # nor for the same action on another stop
+    assert delivered(client, kim, run["id"], a, message_id=uuid.uuid4()).status_code == 200
+    first = db.execute(select(Pod.message_id)).scalar_one()
+    r = delivered(client, kim, run["id"], b, message_id=first)
+    assert r.status_code == 409 and r.json()["code"] == "message_id_reused"
+    # a true repeat still gets its own reply back
+    again = client.post(f"/v1/runs/{run['id']}/start", headers=kim,
+                        json={"message_id": str(message_id)})
+    assert again.status_code == 200 and again.json() == started.json()
+    assert db.execute(select(InboundMessage).where(
+        InboundMessage.message_id == message_id)).scalar_one().duplicates == 1

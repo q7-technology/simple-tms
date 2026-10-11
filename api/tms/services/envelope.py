@@ -35,13 +35,20 @@ def handle(db: Session, who, message_id: uuid.UUID, path: str,
     once take turns on a lock, so the second finds the first's reply. The
     reply is stored in the same transaction as the work: both land, or
     neither does and the phone tries again. A refusal is not stored, so the
-    same message can be sent again once whatever stopped it is put right."""
+    same message can be sent again once whatever stopped it is put right.
+
+    `path` names the action and what it is on (`/v1/runs/7/stops/31/deliver`),
+    so the same message_id on another action (a start's id sent again on a
+    delivery) is a mistake, refused, never answered with the other's reply."""
     db.execute(text("select pg_advisory_xact_lock(:a, :b)"),
                {"a": MESSAGE_LOCK, "b": lock_key(message_id)})
     seen = db.get(InboundMessage, message_id, populate_existing=True)
     if seen is not None:
         if seen.sender != sender_of(who):
             raise Conflict("message_id_taken", "that message_id was sent by someone else")
+        if seen.path != path:
+            raise Conflict("message_id_reused",
+                           "that message_id was already used for another confirmation")
         seen.duplicates += 1
         seen.last_duplicate_at = datetime.now(UTC)
         db.commit()

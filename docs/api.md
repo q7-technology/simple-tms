@@ -27,7 +27,9 @@ are at `/docs`.
   `message_id` again from the same sender gets that reply back (status and
   body) and changes nothing, however long after. A refusal is not kept, so the
   same message can be sent again once whatever stopped it is put right. A
-  `message_id` someone else has used is `409 message_id_taken`.
+  `message_id` someone else has used is `409 message_id_taken`; one the same
+  sender used for another confirmation (another action, or the same on
+  another run or stop) is `409 message_id_reused`.
 - **Never deleted:** drivers and vehicles are deactivated, runs cancelled and
   stops taken off, never deleted. A consignment's history is append-only.
 
@@ -445,6 +447,7 @@ left as it is.
 | `stop_done` | the stop already has an outcome, from another message |
 | `stops_left` | finish while a stop has no outcome |
 | `message_id_taken` | someone else sent that `message_id` |
+| `message_id_reused` | that `message_id` was used for another confirmation |
 | `file_id_taken` | that file id is already another picture |
 
 A consignment that is not on the run is `404`.
