@@ -11,24 +11,28 @@ are at `/docs`.
   `POST /v1/auth/login`, a driver from `POST /v1/auth/driver-login`. The
   desktop and the driver app use these endpoints and nothing else: the API is
   the only door. Simple WMS events are the exception: they are signed instead
-  (see below).
+  (see below). A system (Platen reporting a run sheet) uses an API key,
+  `tms_k.…`, made with `tms create-api-key`.
 - **Errors:** a missing, expired or unknown token is `401` with `{ "detail" }`.
   A token without the scope is `403` with `{ "detail" }`. Validation problems
   are `422` with `{ "errors": [{ "field", "message" }] }`; a body field is
   named as it is (`max_kg`, `data.packages.0.weight_kg`), a query parameter
   with `query.` in front (`query.limit`). A field the endpoint does not take is
   a `422` too. Something that is not there is `404` with `{ "detail" }`.
-- **Never deleted:** drivers and vehicles are deactivated, not deleted. A
-  consignment's history is append-only.
+  Something well formed that cannot be done as things stand (a run that has
+  left, a truck over its limit) is `409` with `{ "detail", "code" }`.
+- **Never deleted:** drivers and vehicles are deactivated, runs cancelled and
+  stops taken off, never deleted. A consignment's history is append-only.
 
 ## Scopes
 
 | Who | Scopes |
 | --- | --- |
 | `admin` | `*` |
-| `manager` | `fleet:read`, `fleet:write`, `consignments:read` |
-| `dispatcher` | `fleet:read`, `consignments:read` |
+| `manager` | `fleet:read`, `fleet:write`, `consignments:read`, `runs:read`, `runs:write` |
+| `dispatcher` | `fleet:read`, `consignments:read`, `runs:read`, `runs:write` |
 | a driver | `fleet:read` (to pick a truck) |
+| an API key | what it was made with: some of `printing:write`, `runs:read`, `runs:write`, `consignments:read`, `fleet:read` |
 
 ## Sign in
 
@@ -60,8 +64,9 @@ good. Its refresh token stops working; the access token already handed out
 runs out within its 15 minutes.
 
 ### GET /v1/auth/me
-`{ "kind": "user" | "driver", "id", "name", "display_name", "role", "scopes" }`.
-`name` is the username, or the driver's code; a driver's `role` is `driver`.
+`{ "kind": "user" | "driver" | "key", "id", "name", "display_name", "role", "scopes" }`.
+`name` is the username, the driver's code, or the key's name; a driver's
+`role` is `driver`, an API key's `key`.
 
 ### POST /v1/auth/driver-login
 `{ "code": "drv-01", "pin": "2468" }` →
@@ -138,13 +143,16 @@ just this page. Each:
   "ship_to": { "name": "Ballarat Hardware", "address": "12 Sturt St", "suburb": "Ballarat",
                "state": "VIC", "postcode": "3350", "country": "AU", "phone": "03 5300 0000" },
   "required_by": "2026-10-11", "status": "packed", "created_at": "2026-10-10T03:12:04.218760Z",
+  "weight_kg": "9.5", "volume_m3": "0.096",
   "packages": [{ "package_no": 1, "type": "carton", "weight_kg": "9.5", "length_cm": "60",
                  "width_cm": "40", "height_cm": "40", "sscc": "093123450000000012" }]
 }
 ```
 `ship_to` is the delivery's ship-to as Simple WMS gave it when the freight
 was packed; `customer` is its `name`. A package's weight, dimensions and SSCC
-are `null` when Simple WMS had none.
+are `null` when Simple WMS had none. `weight_kg` and `volume_m3` are the
+packages added up (volume from length × width × height in cm); a package
+without a weight, or without all three sides, adds nothing.
 
 ### GET /v1/consignments/{id}
 The same, plus its history, oldest first:
@@ -152,8 +160,158 @@ The same, plus its history, oldest first:
 "history": [{ "kind": "packed", "at": "2026-10-10T03:12:00Z",
               "detail": { "wms_event_id": "…", "packages": 1 } }]
 ```
-Statuses in step 1: `packed`. Runs bring `assigned`, `departed`, `delivered`
-and `failed`.
+Statuses: `packed` (in the tray), `assigned` (on a planned run), `departed`
+(its run has left). `delivered` and `failed` come with the driver app. The
+history has a row for each: `packed`, `assigned` and `unassigned` (with the
+run and who), `departed` (with the run, vehicle, driver and who).
+
+## Runs
+
+A run is one truck's day: a vehicle, a driver and stops in order. `runs:read`
+to look, `runs:write` to change. Every change to any plan is made one at a
+time, so two dispatchers dragging at once each see the other's work: stops
+are always numbered 1, 2, 3… with no gap or twin, and a consignment is on one
+run at most. Runs are cancelled, never deleted; a stop taken off a run keeps
+its row.
+
+Each run:
+```json
+{
+  "id": 7, "run_no": "R-0007", "date": "2026-10-14", "status": "planned",
+  "vehicle": { "rego": "TMS041", "type": "rigid", "max_kg": "4500", "max_m3": "22", "active": true },
+  "driver": { "code": "kim", "name": "Kim" },
+  "created_by": "dee", "created_at": "2026-10-13T22:01:09.114Z", "departed_at": null,
+  "stops": [{ "sequence": 1, "consignment": {
+      "id": 31, "wms_ref": "0080034519", "customer": "Station Deli", "suburb": "Ballan",
+      "status": "assigned", "packages": 5, "cartons": 5, "weight_kg": "72", "volume_m3": "0.5" } }],
+  "load": { "weight_kg": "72", "volume_m3": "0.5", "max_kg": "4500", "max_m3": "22",
+            "unknown_weight": 0, "unknown_volume": 0, "state": "ok", "message": null },
+  "run_sheet": null,
+  "shipping": { "pending": 0, "done": 0, "failed": 0 }
+}
+```
+`status` is `planned`, `departed`, `done` (with the driver app) or
+`cancelled`. `load` adds up the stops' packages against the truck: `state` is
+`ok`, `near` (90 % or more of either limit: "80 kg and 0.4 m³ left. Small
+drops only.") or `over` (more than either: "280 kg too heavy. Move a stop to
+another run before printing the run sheet."); what is over is rounded up, what
+is left rounded down. `unknown_weight` and `unknown_volume` count packages
+with no weight, or without all three sides, which add nothing. `run_sheet` is
+the latest print of it (see Run sheets), `null` until it is first printed:
+`{ "job_id", "status", "printer", "last_error", "created_at", "printed_at" }`.
+`shipping` counts its ship calls to Simple WMS by state.
+
+- `GET /v1/runs?date=2026-10-14` — that day's runs, oldest first, as
+  `{ "items", "total" }`. Cancelled runs only with `status=cancelled` (or a
+  comma list of statuses). `date` is required.
+- `POST /v1/runs` — `{ "date", "vehicle": "TMS041", "driver": "kim" }` →
+  `201` with the run. The rego is read as for vehicles (`tms 041` is
+  `TMS041`). A truck has one run a day (a cancelled one frees it); a driver
+  may have several. A truck that is deactivated, unknown or already on a run
+  that day, or a driver that is deactivated or unknown, is a `422` naming
+  `vehicle` or `driver`.
+- `GET /v1/runs/{id}`
+- `PATCH /v1/runs/{id}` — `vehicle` and/or `driver`, read and refused as
+  above, while it is planned (`409 run_not_planned` after).
+- `POST /v1/runs/{id}/cancel` — only an empty planned run: `409 run_not_empty`
+  while it has stops, `409 run_not_planned` once it has departed. Cancelling a
+  cancelled run is a no-op.
+
+### Planning the stops
+
+Each answers with the run as it now is.
+
+- `POST /v1/runs/{id}/assign` — `{ "consignment_id", "position"? }`. Puts a
+  `packed` consignment on the run at `position` (1 is first; left out, last;
+  past the end, last), or moves one already on this run to that place, or
+  takes it off another planned run and puts it here. Already in that place:
+  nothing changes (with no `position`, one already on this run moves to last). The history gets `assigned` (and `unassigned` from the other run)
+  with the run and who. Past the truck's limits is allowed: the run shows
+  `over`, and cannot print or leave until a stop moves.
+- `POST /v1/runs/{id}/unassign` — `{ "consignment_id" }`. Back to the tray
+  (`packed`, history `unassigned`). Not on this run: nothing happens.
+- `POST /v1/runs/{id}/reorder` — `{ "consignment_ids": [ … ] }`, every stop on
+  the run in the new order. If that is not exactly the run's stops (someone
+  else added or took one off meanwhile, or an id is twice), it is
+  `409 stale` and nothing changes: reload and drag again.
+
+| `409` code | When |
+| --- | --- |
+| `run_not_planned` | the run has departed or been cancelled; its stops are fixed |
+| `not_plannable` | the consignment has departed (or is otherwise past planning) |
+| `vehicle_unavailable` | the run's truck has been deactivated |
+| `stale` | a reorder that is not the run's stops as they are |
+
+An unknown consignment is a `422` on `consignment_id`; an unknown run `404`.
+
+### POST /v1/runs/{id}/depart
+
+The truck has left. Each consignment becomes `departed` (history `departed`
+with the run, vehicle, driver and who), and a ship call to Simple WMS is
+queued for each, all in one go. Departing a departed run changes nothing and
+queues nothing more. Refused with `409`: `run_empty`, `vehicle_unavailable`,
+`over_capacity` (the detail is the run number and the load's message:
+"R-0007: 280 kg too heavy. Move a stop to another run before printing the run
+sheet."), `run_not_planned` for a cancelled run.
+
+The worker then makes, for each consignment:
+```
+POST {TMS_WMS_URL}/v1/deliveries/{wms_ref}/ship      Authorization: Bearer {TMS_WMS_API_KEY}
+{ "message_id": "<its own uuid>", "owner": "DEFAULT", "carrier": "Own fleet",
+  "tracking_no": "R-0007", "shipped_by": "dee" }
+```
+The Simple WMS key needs `tasks:write` (and `tasks:read` for step 1's read),
+with its warehouses and owner covering the delivery. Any `2xx` is done, and so
+is `409 already_shipped`. Anything else, or no answer within 10 s, is tried
+again after 1 min, 5, 30 and 2 h; if the try after the 2 h wait fails too the
+call is `failed`. The same `message_id` goes every time, so Simple WMS ships
+each delivery once however often it is asked. A `401`, `403` or `404` is also
+logged as an error naming the likely cause. Without `TMS_WMS_URL` and
+`TMS_WMS_API_KEY` the calls wait, untried.
+
+- `POST /v1/runs/{id}/retry-ship` — calls that gave up start again from
+  scratch, each with its same `message_id`.
+
+### Run sheets
+
+- `POST /v1/runs/{id}/print` → `202` with the print job. Each call prints
+  again. Refused with `409`: `printing_not_set_up` (no `TMS_PLATEN_URL`),
+  `run_empty`, `run_cancelled`, `over_capacity`.
+
+```json
+{ "job_id": "uuid", "run_id": 7, "template": "run-sheet", "printer": "dispatch",
+  "status": "pending", "attempts": 0, "last_error": null,
+  "created_at": "…", "sent_at": null, "printed_at": null }
+```
+The worker sends it to `TMS_PLATEN_URL` (Platen's `https://<platen>/intake/jobs`)
+with `Authorization: Bearer {TMS_PLATEN_KEY}` and `X-TMS-Job-Id`:
+```json
+{ "job_id": "uuid", "template": "run-sheet", "version": "v1", "printer": "dispatch",
+  "copies": 1, "reference": { "type": "run", "ref": "R-0007" },
+  "data": {
+    "run_no": "R-0007", "date": "2026-10-14", "vehicle": "TMS041", "vehicle_type": "rigid",
+    "driver": "Kim", "driver_code": "kim", "stop_count": 2,
+    "total_kg": "310", "total_m3": "1", "max_kg": "4,500", "max_m3": "22",
+    "lines": [{ "stop": 1, "customer": "Station Deli", "wms_ref": "0080034519",
+                "address": "1 Main St", "suburb": "Ballan", "postcode": "3342", "phone": "",
+                "packages": 1, "weight_kg": "100", "required_by": "" }]
+  } }
+```
+Every value is text or a whole number, never `null`. In Platen, `run-sheet` is a
+page template: it gets one row per entry in `lines` with the rest beside it,
+so a table binds `{{ stop }}`, `{{ customer }}`, `{{ address }}`… and a
+heading `{{ run_no }}`, `{{ driver }}`. Status `pending` → `accepted` (Platen
+has it) → `printed` or `failed`; refusals follow the same backoff as ship
+calls, and `last_error` keeps Platen's answer in its own words.
+
+### POST /v1/print-jobs/{job_id}/status
+
+How a print went, from Platen: the body Simple WMS takes,
+`{ "status": "accepted" | "printed" | "failed", "message"?, "printer"? }`.
+Needs `printing:write` (an API key made for Platen). `printed` sets
+`printed_at`; `failed` keeps `message` as `last_error`; a late `accepted` does
+not undo `printed` or `failed`. Answers with the print job as it now is. An
+unknown `job_id` is `404`, which Platen does not ask again.
 
 ## From Simple WMS
 
@@ -165,8 +323,10 @@ POST /v1/subscribers   (on Simple WMS, with an integration:admin key)
   "secret": "<the same value as TMS_WMS_WEBHOOK_SECRET>",
   "event_types": ["delivery.*"], "warehouses": ["*"], "owner": "*" }
 ```
-and give Simple TMS a Simple WMS key with `tasks:read` in `TMS_WMS_API_KEY`
-and the WMS address in `TMS_WMS_URL`.
+and give Simple TMS a Simple WMS key with `tasks:read` and `tasks:write` in
+`TMS_WMS_API_KEY` (`tasks:read` to read a packed delivery, `tasks:write` to say
+it shipped: see `POST /v1/runs/{id}/depart`) and the WMS address in
+`TMS_WMS_URL`.
 
 The body is Simple WMS's event envelope, exactly as sent:
 `{ "event_id", "event_type", "occurred_at", "warehouse", "owner", "external_ref", "data" }`.
@@ -205,6 +365,19 @@ Anything else is a `422`, nothing is kept, and Simple WMS shows the event as
 failed, with the reason, once its retries run out.
 A delivery has at most one consignment per owner, however many events arrive
 for it, and at once. Transfers are not consignments yet.
+
+## API keys
+
+For a system rather than a person; today, Platen saying how a run sheet
+went. Made on the command line and shown once (only a hash is kept):
+```
+docker compose exec api tms create-api-key --name platen --scopes printing:write
+docker compose exec api tms revoke-api-key --name platen
+```
+A key may be given some of `printing:write`, `runs:read`, `runs:write`,
+`consignments:read`, `fleet:read`. `GET /v1/auth/me` with a key answers
+`"kind": "key"`, its name and scopes. A revoked key is a `401` at once; it is
+kept, not deleted.
 
 ## System
 
