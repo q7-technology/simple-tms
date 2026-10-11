@@ -12,6 +12,7 @@ from tms.api.deps import DB, Principal, require
 from tms.api.errors import NotFound
 from tms.api.schemas import Dec, Page
 from tms.models import Consignment
+from tms.services.load import consignment_totals
 
 router = APIRouter(tags=["consignments"])
 
@@ -42,6 +43,9 @@ class ConsignmentOut(BaseModel):
     required_by: date | None
     status: str
     created_at: datetime
+    # the packages added up: what it puts on a truck
+    weight_kg: Dec
+    volume_m3: Dec
     packages: list[PackageOut]
 
 
@@ -50,10 +54,11 @@ class ConsignmentDetail(ConsignmentOut):
 
 
 def consignment_out(c: Consignment) -> dict:
+    totals = consignment_totals(c.packages)
     return dict(
         id=c.id, wms_ref=c.wms_ref, warehouse=c.warehouse, owner=c.owner, customer=c.customer,
         ship_to=c.ship_to or {}, required_by=c.required_by, status=c.status,
-        created_at=c.created_at,
+        created_at=c.created_at, weight_kg=totals.weight_kg, volume_m3=totals.volume_m3,
         packages=[PackageOut(package_no=p.package_no, type=p.type, weight_kg=p.weight_kg,
                              length_cm=p.length_cm, width_cm=p.width_cm, height_cm=p.height_cm,
                              sscc=p.sscc) for p in c.packages],

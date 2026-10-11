@@ -95,3 +95,12 @@ def test_a_driver_cannot_list_consignments_yet(client, manager_headers):
     token = client.post("/v1/auth/driver-login", json={"code": "drv-01", "pin": "2468"}).json()["token"]
     r = client.get("/v1/consignments", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 403
+
+
+def test_each_consignment_says_what_it_weighs_and_takes_up(client, wms, dispatcher_headers):
+    cid = arrive(client, wms, "2044", "Ballarat Hardware")
+    listed = client.get("/v1/consignments", headers=dispatcher_headers).json()["items"][0]
+    # one 9.5 kg carton of 60 x 40 x 40 cm, and a satchel with no weight or size
+    assert listed["weight_kg"] == "9.5" and listed["volume_m3"] == "0.096"
+    one = client.get(f"/v1/consignments/{cid}", headers=dispatcher_headers).json()
+    assert one["weight_kg"] == "9.5" and one["volume_m3"] == "0.096"
