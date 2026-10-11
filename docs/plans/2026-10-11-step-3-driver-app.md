@@ -6252,7 +6252,7 @@ await shot("1-sign-in");
 await page.getByRole("button", { name: "Sign in" }).click();
 await page.getByRole("radio", { name: /TMS041/ }).click();
 await shot("2-today");
-await page.getByRole("button", { name: "Start run" }).click();
+await page.getByRole("button", { name: /^(Start run|Carry on)$/ }).click();
 await page.getByRole("link", { name: /Start stop 1/ }).waitFor();
 console.log("service worker in control:", await page.evaluate(() => !!navigator.serviceWorker.controller));
 await shot("3-run");
@@ -6267,7 +6267,7 @@ for (const box of await page.getByRole("checkbox").all()) {
 }
 await shot("4-stop");
 await page.getByRole("link", { name: "Delivered" }).click();
-const pad = await page.getByLabel("Signature pad: sign with a finger").boundingBox();
+const pad = await page.getByLabel(/^Signature pad/).boundingBox();
 await page.mouse.move(pad.x + 30, pad.y + 100);
 await page.mouse.down();
 for (let i = 1; i <= 12; i++) await page.mouse.move(pad.x + 30 + i * 20, pad.y + 100 - (i % 2) * 50);
