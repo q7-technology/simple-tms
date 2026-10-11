@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type DragEvent, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { Link, useOutletContext } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type { Card, Consignment, Driver, Page, Run, Vehicle } from "../api/types";
@@ -6,6 +6,7 @@ import { clock, dayOptions } from "../lib/days";
 import { plain, toMicro } from "../lib/decimal";
 import { afterAdding, loadOf, type Gauge } from "../lib/load";
 import { cardOf, dropPosition, kg, m3, moved, packagesLabel, positionWithout, runColour } from "../lib/plan";
+import { ActionSelect } from "../ui/ActionSelect";
 import { Drawer } from "../ui/Drawer";
 import { Icon } from "../ui/icons";
 
@@ -46,6 +47,13 @@ function Unavailable({ v, reason, detail }: { v: Vehicle; reason: string; detail
   );
 }
 
+/** After moving a stop up or down: the same button, the other one once that
+ * is off (the stop is now first or last), or the stop itself. */
+function keepOn(id: number, way: "up" | "down"): string[] {
+  const other = way === "up" ? "down" : "up";
+  return [`[data-kb="${way}-${id}"]`, `[data-kb="${other}-${id}"]`, `[data-stop="${id}"]`];
+}
+
 function sheetLine(run: Run): Note {
   const s = run.run_sheet;
   if (!s) return null;
@@ -74,6 +82,26 @@ export function PlanRuns() {
   const [adding, setAdding] = useState(false);
   const [drag, setDrag] = useState<Dragging | null>(null);
   const [target, setTarget] = useState<Target | null>(null);
+  // Where the keyboard goes once a change is made and the board reloaded: the
+  // control or the stop it moved, the first of these that is there and on.
+  // Without it the moved stop's controls are redrawn and focus drops to the page.
+  const focusNext = useRef<string[] | null>(null);
+
+  useEffect(() => {
+    if (busy || !focusNext.current) return;
+    const wanted = focusNext.current;
+    focusNext.current = null;
+    for (const selector of wanted) {
+      const el = document.querySelector<HTMLElement>(selector);
+      if (el && !(el as HTMLButtonElement).disabled) {
+        // the controls are hidden until their stop has focus, and a hidden
+        // button cannot take it: the stop first, then the button
+        el.closest<HTMLElement>(".stop, .con")?.focus();
+        el.focus();
+        return;
+      }
+    }
+  }, [busy]);
 
   const load = useCallback(async () => {
     const [r, t, v, d] = await Promise.all([
@@ -211,7 +239,9 @@ export function PlanRuns() {
     const q = filter.trim().toLowerCase();
     return !q || c.customer.toLowerCase().includes(q) || (c.suburb ?? "").toLowerCase().includes(q);
   });
-  const columns = `250px repeat(${runs.length}, minmax(210px, 1fr))${unavailable.length ? " 172px" : ""}`;
+  // A lane is as drawn (about 250 px) and no wider than 300 px with only a run
+  // or two; with none, there is no repeat(0, …), which would void the grid.
+  const columns = ["250px", ...runs.map(() => "minmax(210px, 300px)"), ...(unavailable.length ? ["172px"] : [])].join(" ");
   const minWidth = 262 + runs.length * 222 + (unavailable.length ? 184 : 0);
 
   return (
@@ -263,7 +293,7 @@ export function PlanRuns() {
             <input type="search" placeholder="Customer or suburb" value={filter} onChange={(e) => setFilter(e.target.value)} /></label>
           {drag?.from != null && <div className="drop">Drop here to take it off its run</div>}
           {shown.map((c) => (
-            <div key={c.id} className={`con${drag?.card.id === c.id ? " dragging" : ""}`} draggable tabIndex={0}
+            <div key={c.id} className={`con${drag?.card.id === c.id ? " dragging" : ""}`} data-card={c.id} draggable tabIndex={0}
                  onDragStart={(e) => startDrag(e, { card: c, from: null, index: -1 })} onDragEnd={endDrag}>
               <span style={{ width: 22, display: "grid", placeItems: "center", color: "#9AA8A0" }} aria-hidden="true"><Icon name="grip" width={2.4} /></span>
               <div className="c"><b>{c.customer}</b><span className="small">{c.suburb}</span>
@@ -271,11 +301,10 @@ export function PlanRuns() {
                 <div className="ref">From WMS delivery {c.wms_ref}</div>
               </div>
               <div className="kb">
-                <select aria-label={`Put ${c.customer} on a run`} value="" disabled={busy || planned.length === 0}
-                        onChange={(e) => { if (e.target.value) void assign(Number(e.target.value), c); }}>
-                  <option value="">Put on a run…</option>
+                <ActionSelect label={`Put ${c.customer} on a run`} placeholder="Put on a run…" disabled={busy || planned.length === 0}
+                              onChoose={(to) => { focusNext.current = [`[data-stop="${c.id}"]`]; void assign(Number(to), c); }}>
                   {planned.map((r) => <option key={r.id} value={r.id}>{r.run_no} · {r.driver.name}</option>)}
-                </select>
+                </ActionSelect>
               </div>
             </div>
           ))}
@@ -309,7 +338,7 @@ export function PlanRuns() {
               {run.stops.map((s, j) => (
                 <div key={s.consignment.id}>
                   {j === hintAt && hint}
-                  <div className={`stop${drag?.card.id === s.consignment.id ? " dragging" : ""}`} data-index={j} tabIndex={open ? 0 : undefined}
+                  <div className={`stop${drag?.card.id === s.consignment.id ? " dragging" : ""}`} data-index={j} data-stop={s.consignment.id} tabIndex={open ? 0 : undefined}
                        draggable={open} onDragStart={(e) => startDrag(e, { card: s.consignment, from: run.id, index: j })} onDragEnd={endDrag}>
                     {open && <span className="h" aria-hidden="true"><Icon name="grip" width={2.4} /></span>}
                     <span className="n" style={{ background: colour }}>{s.sequence}</span>
@@ -319,19 +348,30 @@ export function PlanRuns() {
                     {open && (
                       <span className="kb">
                         <button type="button" aria-label={`Move ${s.consignment.customer} up`} disabled={busy || j === 0}
-                                onClick={() => void reorder(run, moved(ids, j, j - 1))}><Icon name="up" size={14} /></button>
+                                data-kb={`up-${s.consignment.id}`}
+                                onClick={() => {
+                                  focusNext.current = keepOn(s.consignment.id, "up");
+                                  void reorder(run, moved(ids, j, j - 1));
+                                }}><Icon name="up" size={14} /></button>
                         <button type="button" aria-label={`Move ${s.consignment.customer} down`} disabled={busy || j === ids.length - 1}
-                                onClick={() => void reorder(run, moved(ids, j, j + 1))}><Icon name="down" size={14} /></button>
-                        <select aria-label={`Move ${s.consignment.customer} to`} value="" disabled={busy}
-                                onChange={(e) => {
-                                  const to = e.target.value;
-                                  if (to === "tray") void unassign(run.id, s.consignment);
-                                  else if (to) void assign(Number(to), s.consignment);
-                                }}>
-                          <option value="">Move to…</option>
+                                data-kb={`down-${s.consignment.id}`}
+                                onClick={() => {
+                                  focusNext.current = keepOn(s.consignment.id, "down");
+                                  void reorder(run, moved(ids, j, j + 1));
+                                }}><Icon name="down" size={14} /></button>
+                        <ActionSelect label={`Move ${s.consignment.customer} to`} placeholder="Move to…" disabled={busy}
+                                      onChoose={(to) => {
+                                        if (to === "tray") {
+                                          focusNext.current = [`[data-card="${s.consignment.id}"]`];
+                                          void unassign(run.id, s.consignment);
+                                        } else {
+                                          focusNext.current = [`[data-stop="${s.consignment.id}"]`];
+                                          void assign(Number(to), s.consignment);
+                                        }
+                                      }}>
                           <option value="tray">Back to the tray</option>
                           {others.map((r) => <option key={r.id} value={r.id}>{r.run_no} · {r.driver.name}</option>)}
-                        </select>
+                        </ActionSelect>
                       </span>
                     )}
                   </div>

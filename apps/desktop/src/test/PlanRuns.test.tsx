@@ -156,4 +156,57 @@ describe("Plan runs", () => {
     await waitFor(() => expect(calls.some((c) => c.url === "/v1/runs/1/depart")).toBe(true));
     ask.mockRestore();
   });
+
+  it("lets the keyboard look through a menu, and acts only on Enter", async () => {
+    const { calls } = board();
+    renderApp("/plan");
+    const menu = await screen.findByRole("combobox", { name: "Put Paddock Produce on a run" });
+    // on a closed menu, an arrow key (Windows, Linux) or type-ahead changes the value at once
+    fireEvent.keyDown(menu, { key: "ArrowDown" });
+    fireEvent.change(menu, { target: { value: "1" } });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(calls.some((c) => c.url === "/v1/runs/1/assign")).toBe(false);
+    expect(menu).toHaveValue("1");
+    fireEvent.keyDown(menu, { key: "Enter" });
+    await waitFor(() => expect(calls.find((c) => c.url === "/v1/runs/1/assign")?.body)
+      .toEqual({ consignment_id: 31 }));
+  });
+
+  it("keeps the keyboard on what it moved", async () => {
+    let stops = [card(11, "Hillside Bakery", "84"), card(12, "Two Rivers Vet", "41"), card(13, "Ridge Auto Workshop", "620")];
+    let trayItems = [packed(31, "Paddock Produce", "Clunes")];
+    const { calls } = board({
+      "GET /v1/runs": () => json(200, { items: [run(1, "Kim", "TMS041", stops), MEL], total: 2 }),
+      "GET /v1/consignments": () => json(200, { items: trayItems, total: trayItems.length }),
+      "POST /v1/runs/1/reorder": ({ body }) => {
+        const ids = (body as { consignment_ids: number[] }).consignment_ids;
+        stops = ids.map((id) => stops.find((c) => c.id === id)!);
+        return json(200, KIM);
+      },
+      "POST /v1/runs/1/assign": () => {
+        trayItems = [];
+        stops = [...stops, card(31, "Paddock Produce", "210")];
+        return json(200, KIM);
+      },
+    });
+    renderApp("/plan");
+    const user = userEvent.setup();
+    const kim = await lane("Run R-0001");
+    await user.click(await within(kim).findByRole("button", { name: "Move Hillside Bakery down" }));
+    await waitFor(() => expect(within(kim).getAllByText(/^(Hillside Bakery|Two Rivers Vet)$/)[0]).toHaveTextContent("Two Rivers Vet"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Move Hillside Bakery down" })).toHaveFocus());
+
+    // once it is last, down is off, so the keyboard lands on up
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(calls.filter((c) => c.url === "/v1/runs/1/reorder").at(-1)?.body)
+      .toEqual({ consignment_ids: [12, 13, 11] }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Move Hillside Bakery up" })).toHaveFocus());
+
+    // put on a run from the tray, the keyboard follows it to its stop
+    const menu = screen.getByRole("combobox", { name: "Put Paddock Produce on a run" });
+    menu.focus();
+    await user.selectOptions(menu, "1");
+    await waitFor(() => expect(within(kim).getByText("Paddock Produce").closest(".stop")).toHaveFocus());
+  });
 });
+
