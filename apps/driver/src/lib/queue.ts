@@ -1,0 +1,224 @@
+/** Confirmations from the road, sent when there is signal. As the Simple WMS
+ * scanner's queue: each gets its message_id the moment it is made, is kept on
+ * the phone, and is sent oldest first, in order; a repeat gets the same reply
+ * and records nothing twice. A refusal (a 4xx that a retry can't mend) is
+ * marked failed and not sent again.
+ *
+ * A confirmation may carry pictures (a signature, a photo). They go first,
+ * each to PUT /v1/pod-files/{id} under an id chosen when it was taken, so
+ * sending one twice is harmless too; then the confirmation that names them.
+ * The pictures wait in a FileStore; the rest in localStorage. */
+import type { FileStore } from "./files";
+
+export type PictureKind = "signature" | "photo";
+
+export interface QueuedFile {
+  id: string;
+  kind: PictureKind;
+  sent: boolean;
+}
+
+export interface QueueItem {
+  id: string;
+  message_id: string;
+  path: string;
+  body: Record<string, unknown>;
+  files: QueuedFile[];
+  label: string;
+  run_id: number;
+  /** the stop it records, with what it says happened there */
+  consignment_id: number | null;
+  outcome: "delivered" | "failed" | "finished";
+  created_at: string;
+  status: "queued" | "sent" | "failed";
+  attempts: number;
+  sent_at?: string;
+  reply?: unknown;
+  error?: string;
+}
+
+export interface NewItem {
+  path: string;
+  body: Record<string, unknown>;
+  label: string;
+  run_id: number;
+  consignment_id: number | null;
+  outcome: QueueItem["outcome"];
+  /** each picture, and the body field its id goes in (signature_file, photo_file) */
+  pictures?: { kind: PictureKind; field: string; blob: Blob }[];
+}
+
+export interface Request {
+  method: "POST" | "PUT";
+  path: string;
+  body: string | Blob;
+  contentType: string;
+}
+type Sender = (req: Request) => Promise<Response>;
+interface Storage {
+  get(key: string): string | undefined;
+  set(key: string, value: string): unknown;
+}
+
+const KEY = "tms.driver.queue";
+const MAX = 300;
+
+function browserStorage(): Storage {
+  return {
+    get: (k) => { try { return window.localStorage.getItem(k) ?? undefined; } catch { return undefined; } },
+    set: (k, v) => { try { window.localStorage.setItem(k, v); } catch { /* full or private: kept in memory */ } },
+  };
+}
+
+/** A refusal: the API understood and said no, so sending again can't help.
+ * A 401 is not one (sign in again and it goes), nor 408 or 429. */
+function refused(status: number): boolean {
+  return status >= 400 && status < 500 && status !== 401 && status !== 408 && status !== 429;
+}
+
+export function describe(body: unknown, status: number): string {
+  const errors = (body as { errors?: { field: string; message: string }[] })?.errors;
+  if (errors?.length) return errors.map((e) => e.message).join("; ");
+  const detail = (body as { detail?: string })?.detail;
+  return typeof detail === "string" ? detail : `Simple TMS answered ${status}`;
+}
+
+async function readJson(res: Response): Promise<unknown> {
+  const text = await res.text();
+  try { return text ? JSON.parse(text) : null; } catch { return null; }
+}
+
+export class RetryQueue {
+  private items: QueueItem[] = [];
+  private send: Sender;
+  private files: FileStore;
+  private storage: Storage;
+  private online: () => boolean;
+  private draining: Promise<number> | null = null;
+  private listeners = new Set<() => void>();
+
+  constructor(opts: { send: Sender; files: FileStore; storage?: Storage; online?: () => boolean }) {
+    this.send = opts.send;
+    this.files = opts.files;
+    this.storage = opts.storage ?? browserStorage();
+    this.online = opts.online ?? (() => typeof navigator === "undefined" || navigator.onLine);
+    try {
+      this.items = JSON.parse(this.storage.get(KEY) ?? "[]") as QueueItem[];
+    } catch {
+      this.items = [];
+    }
+  }
+
+  private save() {
+    // forget the oldest that went, never one still waiting
+    while (this.items.length > MAX) {
+      const i = this.items.findIndex((x) => x.status !== "queued");
+      if (i < 0) break;
+      this.items.splice(i, 1);
+    }
+    this.storage.set(KEY, JSON.stringify(this.items));
+    this.listeners.forEach((fn) => fn());
+  }
+
+  subscribe(fn: () => void) {
+    this.listeners.add(fn);
+    return () => { this.listeners.delete(fn); };
+  }
+
+  /** Newest first. */
+  all(): QueueItem[] { return this.items.slice().reverse(); }
+  pending(): QueueItem[] { return this.items.filter((i) => i.status === "queued"); }
+  failed(): QueueItem[] { return this.items.filter((i) => i.status === "failed"); }
+  forRun(runId: number): QueueItem[] { return this.all().filter((i) => i.run_id === runId); }
+
+  /** Keep it (pictures first), then send what is waiting if there is signal. */
+  async submit(input: NewItem): Promise<QueueItem> {
+    const files: QueuedFile[] = [];
+    const body = { ...input.body };
+    for (const p of input.pictures ?? []) {
+      const id = crypto.randomUUID();
+      // on the phone before the confirmation that names it, so a reload never finds one without the other
+      await this.files.put(id, p.blob);
+      files.push({ id, kind: p.kind, sent: false });
+      body[p.field] = id;
+    }
+    const item: QueueItem = {
+      id: crypto.randomUUID(), message_id: crypto.randomUUID(), path: input.path, body, files,
+      label: input.label, run_id: input.run_id, consignment_id: input.consignment_id,
+      outcome: input.outcome, created_at: new Date().toISOString(), status: "queued", attempts: 0,
+    };
+    this.items.push(item);
+    this.save();
+    void this.drain();
+    return item;
+  }
+
+  private fail(item: QueueItem, error: string) {
+    item.status = "failed";
+    item.error = error;
+  }
+
+  /** One go at an item: its pictures, then itself. It is sent, failed, or still queued after. */
+  private async attempt(item: QueueItem): Promise<void> {
+    item.attempts += 1;
+    try {
+      for (const f of item.files.filter((x) => !x.sent)) {
+        const blob = await this.files.get(f.id);
+        if (!blob) {
+          this.fail(item, `The ${f.kind} is no longer on this phone, so this can't be sent. Do the stop again.`);
+          return;
+        }
+        const res = await this.send({ method: "PUT", path: `/v1/pod-files/${f.id}?kind=${f.kind}`,
+                                      body: blob, contentType: blob.type || "application/octet-stream" });
+        if (res.ok) {
+          f.sent = true;
+          this.save();
+          continue;
+        }
+        const why = describe(await readJson(res), res.status);
+        if (refused(res.status)) this.fail(item, `The ${f.kind} wasn't taken: ${why}`);
+        else item.error = why;
+        return;
+      }
+      const res = await this.send({ method: "POST", path: item.path, contentType: "application/json",
+                                    body: JSON.stringify({ message_id: item.message_id, ...item.body }) });
+      const parsed = await readJson(res);
+      if (res.ok) {
+        item.status = "sent";
+        item.sent_at = new Date().toISOString();
+        item.reply = parsed;
+        item.error = undefined;
+        for (const f of item.files) await this.files.delete(f.id).catch(() => undefined);
+      } else if (refused(res.status)) {
+        this.fail(item, describe(parsed, res.status));
+      } else {
+        item.error = describe(parsed, res.status);
+      }
+    } catch (e) {
+      item.error = e instanceof Error && e.message ? e.message : "no signal";
+    } finally {
+      this.save();
+    }
+  }
+
+  /** Send everything waiting, oldest first, stopping at the first that has to
+   * wait, so they arrive in the order they were made. One drain at a time;
+   * what is added meanwhile is picked up by the one running. */
+  drain(): Promise<number> {
+    // cleared once it has settled, never before it is stored
+    this.draining ??= this.drainNow().finally(() => { this.draining = null; });
+    return this.draining;
+  }
+
+  private async drainNow(): Promise<number> {
+    let sent = 0;
+    for (;;) {
+      const next = this.items.find((i) => i.status === "queued");
+      if (!next || !this.online()) break;
+      await this.attempt(next);
+      if (next.status === "sent") sent += 1;
+      else if (next.status === "queued") break;
+    }
+    return sent;
+  }
+}
