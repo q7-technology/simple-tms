@@ -5,7 +5,9 @@ from sqlalchemy import text
 
 from tms.api import errors
 from tms.api.deps import DB
-from tms.api.routes import auth, consignments, drivers, runs, vehicles, wms_events
+from tms.api.routes import (
+    auth, consignments, drivers, printing, runs, vehicles, wms_events,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
@@ -25,6 +27,7 @@ v1.include_router(vehicles.router)
 v1.include_router(wms_events.router)
 v1.include_router(consignments.router)
 v1.include_router(runs.router)
+v1.include_router(printing.router)
 
 
 @v1.get("/health", tags=["system"])

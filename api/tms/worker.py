@@ -17,8 +17,8 @@ from sqlalchemy.orm import Session
 
 from tms.config import get_settings
 from tms.db import get_sessionmaker
-from tms.models import OutboundCall
-from tms.services import wms_client
+from tms.models import OutboundCall, PrintJob
+from tms.services import printing, wms_client
 
 log = logging.getLogger("tms.worker")
 
@@ -72,6 +72,31 @@ def send_ship_calls(session: Session, http: httpx.Client, now: datetime | None =
     return tried
 
 
+def send_print_jobs(session: Session, http: httpx.Client, now: datetime | None = None,
+                    limit: int = 50) -> int:
+    """Hand every due print job to Platen. Platen answers that it has it, then
+    says printed or failed on its own (POST /v1/print-jobs/{job_id}/status)."""
+    if not get_settings().platen_url:
+        return 0    # they wait until Platen is set up
+    now = now or datetime.now(UTC)
+    tried = 0
+    while tried < limit and (job := _claim(session, PrintJob, now)) is not None:
+        error = printing.send(http, job)
+        job.attempts += 1
+        tried += 1
+        if error is None:
+            job.status = "accepted"
+            job.sent_at = now
+            job.last_error = None
+            log.info("print job %s (%s) accepted by Platen", job.job_id, job.template)
+        else:
+            retry_later(job, now, error)
+            log.warning("print job %s try %d failed%s: %s", job.job_id, job.attempts,
+                        "; given up" if job.status == "failed" else "", error)
+        session.commit()
+    return tried
+
+
 def wait_for_schema(session: Session, timeout: float = 120, poll: float = 2) -> None:
     """Block until the api container has run the migrations."""
     from sqlalchemy.exc import ProgrammingError
@@ -90,7 +115,7 @@ def wait_for_schema(session: Session, timeout: float = 120, poll: float = 2) -> 
 
 
 def run_once(session: Session, http: httpx.Client) -> int:
-    return send_ship_calls(session, http)
+    return send_ship_calls(session, http) + send_print_jobs(session, http)
 
 
 def main() -> None:
