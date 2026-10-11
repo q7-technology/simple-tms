@@ -4,15 +4,17 @@ repeat gets the first reply back and changes nothing."""
 from __future__ import annotations
 
 import datetime as dt
+import uuid
 
 from fastapi import APIRouter, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from tms.api.deps import DB, Principal, require, require_any
 from tms.api.errors import Forbidden
 from tms.api.schemas import Dec
 from tms.models import Run
 from tms.services import deliveries
+from tms.services.envelope import handle
 
 router = APIRouter(tags=["deliveries"])
 
@@ -99,3 +101,27 @@ def run_stops(id: int, db: DB, who: Principal = require_any("runs:read", "delive
     """The whole run as the phone keeps it: each stop's address, packages and
     outcome. A driver sees only their own runs."""
     return run_stops_out(deliveries.own_run(db, who, id))
+
+
+# ---- confirmations -----------------------------------------------------------
+
+class MessageIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    message_id: uuid.UUID
+
+
+class StartOut(BaseModel):
+    message_id: uuid.UUID
+    run_id: int
+    run_no: str
+    status: str
+    departed_at: dt.datetime | None
+
+
+@router.post("/runs/{id}/start", response_model=StartOut)
+def start_run(id: int, body: MessageIn, db: DB, who: Principal = require("deliveries:write")):
+    def work():
+        run = deliveries.start(db, who, id)
+        return StartOut(message_id=body.message_id, run_id=run.id, run_no=run.number,
+                        status=run.status, departed_at=run.departed_at)
+    return handle(db, who, body.message_id, f"/v1/runs/{id}/start", work)

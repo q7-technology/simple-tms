@@ -9,7 +9,7 @@ from datetime import date
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
-from tms.api.errors import NotFound
+from tms.api.errors import Conflict, NotFound
 from tms.models import Run
 from tms.services import runs
 
@@ -33,3 +33,15 @@ def driver_runs(db: Session, driver_id: int, day: date) -> list[Run]:
             and_(Run.day < day, Run.status == "departed")))
         .order_by(Run.day, Run.id)).scalars().all()
     return [runs.get_run(db, i) for i in ids]
+
+
+def start(db: Session, who, run_id: int) -> Run:
+    """The driver is leaving: a planned run departs exactly as the
+    dispatcher's "Leaves now" does (ship calls and all); one that has already
+    left is left as it is."""
+    run = own_run(db, who, run_id)
+    if run.status == "done":
+        raise Conflict("run_done", f"{run.number} is finished")
+    if run.status == "cancelled":
+        raise Conflict("run_cancelled", f"{run.number} was cancelled")
+    return runs.depart(db, run_id, by=who.name)
