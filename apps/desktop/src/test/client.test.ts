@@ -142,7 +142,7 @@ describe("ApiClient", () => {
     answers.push(new Response("<html>Bad gateway</html>", { status: 502 }));
     const err = await refusal(client.get("/v1/runs"));
     expect(err.status).toBe(502);
-    expect(err.message).toBe("<html>Bad gateway</html>");
+    expect(err.message).toBe("Simple TMS didn't answer properly (502). Try again in a moment.");
   });
 
   it("keeps the refresh token so a reload can pick up", () => {

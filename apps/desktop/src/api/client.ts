@@ -156,7 +156,12 @@ export class ApiClient {
     if (res.status === 204) return undefined as T;
     const text = await res.text();
     let parsed: unknown = null;
-    try { parsed = text ? JSON.parse(text) : null; } catch { parsed = { detail: text.slice(0, 200) }; }
+    try {
+      parsed = text ? JSON.parse(text) : null;
+    } catch {
+      // not the API's own answer: a proxy's error page, say. Its HTML means nothing to a dispatcher.
+      parsed = { detail: `Simple TMS didn't answer properly (${res.status}). Try again in a moment.` };
+    }
     if (!res.ok) throw new ApiError(res.status, parsed);
     return parsed as T;
   }
