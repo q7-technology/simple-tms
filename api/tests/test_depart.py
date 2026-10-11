@@ -85,3 +85,16 @@ def test_an_empty_run_does_not_leave(client, db, dispatcher_headers):
     run = new_run(client, dispatcher_headers)
     r = client.post(f"/v1/runs/{run['id']}/depart", headers=dispatcher_headers)
     assert r.status_code == 409 and r.json()["code"] == "run_empty"
+
+
+def test_two_departs_at_once_queue_one_set_of_ship_calls(client, db, dispatcher_headers):
+    from conftest import all_at_once, fresh_client
+    run, a, b = _loaded_run(client, db, dispatcher_headers)
+
+    def depart():
+        with fresh_client() as c:
+            return c.post(f"/v1/runs/{run['id']}/depart", headers=dispatcher_headers).status_code
+
+    assert all_at_once(4, depart) == [200] * 4
+    calls = db.execute(select(OutboundCall)).scalars().all()
+    assert sorted(c.consignment_id for c in calls) == sorted([a.id, b.id])

@@ -199,3 +199,57 @@ def test_a_run_sheet_is_not_kept_waiting_behind_ship_calls(client, db, platen,
     hosts = [r.url.host for r in platen.requests]
     assert "platen.test" in hosts[:2], hosts
     assert _job(db).status == "accepted"
+
+
+def test_a_stop_added_while_printing_cannot_slip_an_over_run_past(client, db, engine, platen,
+                                                                   run, dispatcher_headers):
+    """Print waits for a planning change under way, then sees it: a run that is
+    over by then is refused, not printed from what it was a moment before."""
+    from sqlalchemy.orm import Session
+
+    from conftest import blocked_on_a_lock, fresh_client, in_background
+    from tms.services import runs as planning
+    heavy = consignment(db, ref="0080034599", kg="1000")
+    with Session(engine) as other:
+        planning.assign(other, run["id"], heavy.id, None, by="mel")   # not committed yet
+
+        def print_now():
+            with fresh_client() as c:
+                return _print(c, dispatcher_headers, run["id"])
+
+        printing = in_background(print_now)
+        assert blocked_on_a_lock(engine, printing), "print did not wait for planning"
+        other.commit()
+    r = printing.result(timeout=10)
+    assert r.status_code == 409 and r.json()["code"] == "over_capacity"
+    assert db.execute(select(PrintJob)).first() is None
+
+
+def test_platen_saying_printed_while_the_worker_holds_the_job_ends_printed(
+        client, db, engine, platen, run, dispatcher_headers, capsys):
+    """Platen can print and call back before the worker has written down that
+    Platen took the job: the callback waits for it, and printed stands."""
+    import httpx
+
+    from conftest import blocked_on_a_lock, fresh_client, in_background
+    key = _platen_key(capsys)
+    job_id = _print(client, dispatcher_headers, run["id"]).json()["job_id"]
+    db.execute(PrintJob.__table__.update().values(next_attempt_at=T0))
+    db.commit()
+    seen = {}
+
+    def platen_prints_at_once(request):
+        def callback():
+            with fresh_client() as c:
+                return c.post(f"/v1/print-jobs/{job_id}/status", headers=key,
+                              json={"status": "printed"})
+        seen["callback"] = in_background(callback)
+        seen["waited"] = blocked_on_a_lock(engine, seen["callback"])
+        return httpx.Response(202, json={})
+
+    with httpx.Client(transport=httpx.MockTransport(platen_prints_at_once)) as h:
+        assert worker.send_print_jobs(db, h, now=T0) == 1
+    assert seen["waited"], "the callback did not wait for the worker"
+    assert seen["callback"].result(timeout=10).json()["status"] == "printed"
+    job = _job(db)
+    assert job.status == "printed" and job.printed_at is not None

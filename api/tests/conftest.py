@@ -158,6 +158,34 @@ def fresh_client():
     return TestClient(app)
 
 
+def in_background(call):
+    """Start call() on a thread; .result() waits for it and returns what it did."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    pool = ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(call)
+    pool.shutdown(wait=False)
+    return future
+
+
+def blocked_on_a_lock(engine, future, timeout: float = 5) -> bool:
+    """Wait until another connection is waiting on a lock (True), or until the
+    background call has finished without waiting (False)."""
+    import time
+
+    deadline = time.monotonic() + timeout
+    with engine.connect() as conn:
+        while time.monotonic() < deadline and not future.done():
+            waiting = conn.execute(text(
+                "select count(*) from pg_stat_activity "
+                "where wait_event_type = 'Lock' and datname = current_database()")).scalar()
+            conn.rollback()
+            if waiting:
+                return True
+            time.sleep(0.02)
+    return False
+
+
 @contextlib.contextmanager
 def beaten_to_it(engine, rival_for):
     """Just before the API writes a new row, another connection commits the row

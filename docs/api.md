@@ -273,7 +273,7 @@ logged as an error naming the likely cause. Without `TMS_WMS_URL` and
 `TMS_WMS_API_KEY` the calls wait, untried.
 
 - `POST /v1/runs/{id}/retry-ship` — calls that gave up start again from
-  scratch, each with its same `message_id`.
+  scratch (no tries, no last error), each with its same `message_id`.
 
 ### Run sheets
 

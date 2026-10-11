@@ -230,5 +230,6 @@ def retry_ship(id: int, db: DB, who: Principal = require("runs:write")):
     runs.get_run(db, id)
     db.execute(update(OutboundCall)
                .where(OutboundCall.run_id == id, OutboundCall.status == "failed")
-               .values(status="pending", attempts=0, next_attempt_at=func.now()))
+               .values(status="pending", attempts=0, last_error=None,
+                       next_attempt_at=func.now()))
     return _fresh(db, id)
