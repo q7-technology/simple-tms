@@ -4,12 +4,11 @@ An open source, self-hosted transport management system for businesses that
 deliver with their own trucks and also send freight with outside carriers.
 It sits beside Simple WMS and Platen and works without either.
 
-Status: **build step 2, own fleet (the API).** Runs planned through the API,
-run sheets printed through Platen, and Simple WMS told each delivery shipped
-when its run leaves; on top of step 1 (sign-in, vehicles and drivers,
-consignments from Simple WMS's `delivery.packed`). The dispatcher's desktop
-comes next in this step; the driver app, fleet care, live location and
-carriers come with the next steps in
+Status: **build step 2, own fleet.** Runs planned on a map-and-drawer
+desktop, run sheets printed through Platen, and Simple WMS told each delivery
+shipped when its run leaves; on top of step 1 (sign-in, vehicles and drivers,
+consignments from Simple WMS's `delivery.packed`). The driver app, fleet care,
+live location and carriers come with the next steps in
 `docs/plans/2026-10-10-simple-tms-design.md`.
 
 ## What is in this repo
@@ -21,6 +20,7 @@ docs/api.md          every endpoint
 .github/workflows/   CI: the tests, and a Compose start
 design/              static HTML of each screen, and a gallery
 api/                 FastAPI app, migrations, tests
+apps/desktop/        the dispatcher's desktop app (Vite + React)
 deploy/Caddyfile     the only door in
 docker-compose.yml   api, worker, db, caddy
 ```
@@ -31,16 +31,18 @@ docker-compose.yml   api, worker, db, caddy
 git clone https://github.com/q7-technology/simple-tms
 cd simple-tms
 cp .env.example .env            # set POSTGRES_PASSWORD, and TMS_SECRET_KEY to: openssl rand -hex 32
+(cd apps/desktop && npm ci && npm run build)
 docker compose up -d
 docker compose exec api tms create-user --username you --role admin
 ```
 
-The API runs its migrations each time it starts. It is at
-`https://<TMS_DOMAIN>/v1` (default `https://localhost/`, self-signed) and its
-interactive docs at `/docs`. Sign in with `POST /v1/auth/login`. The API is
-also published on `127.0.0.1:8022` (`TMS_API_PORT`) for local work and health
-checks. The `worker` makes the calls to Simple WMS and sends run sheets to
-Platen; it needs no port.
+The desktop is at `https://<TMS_DOMAIN>/` (default `https://localhost/`,
+self-signed): sign in, then **Plan runs**. The API runs its migrations each
+time it starts; it is at `/v1`, its interactive docs at `/docs`, and it is
+also published on `127.0.0.1:8022` (`TMS_API_PORT`) for local work. The
+`worker` makes the calls to Simple WMS and sends run sheets to Platen; it
+needs no port. Rebuild the desktop (`npm run build`) after pulling changes to
+`apps/desktop`; Caddy serves `apps/desktop/dist` as it is.
 
 ## Production on a real domain
 
@@ -64,7 +66,15 @@ not run the TMS one: start Simple TMS with
   ```
   tms.example.com {
   	encode gzip
-  	reverse_proxy 127.0.0.1:8022
+  	@api path /v1/* /docs* /openapi.json
+  	handle @api {
+  		reverse_proxy 127.0.0.1:8022
+  	}
+  	handle {
+  		root * /path/to/simple-tms/apps/desktop/dist
+  		try_files {path} /index.html
+  		file_server
+  	}
   }
   ```
 
@@ -77,6 +87,9 @@ not run the TMS one: start Simple TMS with
   services:
     caddy:
       networks: [default, simple-tms]
+      volumes:
+        # the TMS desktop build, served by this Caddy too
+        - /path/to/simple-tms/apps/desktop/dist:/srv/tms-desktop:ro
   networks:
     simple-tms:
       external: true
@@ -91,7 +104,15 @@ not run the TMS one: start Simple TMS with
   ```
   tms.example.com {
   	encode gzip
-  	reverse_proxy simple-tms-api-1:8000
+  	@api path /v1/* /docs* /openapi.json
+  	handle @api {
+  		reverse_proxy simple-tms-api-1:8000
+  	}
+  	handle {
+  		root * /srv/tms-desktop
+  		try_files {path} /index.html
+  		file_server
+  	}
   }
   ```
 
@@ -158,6 +179,19 @@ export TMS_DATABASE_URL=postgresql+psycopg://tms:<POSTGRES_PASSWORD>@127.0.0.1:5
 .venv/bin/python -m tms.worker      # in another terminal: ship calls and run sheets
 ```
 
+## Run the desktop
+
+```
+cd apps/desktop
+npm ci
+npm run dev                     # http://localhost:5174
+```
+
+The dev server sends `/v1` to the API on `http://127.0.0.1:8022`;
+`TMS_API_URL=https://… npm run dev` points it at another. `npm test` runs the
+desktop's tests, `npm run typecheck` its type check, and `npm run build`
+writes `dist/` for Caddy.
+
 ## Tests
 
 pytest against a real PostgreSQL, so the append-only trigger is exercised for
@@ -170,9 +204,16 @@ docker compose up -d db
 cd api && .venv/bin/pytest
 ```
 
+The desktop's tests are Vitest, in jsdom, with the API stubbed:
+
+```
+cd apps/desktop && npm test
+```
+
 ## Stack
 
-Python 3.12 + FastAPI · PostgreSQL 16 · Docker Compose · Caddy. The same
+Python 3.12 + FastAPI · PostgreSQL 16 · Vite + React + TypeScript +
+Tailwind · Docker Compose · Caddy. The same
 choices as Simple WMS, so one person can look after both.
 
 ## Licence
