@@ -1,4 +1,4 @@
-import { act, createEvent, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, createEvent, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Card, Consignment, Run } from "../api/types";
 import { json, path, renderApp, stubApi, type Call } from "./harness";
@@ -282,5 +282,48 @@ describe("Plan runs", () => {
     await user.selectOptions(menu, "1");
     await waitFor(() => expect(within(kim).getByText("Paddock Produce").closest(".stop")).toHaveFocus());
   });
-});
 
+  it("shows what the driver recorded, and plans again what came back", async () => {
+    const out = run(1, "Kim", "TMS041", [card(11, "Hillside Bakery", "84"), card(12, "Two Rivers Vet", "41"),
+                                         card(13, "Ridge Auto Workshop", "620")],
+                    { status: "done", departed_at: "2026-10-14T21:10:00Z", finished_at: "2026-10-15T05:12:00Z" });
+    out.stops[0].outcome = "delivered";
+    out.stops[1].outcome = "failed";
+    out.stops[1].reason = "wrong_address";
+    out.stops[2].outcome = "delivered";
+    const back = { ...packed(12, "Two Rivers Vet", "Smythesdale"), status: "failed" };
+    const { calls } = board({
+      "GET /v1/runs": () => json(200, { items: [out, MEL], total: 2 }),
+      "GET /v1/consignments": () => json(200, { items: [back], total: 1 }),
+    });
+    renderApp("/plan");
+    const kim = await lane("Run R-0001");
+    expect(within(kim).getByText("Done")).toBeInTheDocument();
+    expect(within(kim).getAllByText("Delivered")).toHaveLength(2);
+    expect(within(kim).getByText("Not delivered: wrong address")).toBeInTheDocument();
+    expect(within(kim).getByText(/^Delivered 2 of 3 · 1 coming back · finished /)).toBeInTheDocument();
+    const tray = await lane("Consignments to plan");
+    expect(within(tray).getByText("Came back: not delivered")).toBeInTheDocument();
+    expect(calls.find((c) => path(c.url) === "/v1/consignments")?.url).toContain("status=packed%2Cfailed");
+  });
+
+  it("finishes a run the driver left open, once every stop is done", async () => {
+    const out = run(1, "Kim", "TMS041", [card(11, "Hillside Bakery", "84"), card(12, "Two Rivers Vet", "41")],
+                    { status: "departed", departed_at: "2026-10-14T21:10:00Z" });
+    out.stops[0].outcome = "delivered";
+    const { calls } = board({ "GET /v1/runs": () => json(200, { items: [out], total: 1 }) });
+    renderApp("/plan");
+    const kim = await lane("Run R-0001");
+    expect(within(kim).queryByRole("button", { name: "Finish run" })).not.toBeInTheDocument();
+
+    out.stops[1].outcome = "failed";
+    cleanup();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderApp("/plan");
+    await userEvent.setup().click(await within(await lane("Run R-0001")).findByRole("button", { name: "Finish run" }));
+    await waitFor(() => expect(calls.find((c) => c.url === "/v1/runs/1/finish")?.body)
+      .toEqual({ message_id: expect.stringMatching(/^[0-9a-f-]{36}$/) }));
+    expect(await screen.findByText("R-0001 is finished.")).toBeInTheDocument();
+    confirm.mockRestore();
+  });
+});

@@ -6,15 +6,23 @@ describe("the map", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("shows the day's numbers and opens drawers from the bar", async () => {
-    stubApi((_m, url) => {
+    const stop = (outcome: string | null) => ({ sequence: 1, consignment: {}, outcome });
+    const { calls } = stubApi((_m, url) => {
+      if (path(url) === "/v1/runs") {
+        return json(200, { items: [{ stops: [stop("delivered"), stop("failed"), stop(null)] },
+                                   { stops: [stop("delivered"), stop("delivered")] }], total: 2 });
+      }
       if (path(url) !== "/v1/consignments") return null;
       const status = new URLSearchParams(url.split("?")[1]).get("status");
-      return json(200, { items: [], total: { packed: 14, departed: 21, delivered: 0 }[status ?? ""] ?? 0 });
+      return json(200, { items: [], total: { "packed,failed": 14, departed: 21 }[status ?? ""] ?? 0 });
     });
     renderApp("/");
     const nav = await screen.findByRole("navigation", { name: "Main drawers" });
     await waitFor(() => expect(nav).toHaveTextContent("Plan runs14"));
     expect(screen.getByText("21")).toBeInTheDocument();
+    // delivered today: the stops the drivers have delivered on today's runs
+    expect(screen.getByText("Delivered").nextSibling).toHaveTextContent("3");
+    expect(calls.find((c) => path(c.url) === "/v1/runs")?.url).toMatch(/status=departed%2Cdone/);
     await userEvent.setup().click(screen.getByRole("link", { name: /Fleet/ }));
     expect(screen.getByTestId("where")).toHaveTextContent("/fleet");
     expect(screen.getByText(/This screen arrives with build step 4/)).toBeInTheDocument();

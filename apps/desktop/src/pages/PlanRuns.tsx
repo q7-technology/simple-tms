@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type
 import { Link, useOutletContext } from "react-router-dom";
 import { api, ApiError, Unreachable } from "../api/client";
 import type { Card, Consignment, Driver, Page, Run, Vehicle } from "../api/types";
+import { useAuth } from "../auth/AuthContext";
 import { clock, dayOptions } from "../lib/days";
 import { plain, toMicro } from "../lib/decimal";
 import { afterAdding, loadOf, type Gauge } from "../lib/load";
@@ -57,6 +58,29 @@ function keepOn(id: number, way: "up" | "down"): string[] {
   return [`[data-kb="${way}-${id}"]`, `[data-kb="${other}-${id}"]`, `[data-stop="${id}"]`];
 }
 
+const REASONS: Record<string, string> = {
+  closed: "closed", refused: "refused", damaged: "damaged", wrong_address: "wrong address",
+};
+
+/** What the driver recorded at a stop, once the run is on the road. */
+function outcomePill(s: Run["stops"][number]) {
+  if (s.outcome === "delivered") return <span className="pill p-green">Delivered</span>;
+  if (s.outcome === "failed") {
+    return <span className="pill p-red">Not delivered{s.reason ? `: ${REASONS[s.reason] ?? s.reason}` : ""}</span>;
+  }
+  return null;
+}
+
+/** How a run on the road, or back, is going. */
+function tripLine(run: Run): string {
+  const delivered = run.stops.filter((s) => s.outcome === "delivered").length;
+  const failed = run.stops.filter((s) => s.outcome === "failed").length;
+  const parts = [`Delivered ${delivered} of ${run.stops.length}`];
+  if (failed) parts.push(`${failed} coming back`);
+  if (run.status === "done" && run.finished_at) parts.push(`finished ${clock(new Date(run.finished_at))}`);
+  return parts.join(" · ") + ".";
+}
+
 function sheetLine(run: Run): Note {
   const s = run.run_sheet;
   if (!s) return null;
@@ -72,6 +96,7 @@ function sheetLine(run: Run): Note {
  * trucks that can't take one. Drag to plan; every drag has a keyboard way too. */
 export function PlanRuns() {
   const { reloadCounts } = useOutletContext<{ reloadCounts: () => void }>();
+  const { can } = useAuth();
   const days = useMemo(() => dayOptions(new Date()), []);
   const [day, setDay] = useState(days[1].value);
   const [runs, setRuns] = useState<Run[]>([]);
@@ -115,7 +140,8 @@ export function PlanRuns() {
     try {
       answers = await Promise.all([
         api.get<Page<Run>>("/v1/runs", { date: day }),
-        api.get<Page<Consignment>>("/v1/consignments", { status: "packed", limit: 2000 }),
+        // packed, and any the driver couldn't deliver, back to be planned again
+        api.get<Page<Consignment>>("/v1/consignments", { status: "packed,failed", limit: 2000 }),
         api.get<Page<Vehicle>>("/v1/vehicles"),
         api.get<Page<Driver>>("/v1/drivers", { active: true }),
       ]);
@@ -162,6 +188,14 @@ export function PlanRuns() {
   const reorder = (run: Run, ids: number[]) =>
     act(() => api.post(`/v1/runs/${run.id}/reorder`,
                        { consignment_ids: ids, seen: run.stops.map((s) => s.consignment.id) }));
+
+  /** For a driver who is back but didn't finish on the phone. Every stop has
+   * to be delivered or coming back first; the API checks it too. */
+  function finish(run: Run) {
+    if (!window.confirm(`${run.run_no} is back at the depot? It is marked finished, and nothing more can be recorded on it.`)) return;
+    void act(() => api.post(`/v1/runs/${run.id}/finish`, { message_id: crypto.randomUUID() }),
+             `${run.run_no} is finished.`);
+  }
 
   function depart(run: Run) {
     if (!window.confirm(`${run.run_no} leaves now? Each consignment on it is marked shipped in Simple WMS.`)) return;
@@ -317,6 +351,7 @@ export function PlanRuns() {
                  onDragStart={(e) => startDrag(e, { card: c, from: null })} onDragEnd={endDrag}>
               <span style={{ width: 22, display: "grid", placeItems: "center", color: "#9AA8A0" }} aria-hidden="true"><Icon name="grip" width={2.4} /></span>
               <div className="c"><b>{c.customer}</b><span className="small">{c.suburb}</span>
+                {c.status === "failed" && <div><span className="pill p-red">Came back: not delivered</span></div>}
                 <div className="meta num"><span>{packagesLabel(c)}</span><span>{kg(c)}</span><span>{m3(c)}</span></div>
                 <div className="ref">From WMS delivery {c.wms_ref}</div>
               </div>
@@ -338,7 +373,8 @@ export function PlanRuns() {
           const ids = run.stops.map((s) => s.consignment.id);
           const others = planned.filter((r) => r.id !== run.id);
           const sheet = sheetLine(run);
-          const pill = !open ? <span className="pill p-grey">Departed</span>
+          const pill = run.status === "done" ? <span className="pill p-grey">Done</span>
+            : !open ? <span className="pill p-grey">Departed</span>
             : l.state === "over" ? <span className="pill p-red">Over</span>
             : l.state === "near" ? <span className="pill p-amber">Nearly full</span>
             : <span className="pill p-green">{run.stops.length} {run.stops.length === 1 ? "stop" : "stops"}</span>;
@@ -365,6 +401,7 @@ export function PlanRuns() {
                     <span className="c"><b>{s.consignment.customer}</b>
                       <span>{[s.consignment.suburb, packagesLabel(s.consignment), kg(s.consignment)].filter(Boolean)
                         .map((part, k) => <span key={k}>{k > 0 && " · "}<span style={{ whiteSpace: "nowrap" }}>{part}</span></span>)}</span></span>
+                    {!open && outcomePill(s)}
                     {open && (
                       <span className="kb">
                         <button type="button" aria-label={`Move ${s.consignment.customer} up`} disabled={busy || j === 0}
@@ -403,6 +440,7 @@ export function PlanRuns() {
               {(run.load.unknown_weight > 0 || run.load.unknown_volume > 0) && (
                 <div className="small">Some packages have no weight or size, so the bars may read low.</div>)}
               {sheet && <div className={`msg ${sheet.tone}`}>{sheet.text}</div>}
+              {!open && <div className="small">{tripLine(run)}</div>}
               {!open && (
                 <div className="small">Marked shipped in Simple WMS: {run.shipping.done} of {run.shipping.done + run.shipping.pending + run.shipping.failed}.</div>)}
               {run.shipping.failed > 0 && (
@@ -417,6 +455,10 @@ export function PlanRuns() {
                 {open && run.stops.length > 0 && (
                   <button type="button" className="btn sm primary" disabled={busy || l.state === "over"} onClick={() => depart(run)}>
                     Leaves now<Icon name="go" size={14} width={2.4} /></button>)}
+                {run.status === "departed" && can("runs:write") && run.stops.length > 0
+                  && run.stops.every((s) => s.outcome) && (
+                  <button type="button" className="btn sm primary" disabled={busy} onClick={() => finish(run)}>
+                    Finish run</button>)}
                 {open && run.stops.length === 0 && (
                   <button type="button" className="btn sm" disabled={busy}
                           onClick={() => void act(() => api.post(`/v1/runs/${run.id}/cancel`))}>Remove run</button>)}

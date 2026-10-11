@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
-import type { Page } from "../api/types";
+import type { Page, Run } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
-import { clock } from "../lib/days";
+import { clock, isoDay } from "../lib/days";
 import { DrawerBoundary } from "../ui/DrawerBoundary";
 import { Icon, Logo } from "../ui/icons";
 
@@ -30,8 +30,12 @@ export function MapHome() {
 
   const load = useCallback(async () => {
     try {
-      const [toPlan, onRoad, delivered] = await Promise.all(
-        ["packed", "departed", "delivered"].map(count));
+      // to plan: packed, and what came back undelivered; delivered: today's drops
+      const [toPlan, onRoad, today] = await Promise.all([
+        count("packed,failed"), count("departed"),
+        api.get<Page<Run>>("/v1/runs", { date: isoDay(new Date()), status: "departed,done" })]);
+      const delivered = today.items.reduce(
+        (n, run) => n + run.stops.filter((s) => s.outcome === "delivered").length, 0);
       setCounts({ toPlan, onRoad, delivered });
     } catch { /* the numbers wait for the next go */ }
   }, []);

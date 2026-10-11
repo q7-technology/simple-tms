@@ -84,7 +84,10 @@ export interface Run {
   created_by: string;
   created_at: string;
   departed_at: string | null;
-  stops: { sequence: number; consignment: Card }[];
+  finished_at?: string | null;
+  /** outcome: what the driver recorded there, with the reason one couldn't be delivered */
+  stops: { sequence: number; consignment: Card; outcome?: "delivered" | "failed" | null;
+           outcome_at?: string | null; reason?: string | null }[];
   load: {
     weight_kg: string; volume_m3: string; max_kg: string; max_m3: string;
     unknown_weight: number; unknown_volume: number; state: "ok" | "near" | "over"; message: string | null;
