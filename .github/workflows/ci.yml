@@ -54,7 +54,7 @@ jobs:
           sed -i 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=ci-only-password/' .env
           sed -i 's/^TMS_SECRET_KEY=.*/TMS_SECRET_KEY=ci-only-secret-key-that-is-long-enough/' .env
       - name: Up
-        run: docker compose up -d --build db api
+        run: docker compose up -d --build db api worker
       - name: The API answers and the migrations ran
         run: |
           for i in $(seq 1 30); do
@@ -65,6 +65,13 @@ jobs:
           # the append-only trigger is there on a real install
           docker compose exec -T db psql -U tms -d tms -tAc \
             "select count(*) from pg_trigger where tgname = 'consignment_event_append_only'" | grep -qx 1
+      - name: The worker is polling
+        run: |
+          for i in $(seq 1 30); do
+            if docker compose logs worker | grep -q "worker started"; then ok=1; break; fi
+            sleep 2
+          done
+          test "${ok:-0}" = 1 || (docker compose logs worker; exit 1)
       - name: Logs on failure
         if: failure()
         run: docker compose logs
