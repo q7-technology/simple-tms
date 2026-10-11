@@ -13,6 +13,10 @@ http://{$TMS_DOMAIN} {
 
 {$TMS_DOMAIN} {
 	encode gzip
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+	}
 
 	# The API is the only door.
 	handle /v1/* {
@@ -27,6 +31,9 @@ http://{$TMS_DOMAIN} {
 
 	# The desktop app (build step 2). The driver app arrives with step 3.
 	handle {
+		# Only the desktop: the API's /docs page loads its scripts from a CDN.
+		# The build has no inline scripts or styles, and its fonts are its own.
+		header Content-Security-Policy "default-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 		root * /srv/desktop
 		try_files {path} /index.html
 		file_server

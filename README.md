@@ -66,11 +66,16 @@ not run the TMS one: start Simple TMS with
   ```
   tms.example.com {
   	encode gzip
+  	header {
+  		X-Content-Type-Options nosniff
+  		Referrer-Policy same-origin
+  	}
   	@api path /v1/* /docs* /openapi.json
   	handle @api {
   		reverse_proxy 127.0.0.1:8022
   	}
   	handle {
+  		header Content-Security-Policy "default-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
   		root * /path/to/simple-tms/apps/desktop/dist
   		try_files {path} /index.html
   		file_server
@@ -104,11 +109,16 @@ not run the TMS one: start Simple TMS with
   ```
   tms.example.com {
   	encode gzip
+  	header {
+  		X-Content-Type-Options nosniff
+  		Referrer-Policy same-origin
+  	}
   	@api path /v1/* /docs* /openapi.json
   	handle @api {
   		reverse_proxy simple-tms-api-1:8000
   	}
   	handle {
+  		header Content-Security-Policy "default-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
   		root * /srv/tms-desktop
   		try_files {path} /index.html
   		file_server
