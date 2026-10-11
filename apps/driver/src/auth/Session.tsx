@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { api } from "../api/client";
 import type { DriverSessionOut, Me } from "../api/types";
 import { indexedDbFiles } from "../lib/files";
-import { RetryQueue } from "../lib/queue";
+import { RetryQueue, waitingCount } from "../lib/queue";
 
 interface Stored { token: string; expires_at: number; driver: Me }
 
@@ -46,7 +46,7 @@ export function SessionProvider({ children, queue = defaultQueue }: { children: 
     return s;
   });
   const [online, setOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine);
-  const [waiting, setWaiting] = useState(queue.pending().length);
+  const [waiting, setWaiting] = useState(() => waitingCount(queue.all()));
 
   const signOut = useCallback(() => {
     // what is waiting stays on the phone, and goes once a driver signs in again
@@ -61,7 +61,7 @@ export function SessionProvider({ children, queue = defaultQueue }: { children: 
     const down = () => setOnline(false);
     window.addEventListener("online", up);
     window.addEventListener("offline", down);
-    const unsubscribe = queue.subscribe(() => setWaiting(queue.pending().length));
+    const unsubscribe = queue.subscribe(() => setWaiting(waitingCount(queue.all())));
     const tick = setInterval(() => { if (navigator.onLine && queue.pending().length) void queue.drain(); }, DRAIN_EVERY_MS);
     return () => {
       window.removeEventListener("online", up);

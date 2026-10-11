@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type { Outcome, RunStops } from "../api/types";
-import type { QueueItem } from "../lib/queue";
+import { waitingRows, type QueueItem } from "../lib/queue";
 import { plural } from "../lib/run";
 import { clock } from "../lib/time";
 import { locationAllowed } from "../lib/where";
@@ -89,25 +89,15 @@ function since(iso: string): string {
   return clock(new Date(iso));
 }
 
-const PICTURES: Record<string, string> = { signature: "signature", photo: "photo" };
-
-/** WAITING TO SEND: newest first, a row for the pictures while they wait. */
+/** WAITING TO SEND: newest first, a row for each confirmation with its pictures in it. */
 export function WaitingList({ items }: { items: QueueItem[] }) {
   if (items.length === 0) return null;
-  const rows: { key: string; text: string; pill: ReactNode; error?: string }[] = [];
-  for (const i of items.slice(0, 8)) {
-    const unsent = i.files.filter((f) => !f.sent);
-    if (i.status === "queued" && unsent.length > 0) {
-      rows.push({ key: `${i.id}-files`, text: `${i.label.split(" · ")[0]} · ${unsent.map((f) => PICTURES[f.kind]).join(" and ")}`,
-                  pill: <span className="pill p-amber" style={{ fontSize: 11 }}>Waiting since {since(i.created_at)}</span> });
-    }
-    rows.push({
-      key: i.id, text: i.label, error: i.status === "failed" ? i.error : undefined,
-      pill: i.status === "sent" ? <span className="pill p-green" style={{ fontSize: 11 }}>Sent {since(i.sent_at ?? i.created_at)}</span>
-        : i.status === "failed" ? <span className="pill p-red" style={{ fontSize: 11 }}>Not taken</span>
-        : <span className="pill p-amber" style={{ fontSize: 11 }}>Waiting since {since(i.created_at)}</span>,
-    });
-  }
+  const rows = waitingRows(items.slice(0, 8)).map((r) => ({
+    key: r.id, text: r.text, error: r.error,
+    pill: r.status === "sent" ? <span className="pill p-green" style={{ fontSize: 11 }}>Sent {since(r.at)}</span>
+      : r.status === "failed" ? <span className="pill p-red" style={{ fontSize: 11 }}>Not taken</span>
+      : <span className="pill p-amber" style={{ fontSize: 11 }}>Waiting since {since(r.at)}</span>,
+  }));
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <span className="lbl">Waiting to send</span>

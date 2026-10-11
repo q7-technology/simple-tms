@@ -31,6 +31,44 @@ describe("between stops", () => {
     expect(calls.filter((c) => c.url === "/v1/runs/7/stops/31/fail")).toHaveLength(1);
   });
 
+  const PNG = () => new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], { type: "image/png" });
+  const waitingRows = () => {
+    const list = screen.getByText("Waiting to send").nextElementSibling as HTMLElement;
+    return [...list.children].map((r) => r.textContent);
+  };
+
+  it("folds a confirmation's pictures into its one row, and counts it once", async () => {
+    stubApi(() => json(200, RUN));
+    const { queue } = renderApp("/run/7", { online: () => false });
+    await act(async () => {
+      await queue.submit({ path: "/v1/runs/7/stops/32/fail", body: { reason: "closed" }, label: "Stop 2 · couldn't deliver · closed",
+                           run_id: 7, consignment_id: 32, outcome: "failed",
+                           pictures: [{ kind: "photo", field: "photo_file", blob: PNG() }] });
+    });
+    expect(screen.getByText(/^1 confirmation waiting/)).toBeInTheDocument();
+    const rows = waitingRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatch(/^Stop 2 · couldn't deliver · closed · 1 photoWaiting since/);
+  });
+
+  it("shows a row for each confirmation waiting, as many as it counts", async () => {
+    stubApi(() => json(200, RUN));
+    const { queue } = renderApp("/run/7", { online: () => false });
+    await act(async () => {
+      await queue.submit({ path: "/v1/runs/7/stops/31/deliver", body: {}, label: "Stop 1 · delivered · 2 cartons",
+                           run_id: 7, consignment_id: 31, outcome: "delivered",
+                           pictures: [{ kind: "signature", field: "signature_file", blob: PNG() },
+                                      { kind: "photo", field: "photo_file", blob: PNG() }] });
+      await queue.submit({ path: "/v1/runs/7/stops/32/fail", body: { reason: "closed" }, label: "Stop 2 · couldn't deliver · closed",
+                           run_id: 7, consignment_id: 32, outcome: "failed" });
+    });
+    expect(screen.getByText(/^2 confirmations waiting/)).toBeInTheDocument();
+    const rows = waitingRows();
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatch(/^Stop 2 · couldn't deliver · closedWaiting since/);
+    expect(rows[1]).toMatch(/^Stop 1 · delivered · 2 cartons · signature and 1 photoWaiting since/);
+  });
+
   it("finishes the run once every stop is done", async () => {
     const done = { ...RUN, stops: RUN.stops.map((s, i) => ({ ...s, outcome: i ? "failed" as const : "delivered" as const })) };
     onThePhone(done);

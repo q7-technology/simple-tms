@@ -222,3 +222,40 @@ export class RetryQueue {
     return sent;
   }
 }
+
+/** What the driver sees waiting: one row per confirmation, its pictures
+ * folded into it (they belong to the confirmation that names them). The
+ * banner's count and the WAITING TO SEND list both come from here, so they
+ * always agree. */
+export interface WaitingRow {
+  id: string;
+  text: string;
+  status: QueueItem["status"];
+  at: string;
+  error?: string;
+}
+
+function pictures(files: QueuedFile[]): string {
+  const signatures = files.filter((f) => f.kind === "signature").length;
+  const photos = files.filter((f) => f.kind === "photo").length;
+  const parts: string[] = [];
+  if (signatures) parts.push(signatures === 1 ? "signature" : `${signatures} signatures`);
+  if (photos) parts.push(`${photos} ${photos === 1 ? "photo" : "photos"}`);
+  return parts.join(" and ");
+}
+
+export function waitingRows(items: QueueItem[]): WaitingRow[] {
+  return items.map((i) => {
+    const unsent = i.status === "queued" ? pictures(i.files.filter((f) => !f.sent)) : "";
+    return {
+      id: i.id, text: unsent ? `${i.label} · ${unsent}` : i.label, status: i.status,
+      at: i.status === "sent" ? i.sent_at ?? i.created_at : i.created_at,
+      error: i.status === "failed" ? i.error : undefined,
+    };
+  });
+}
+
+/** How many confirmations are still to send. */
+export function waitingCount(items: QueueItem[]): number {
+  return waitingRows(items).filter((r) => r.status === "queued").length;
+}
