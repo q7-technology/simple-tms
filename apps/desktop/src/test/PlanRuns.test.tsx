@@ -29,7 +29,7 @@ const KIM = run(1, "Kim", "TMS041", [card(11, "Hillside Bakery", "84"), card(12,
                                      card(13, "Ridge Auto Workshop", "620")]);
 const MEL = run(2, "Mel", "TMS052", [card(21, "Wattle Flat Stockfeed", "1640"), card(22, "Clarkes Hill Builders", "3140")]);
 
-function board(answers: Record<string, (call: Call) => Response | null> = {}) {
+function board(answers: Record<string, (call: Call) => Response | null | Promise<Response>> = {}) {
   return stubApi((method, url, body) => {
     const key = `${method} ${path(url)}`;
     if (answers[key]) return answers[key]({ method, url, body });
@@ -183,6 +183,30 @@ describe("Plan runs", () => {
     await userEvent.setup().click(await screen.findByRole("button", { name: "Move Two Rivers Vet up" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Can't reach Simple TMS right now.");
     expect(screen.getByRole("region", { name: "Run R-0001" })).toBeInTheDocument();
+  });
+
+  it("doesn't let a slow answer for the day before overwrite the day now shown", async () => {
+    let first: string | null = null;
+    let release = () => {};
+    board({
+      "GET /v1/runs": ({ url }) => {
+        const day = new URL(url, "http://tms.test").searchParams.get("date");
+        first ??= day;
+        if (day === first) {
+          return new Promise<Response>((done) => { release = () => done(json(200, { items: [KIM], total: 1 })); });
+        }
+        return json(200, { items: [MEL], total: 1 });
+      },
+    });
+    renderApp("/plan");
+    const pick = await screen.findByRole("combobox", { name: "Day" });
+    await waitFor(() => expect(first).not.toBeNull());
+    const other = [...(pick as HTMLSelectElement).options].find((o) => o.value !== first)!.value;
+    await userEvent.setup().selectOptions(pick, other);
+    expect(await lane("Run R-0002")).toBeInTheDocument();
+    await act(async () => { release(); await new Promise((r) => setTimeout(r, 20)); });
+    expect(screen.queryByRole("region", { name: "Run R-0001" })).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Run R-0002" })).toBeInTheDocument();
   });
 
   it("prints every run sheet it can and says what it could not", async () => {

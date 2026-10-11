@@ -106,13 +106,25 @@ export function PlanRuns() {
     }
   }, [busy]);
 
+  // Only the latest load draws the board: a slow answer for the day before, or
+  // an old poll, must not overwrite a newer one.
+  const latestLoad = useRef(0);
   const load = useCallback(async () => {
-    const [r, t, v, d] = await Promise.all([
-      api.get<Page<Run>>("/v1/runs", { date: day }),
-      api.get<Page<Consignment>>("/v1/consignments", { status: "packed", limit: 2000 }),
-      api.get<Page<Vehicle>>("/v1/vehicles"),
-      api.get<Page<Driver>>("/v1/drivers", { active: true }),
-    ]);
+    const mine = ++latestLoad.current;
+    let answers;
+    try {
+      answers = await Promise.all([
+        api.get<Page<Run>>("/v1/runs", { date: day }),
+        api.get<Page<Consignment>>("/v1/consignments", { status: "packed", limit: 2000 }),
+        api.get<Page<Vehicle>>("/v1/vehicles"),
+        api.get<Page<Driver>>("/v1/drivers", { active: true }),
+      ]);
+    } catch (e) {
+      if (mine === latestLoad.current) throw e;
+      return;
+    }
+    if (mine !== latestLoad.current) return;
+    const [r, t, v, d] = answers;
     setRuns(r.items);
     setTray(t.items.map(cardOf));
     setVehicles(v.items);
