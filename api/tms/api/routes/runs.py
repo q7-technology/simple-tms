@@ -178,3 +178,38 @@ def change_run(id: int, body: RunPatch, db: DB, who: Principal = require("runs:w
 def cancel_run(id: int, db: DB, who: Principal = require("runs:write")):
     runs.cancel(db, id)
     return _fresh(db, id)
+
+
+class AssignIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    consignment_id: int = Field(ge=1)
+    # 1 is the first stop; left out, it goes last
+    position: int | None = Field(default=None, ge=1)
+
+
+class UnassignIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    consignment_id: int = Field(ge=1)
+
+
+class ReorderIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    consignment_ids: list[int] = Field(max_length=500)
+
+
+@router.post("/runs/{id}/assign", response_model=RunOut)
+def assign(id: int, body: AssignIn, db: DB, who: Principal = require("runs:write")):
+    runs.assign(db, id, body.consignment_id, body.position, by=who.name)
+    return _fresh(db, id)
+
+
+@router.post("/runs/{id}/unassign", response_model=RunOut)
+def unassign(id: int, body: UnassignIn, db: DB, who: Principal = require("runs:write")):
+    runs.unassign(db, id, body.consignment_id, by=who.name)
+    return _fresh(db, id)
+
+
+@router.post("/runs/{id}/reorder", response_model=RunOut)
+def reorder(id: int, body: ReorderIn, db: DB, who: Principal = require("runs:write")):
+    runs.reorder(db, id, body.consignment_ids)
+    return _fresh(db, id)
