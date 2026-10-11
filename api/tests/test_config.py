@@ -27,3 +27,7 @@ def test_printing_and_the_worker_start_switched_off_with_safe_waits():
     s = Settings(secret_key="3f9c1e0a7b2d4c6e8f0a1b2c3d4e5f60")
     assert (s.platen_url, s.platen_key, s.run_sheet_printer) == ("", "", "dispatch")
     assert s.worker_poll_seconds == 5.0 and s.worker_http_timeout_seconds == 10.0
+
+
+def test_proof_of_delivery_is_kept_in_the_data_volume():
+    assert Settings(secret_key="3f9c1e0a7b2d4c6e8f0a1b2c3d4e5f60").pod_dir == "/data/pod"

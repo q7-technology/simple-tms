@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     platen_key: str = ""
     run_sheet_printer: str = "dispatch"
 
+    # Proof of delivery: where signatures and photos are kept on disk (a
+    # volume in Compose). Only the API reads and writes them.
+    pod_dir: str = "/data/pod"
+
     # The worker that sends the ship calls and print jobs.
     worker_poll_seconds: float = 5.0
     worker_http_timeout_seconds: float = 10.0

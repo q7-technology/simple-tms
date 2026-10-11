@@ -78,6 +78,16 @@ def client(engine):
         yield c
 
 
+@pytest.fixture(autouse=True)
+def pod_dir(tmp_path, monkeypatch):
+    """Signatures and photos go to a folder of the test's own, never /data/pod."""
+    from tms.config import get_settings
+
+    folder = tmp_path / "pod"
+    monkeypatch.setattr(get_settings(), "pod_dir", str(folder))
+    return folder
+
+
 # --- people -----------------------------------------------------------------
 
 PASSWORD = "correct horse battery"

@@ -86,3 +86,14 @@ def require(scope: str):
         return who
 
     return Depends(_check)
+
+
+def require_any(*scopes: str):
+    """Dependency: the caller must carry at least one of these scopes."""
+
+    def _check(who: Who) -> Principal:
+        if not any(who.has_scope(s) for s in scopes):
+            raise Forbidden(f"you need one of the scopes {', '.join(scopes)}")
+        return who
+
+    return Depends(_check)

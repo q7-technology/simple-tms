@@ -13,7 +13,8 @@ from tms.models import ApiKey
 
 PREFIX = "tms_k."
 # what a key may be given; a person's role gives the rest
-SCOPES = ("printing:write", "runs:read", "runs:write", "consignments:read", "fleet:read")
+SCOPES = ("printing:write", "runs:read", "runs:write", "consignments:read", "fleet:read",
+          "deliveries:read", "deliveries:write")
 
 
 def _hash(raw: str) -> str:
