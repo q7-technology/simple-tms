@@ -29,4 +29,19 @@ describe("the map", () => {
     expect(await screen.findByRole("button", { name: "Sign in" })).toBeInTheDocument();
     expect(calls.some((c) => c.url === "/v1/auth/logout")).toBe(true);
   });
+
+  it("shows a plain message, not a blank screen, when a drawer can't be drawn", async () => {
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    stubApi((_m, url) => {
+      // a run with no truck: the plan board can't draw it
+      if (path(url) === "/v1/runs") return json(200, { items: [{ id: 1, run_no: "R-0001", stops: [] }], total: 1 });
+      return json(200, { items: [], total: 0 });
+    });
+    renderApp("/plan");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Something went wrong showing this screen. Reload the page to try again.");
+    expect(screen.getByRole("button", { name: "Reload" })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Main drawers" })).toBeInTheDocument();
+    quiet.mockRestore();
+  });
 });

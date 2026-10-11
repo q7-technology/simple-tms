@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import type { Page } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { clock } from "../lib/days";
+import { DrawerBoundary } from "../ui/DrawerBoundary";
 import { Icon, Logo } from "../ui/icons";
 
 interface Counts { toPlan: number; onRoad: number; delivered: number }
@@ -21,6 +22,7 @@ function initials(name: string): string {
 export function MapHome() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [counts, setCounts] = useState<Counts | null>(null);
   const [now, setNow] = useState(() => new Date());
   const [menu, setMenu] = useState(false);
@@ -102,7 +104,7 @@ export function MapHome() {
           <NavLink to="/fleet" className={({ isActive }) => (isActive ? "on" : "")}><Icon name="truck" />Fleet</NavLink>
         </nav>
       </main>
-      <Outlet context={{ reloadCounts: load }} />
+      <DrawerBoundary key={pathname}><Outlet context={{ reloadCounts: load }} /></DrawerBoundary>
     </div>
   );
 }
