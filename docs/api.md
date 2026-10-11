@@ -395,7 +395,8 @@ disk under `TMS_POD_DIR` (`/data/pod`, the `pod_files` volume in Compose).
 
 ### GET /v1/pod-files/{file_id}
 The picture, for anyone with `consignments:read` and for whoever sent it;
-anyone else gets `404`. Sent with `Cache-Control: private, no-store`.
+anyone else gets `404`. Sent with `Cache-Control: private, no-store`. A
+file on record that is missing from disk is `404` too, and logged.
 
 ### POST /v1/runs/{id}/stops/{consignment_id}/deliver
 ```json

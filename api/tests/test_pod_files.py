@@ -82,3 +82,16 @@ def test_a_file_is_shown_to_the_office_and_to_whoever_sent_it(client, db, dispat
                       headers=driver_headers(client, code="mel")).status_code == 404
     assert client.get(f"/v1/pod-files/{file_id}").status_code == 401
     assert client.get(f"/v1/pod-files/{uuid.uuid4()}", headers=kim).status_code == 404
+
+
+def test_a_file_missing_from_disk_is_not_found_and_logged(client, db, pod_dir, caplog,
+                                                          dispatcher_headers):
+    driver(db)
+    file_id, _ = put_file(client, driver_headers(client))
+    for kept in pod_dir.rglob("*.png"):
+        kept.unlink()
+    with caplog.at_level("WARNING", logger="tms.pod"):
+        r = client.get(f"/v1/pod-files/{file_id}", headers=dispatcher_headers)
+    assert r.status_code == 404 and r.json() == {"detail": f"no file {file_id}"}
+    assert [rec.levelname for rec in caplog.records if str(file_id) in rec.getMessage()] == [
+        "WARNING"]

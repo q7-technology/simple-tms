@@ -2,6 +2,7 @@
 confirmation that names them, and shown only to who may see them."""
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime
 from typing import Literal
@@ -17,6 +18,7 @@ from tms.services import pod_files
 from tms.services.envelope import sender_of
 
 router = APIRouter(tags=["deliveries"])
+log = logging.getLogger("tms.pod")
 
 
 class PodFileOut(BaseModel):
@@ -65,7 +67,15 @@ def get_file(file_id: uuid.UUID, db: DB, who: Who):
     if row is None or not (who.has_scope("consignments:read")
                            or row.uploaded_by == sender_of(who)):
         raise NotFound(f"no file {file_id}")
-    return Response(content=pod_files.full_path(row).read_bytes(), media_type=row.content_type,
+    try:
+        content = pod_files.full_path(row).read_bytes()
+    except FileNotFoundError:
+        # the row is there but the picture is not: a volume lost or restored
+        # without it. Not found to the caller; someone should look.
+        log.warning("pod file %s is recorded but missing from disk at %s",
+                    file_id, pod_files.full_path(row))
+        raise NotFound(f"no file {file_id}") from None
+    return Response(content=content, media_type=row.content_type,
                     headers={"Cache-Control": "private, no-store",
                              "Content-Security-Policy": "default-src 'none'",
                              "X-Content-Type-Options": "nosniff"})
