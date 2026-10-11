@@ -48,9 +48,10 @@ design/index.html    gallery of every screen; open a screen's HTML
 design/screens/      static HTML of each screen: build to these
 api/                 FastAPI app (package tms), migrations, tests
 deploy/Caddyfile     the only door in
-docker-compose.yml   api, db, caddy
+docker-compose.yml   api, worker, db, caddy
 ```
-The worker and the apps arrive with their build steps.
+The apps arrive with their build steps: apps/desktop with step 2's desktop
+tasks, apps/driver with step 3.
 
 When building a screen, open its file in `design/screens/` and match layout,
 copy and states. Do not edit anything under `design/` unless asked.

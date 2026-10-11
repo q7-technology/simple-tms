@@ -4,10 +4,13 @@ An open source, self-hosted transport management system for businesses that
 deliver with their own trucks and also send freight with outside carriers.
 It sits beside Simple WMS and Platen and works without either.
 
-Status: **build step 1, the skeleton.** Sign-in for dispatchers and drivers,
-vehicles and drivers, and consignments created from Simple WMS's
-`delivery.packed` events. Runs, the planning screen and the driver app come
-with the next steps in `docs/plans/2026-10-10-simple-tms-design.md`.
+Status: **build step 2, own fleet (the API).** Runs planned through the API,
+run sheets printed through Platen, and Simple WMS told each delivery shipped
+when its run leaves; on top of step 1 (sign-in, vehicles and drivers,
+consignments from Simple WMS's `delivery.packed`). The dispatcher's desktop
+comes next in this step; the driver app, fleet care, live location and
+carriers come with the next steps in
+`docs/plans/2026-10-10-simple-tms-design.md`.
 
 ## What is in this repo
 
@@ -19,7 +22,7 @@ docs/api.md          every endpoint
 design/              static HTML of each screen, and a gallery
 api/                 FastAPI app, migrations, tests
 deploy/Caddyfile     the only door in
-docker-compose.yml   api, db, caddy
+docker-compose.yml   api, worker, db, caddy
 ```
 
 ## Getting started
@@ -36,7 +39,8 @@ The API runs its migrations each time it starts. It is at
 `https://<TMS_DOMAIN>/v1` (default `https://localhost/`, self-signed) and its
 interactive docs at `/docs`. Sign in with `POST /v1/auth/login`. The API is
 also published on `127.0.0.1:8022` (`TMS_API_PORT`) for local work and health
-checks.
+checks. The `worker` makes the calls to Simple WMS and sends run sheets to
+Platen; it needs no port.
 
 ## Production on a real domain
 
@@ -51,8 +55,8 @@ Give Simple WMS the subscriber URL `https://tms.example.com/v1/wms/events`.
 
 **Beside Simple WMS on one server.** Only one program can hold 80 and 443,
 and Simple WMS's Caddy already does. Put the TMS domain on that Caddy and do
-not run the TMS one: start Simple TMS with `docker compose up -d db api`
-(the TMS caddy stays down), so the TMS API listens on `127.0.0.1:8022` only.
+not run the TMS one: start Simple TMS with
+`docker compose up -d db api worker` (the TMS caddy stays down), so the TMS API listens on `127.0.0.1:8022` only.
 
 - If the Caddy that holds 80 and 443 runs on the host (a shared front Caddy,
   installed from a package), add a site to its Caddyfile:
@@ -110,10 +114,36 @@ Windows).
 
 Simple TMS is an ordinary subscriber to Simple WMS's signed events. In `.env`
 set `TMS_WMS_WEBHOOK_SECRET` (a long random string), `TMS_WMS_URL` (Simple
-WMS's address) and `TMS_WMS_API_KEY` (a Simple WMS key with `tasks:read`),
-then register a subscriber in Simple WMS with the same secret, pointing at
-`/v1/wms/events`. Each packed delivery becomes a consignment. Details are in
-`docs/api.md`.
+WMS's address) and `TMS_WMS_API_KEY` (a Simple WMS key with `tasks:read` and
+`tasks:write`: `tasks:read` to read a packed delivery's ship-to, `tasks:write`
+to say it shipped), then register a subscriber in Simple WMS with the same
+secret, pointing at `/v1/wms/events`. Each packed delivery becomes a
+consignment. Details are in `docs/api.md`.
+
+When a run leaves, Simple TMS calls `POST /v1/deliveries/{ref}/ship` for each
+consignment with carrier "Own fleet" and the run number as the tracking
+number, retrying after 1 min, 5, 30 and 2 h if Simple WMS is away; Simple WMS
+then fires `delivery.shipped` as usual.
+
+## Connecting Platen
+
+Run sheets print through Platen (or any print service that takes the same
+job). In Platen, make a page template with the id `run-sheet` and publish it
+(the fields it binds to are in `docs/api.md` under "Run sheets"), and make an
+operator key under People → Keys. In Simple TMS's `.env` set
+`TMS_PLATEN_URL=https://<platen>/intake/jobs`, `TMS_PLATEN_KEY` to that key
+and `TMS_RUN_SHEET_PRINTER` to the Platen printer's id or name, then
+`docker compose up -d api worker`.
+
+So that Platen can say each run sheet printed, give the Platen key a callback:
+the address of Simple TMS (`https://tms.example.com`) and a Simple TMS key
+made with
+
+```
+docker compose exec api tms create-api-key --name platen --scopes printing:write
+```
+
+(Platen's keys screen has the two fields; Platen 0014 or later.)
 
 ## Run the API outside Docker
 
@@ -125,6 +155,7 @@ export TMS_DATABASE_URL=postgresql+psycopg://tms:<POSTGRES_PASSWORD>@127.0.0.1:5
 .venv/bin/alembic upgrade head
 .venv/bin/tms create-user --username you --role admin
 .venv/bin/uvicorn tms.api.app:app --reload --port 8022
+.venv/bin/python -m tms.worker      # in another terminal: ship calls and run sheets
 ```
 
 ## Tests
