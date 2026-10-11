@@ -174,6 +174,17 @@ describe("Plan runs", () => {
       .toHaveTextContent("Ridge Auto Workshop"));
   });
 
+  it("stays signed in when its session can't be refreshed for now, and says so", async () => {
+    board({
+      "POST /v1/runs/1/reorder": () => json(401, { detail: "session expired or invalid" }),
+      "POST /v1/auth/refresh": () => new Response("<html>Bad gateway</html>", { status: 502 }),
+    });
+    renderApp("/plan");
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Move Two Rivers Vet up" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Can't reach Simple TMS right now.");
+    expect(screen.getByRole("region", { name: "Run R-0001" })).toBeInTheDocument();
+  });
+
   it("prints every run sheet it can and says what it could not", async () => {
     const { calls } = board({
       "POST /v1/runs/2/print": () => json(409, { code: "over_capacity",

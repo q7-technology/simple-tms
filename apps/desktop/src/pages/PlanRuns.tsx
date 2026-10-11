@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { Link, useOutletContext } from "react-router-dom";
-import { api, ApiError } from "../api/client";
+import { api, ApiError, Unreachable } from "../api/client";
 import type { Card, Consignment, Driver, Page, Run, Vehicle } from "../api/types";
 import { clock, dayOptions } from "../lib/days";
 import { plain, toMicro } from "../lib/decimal";
@@ -17,6 +17,7 @@ interface Target { run: number | null; position: number }
 function said(e: unknown): string {
   // a reorder from a board that was out of date: the board reloads after every change
   if (e instanceof ApiError && e.code === "stale") return "Someone else changed this run. Here it is as it is now.";
+  if (e instanceof Unreachable) return e.message;
   return e instanceof ApiError ? e.message : "Simple TMS could not be reached. Check the connection and try again.";
 }
 

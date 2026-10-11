@@ -35,6 +35,14 @@ export class ApiError extends Error {
   }
 }
 
+/** The API could not be reached, or did not answer properly. Nothing is
+ * known about the session, so it is kept: the next try may well work. */
+export class Unreachable extends Error {
+  constructor() {
+    super("Can't reach Simple TMS right now.");
+  }
+}
+
 type Fetcher = (url: string, init: RequestInit) => Promise<Response>;
 interface Storage {
   get(key: string): string | undefined;
@@ -85,24 +93,46 @@ export class ApiClient {
     return this.refresh();
   }
 
+  /** A new session from the refresh token. False, and signed out, only when
+   * the API refuses the token (400 or 401); when it can't be reached or
+   * doesn't answer properly, Unreachable, and the session is kept. */
   private async refresh(): Promise<boolean> {
-    // one refresh at a time: the API spends a refresh token once
+    // one refresh at a time in this tab: the API spends a refresh token once
     if (this.refreshing) return this.refreshing;
     this.refreshing = (async () => {
-      const refresh = this.session?.refresh_token;
-      if (!refresh) return false;
-      const res = await this.fetcher("/v1/auth/refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: refresh }),
-      });
-      if (!res.ok) {
-        this.setSession(null);
-        this.onSignedOut?.();
-        return false;
+      // another tab may have rotated the token since: the stored one is the newest
+      let tried = this.storedRefreshToken() ?? this.session?.refresh_token;
+      for (let attempt = 0; tried; attempt++) {
+        let res: Response;
+        try {
+          res = await this.fetcher("/v1/auth/refresh", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ refresh_token: tried }),
+          });
+        } catch {
+          throw new Unreachable();
+        }
+        if (res.ok) {
+          let session: Session;
+          try { session = (await res.json()) as Session; } catch { throw new Unreachable(); }
+          this.setSession(session);
+          return true;
+        }
+        if (res.status !== 400 && res.status !== 401) throw new Unreachable();
+        const stored = this.storedRefreshToken();
+        if (stored && stored !== tried) {
+          // another tab spent it first and keeps the new one: try that, once
+          if (attempt === 0) { tried = stored; continue; }
+          this.session = null;      // leave the other tab's token where it is
+          this.onSignedOut?.();
+          return false;
+        }
+        break;
       }
-      this.setSession((await res.json()) as Session);
-      return true;
+      this.setSession(null);
+      this.onSignedOut?.();
+      return false;
     })();
     try {
       return await this.refreshing;
