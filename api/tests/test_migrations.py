@@ -12,7 +12,8 @@ from conftest import TEST_DATABASE_URL
 MIGRATION_URL = TEST_DATABASE_URL.rsplit("/", 1)[0] + "/tms_migration_check"
 TABLES = {"user", "user_session", "driver", "vehicle", "consignment", "package",
           "consignment_event", "inbound_event", "run", "stop", "outbound_call", "print_job",
-          "api_key", "alembic_version"}
+          "api_key", "inbound_message", "pod_file", "pod",
+          "alembic_version"}
 
 
 @pytest.fixture

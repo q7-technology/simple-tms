@@ -26,11 +26,12 @@ class Run(Base):
     day: Mapped[date] = mapped_column(Date, index=True)
     vehicle_id: Mapped[int] = mapped_column(ForeignKey("vehicle.id"), index=True)
     driver_id: Mapped[int] = mapped_column(ForeignKey("driver.id"), index=True)
-    # planned, departed, done (with the driver app), cancelled
+    # planned, departed, done (the driver finished it), cancelled
     status: Mapped[str] = mapped_column(String(16), default="planned")
     created_by: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = created_at_column()
     departed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     vehicle: Mapped[Vehicle] = relationship()
     driver: Mapped[Driver] = relationship()
@@ -47,13 +48,15 @@ class Run(Base):
 
 class Stop(Base):
     """A consignment's place on a run. Taken off the run, the row stays with
-    removed_at set: cancel, never delete."""
+    removed_at set: cancel, never delete. Once the driver has delivered it or
+    could not, `outcome` says which, and the stop stays on its run as a
+    record; a consignment that came back can then go on another run."""
 
     __tablename__ = "stop"
     __table_args__ = (
         # a consignment is on one run at a time, however many people drag it
         Index("uq_stop_consignment_id_live", "consignment_id", unique=True,
-              postgresql_where=text("removed_at is null")),
+              postgresql_where=text("removed_at is null and outcome is null")),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -63,5 +66,8 @@ class Stop(Base):
     added_by: Mapped[str] = mapped_column(String(64))
     added_at: Mapped[datetime] = created_at_column()
     removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # delivered, failed: set once, by the driver's confirmation
+    outcome: Mapped[str | None] = mapped_column(String(16))
+    outcome_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     consignment: Mapped[Consignment] = relationship()
