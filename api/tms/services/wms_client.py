@@ -1,4 +1,5 @@
-"""The calls Simple TMS makes to Simple WMS. Step 1 only reads a delivery."""
+"""The calls Simple TMS makes to Simple WMS: read a delivery when it is packed,
+and say it shipped when its run departs."""
 from __future__ import annotations
 
 import logging
@@ -75,3 +76,42 @@ def get_delivery(ref: str, owner: str) -> dict:
     if not isinstance(delivery, dict):
         raise WmsUnavailable(f"the answer was not a delivery: {resp.text[:200]}")
     return delivery
+
+
+# A ship call refused like this will not mend itself either; it is retried
+# anyway, so it goes through once someone fixes the key, and logged as an error.
+_SHIP_REFUSALS = {
+    401: "Simple WMS does not know our API key: check TMS_WMS_API_KEY is a live "
+         "Simple WMS key",
+    403: "Simple WMS will not let our API key ship this delivery: the key needs the "
+         "tasks:write scope, and its warehouses and owner must cover the delivery",
+    404: "Simple WMS has no such delivery for that owner",
+}
+
+
+def ship(http: httpx.Client, path: str, body: dict) -> str | None:
+    """Make one ship call: POST {TMS_WMS_URL}{path} with our key. None when
+    Simple WMS took it, or says the delivery had already shipped (a retry
+    after a reply that was lost, once its message_id window has passed);
+    otherwise why not, for last_error. Never the key in what it returns."""
+    settings = get_settings()
+    url = settings.wms_url.rstrip("/") + path
+    try:
+        resp = http.post(url, json=body,
+                         headers={"Authorization": f"Bearer {settings.wms_api_key}",
+                                  "User-Agent": "simple-tms/0.1"},
+                         timeout=settings.worker_http_timeout_seconds)
+    except httpx.HTTPError as exc:
+        return f"{type(exc).__name__}: {exc}"[:500]
+    if 200 <= resp.status_code < 300:
+        return None
+    try:
+        code = resp.json().get("code")
+    except (ValueError, AttributeError):
+        code = None
+    if resp.status_code == 409 and code == "already_shipped":
+        log.info("%s: Simple WMS says it had already shipped; taken as done", path)
+        return None
+    if resp.status_code in _SHIP_REFUSALS:
+        log.error("HTTP %s on %s. %s", resp.status_code, path, _SHIP_REFUSALS[resp.status_code])
+    return f"HTTP {resp.status_code}: {resp.text[:200]}"

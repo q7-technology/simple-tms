@@ -7,7 +7,7 @@ import uuid
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from tms.api.deps import DB, Principal, require
 from tms.api.schemas import Dec, Page
@@ -218,4 +218,15 @@ def reorder(id: int, body: ReorderIn, db: DB, who: Principal = require("runs:wri
 @router.post("/runs/{id}/depart", response_model=RunOut)
 def depart(id: int, db: DB, who: Principal = require("runs:write")):
     runs.depart(db, id, by=who.name)
+    return _fresh(db, id)
+
+
+@router.post("/runs/{id}/retry-ship", response_model=RunOut)
+def retry_ship(id: int, db: DB, who: Principal = require("runs:write")):
+    """Ship calls that gave up are tried again from the start, with the same
+    message_id each, so Simple WMS still ships each delivery once."""
+    runs.get_run(db, id)
+    db.execute(update(OutboundCall)
+               .where(OutboundCall.run_id == id, OutboundCall.status == "failed")
+               .values(status="pending", attempts=0, next_attempt_at=func.now()))
     return _fresh(db, id)

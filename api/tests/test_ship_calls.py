@@ -1,0 +1,118 @@
+"""The worker makes each ship call to Simple WMS, retrying after 1 min, 5, 30
+and 2 h; the same message_id goes every time, so Simple WMS ships it once."""
+import logging
+from datetime import UTC, datetime, timedelta
+
+import httpx
+import pytest
+from sqlalchemy import select
+
+from fake_http import FakeHttp
+from runs_samples import assign, consignment, driver, new_run, vehicle
+from tms import worker
+from tms.models import OutboundCall
+
+T0 = datetime(2026, 10, 14, 7, 0, tzinfo=UTC)
+
+
+@pytest.fixture
+def http(monkeypatch):
+    from tms.config import get_settings
+    monkeypatch.setattr(get_settings(), "wms_url", "http://wms.test/")
+    fake = FakeHttp()
+    yield fake
+    fake.client.close()
+
+
+@pytest.fixture
+def departed(client, db, dispatcher_headers):
+    vehicle(db)
+    driver(db)
+    run = new_run(client, dispatcher_headers)
+    c = consignment(db, ref="0080034519")
+    assign(client, dispatcher_headers, run["id"], c.id)
+    client.post(f"/v1/runs/{run['id']}/depart", headers=dispatcher_headers)
+    db.execute(OutboundCall.__table__.update().values(next_attempt_at=T0))
+    db.commit()
+    return run
+
+
+def _call(db) -> OutboundCall:
+    db.expire_all()
+    return db.execute(select(OutboundCall)).scalar_one()
+
+
+def test_the_ship_call_goes_with_our_key_and_its_message_id(db, http, departed):
+    assert worker.send_ship_calls(db, http.client, now=T0) == 1
+    sent = http.requests[0]
+    assert str(sent.url) == "http://wms.test/v1/deliveries/0080034519/ship"
+    assert sent.headers["Authorization"] == "Bearer wms_test-key-for-the-tms"
+    row = _call(db)
+    assert http.bodies()[0] == {"message_id": str(row.message_id), "owner": "DEFAULT",
+                                "carrier": "Own fleet", "tracking_no": departed["run_no"],
+                                "shipped_by": "dee"}
+    assert row.status == "done" and row.attempts == 1 and row.done_at == T0
+
+
+def test_a_failed_try_waits_1_5_30_then_120_minutes_and_the_next_failure_gives_up(
+        db, http, departed):
+    now = T0
+    for attempt, wait in enumerate((1, 5, 30, 120), start=1):
+        http.answers.append((503, {"detail": "down"}))
+        assert worker.send_ship_calls(db, http.client, now=now) == 1
+        row = _call(db)
+        assert (row.status, row.attempts) == ("pending", attempt)
+        assert row.next_attempt_at == now + timedelta(minutes=wait)
+        assert row.last_error.startswith("HTTP 503")
+        # not due yet: nothing is tried
+        assert worker.send_ship_calls(db, http.client, now=now + timedelta(seconds=30)) == 0
+        now = row.next_attempt_at
+    http.answers.append((503, {"detail": "still down"}))
+    worker.send_ship_calls(db, http.client, now=now)
+    row = _call(db)
+    assert (row.status, row.attempts) == ("failed", 5)
+    assert len({b["message_id"] for b in http.bodies()}) == 1     # the same every time
+
+
+def test_a_network_error_is_retried_like_a_refusal(db, http, departed):
+    http.answers.append(httpx.ConnectError("connection refused"))
+    worker.send_ship_calls(db, http.client, now=T0)
+    row = _call(db)
+    assert row.status == "pending" and row.last_error.startswith("ConnectError")
+
+
+def test_already_shipped_in_simple_wms_counts_as_done(db, http, departed):
+    http.answers.append((409, {"detail": "0080034519 has already shipped",
+                               "code": "already_shipped"}))
+    worker.send_ship_calls(db, http.client, now=T0)
+    assert _call(db).status == "done"
+
+
+def test_a_key_without_the_scope_is_logged_as_an_error_and_retried(db, http, departed, caplog):
+    http.answers.append((403, {"detail": "you do not have the tasks:write scope"}))
+    with caplog.at_level(logging.ERROR, logger="tms.wms"):
+        worker.send_ship_calls(db, http.client, now=T0)
+    assert "tasks:write" in caplog.text
+    assert "wms_test-key-for-the-tms" not in caplog.text
+    assert _call(db).status == "pending"
+
+
+def test_without_simple_wms_set_up_the_calls_wait_untried(db, http, departed, monkeypatch):
+    from tms.config import get_settings
+    monkeypatch.setattr(get_settings(), "wms_url", "")
+    assert worker.send_ship_calls(db, http.client, now=T0) == 0
+    assert http.requests == [] and _call(db).attempts == 0
+
+
+def test_failed_calls_are_tried_again_on_request(client, db, http, departed,
+                                                 dispatcher_headers):
+    row = _call(db)
+    row.status, row.attempts, row.last_error = "failed", 5, "HTTP 503: down"
+    db.commit()
+    r = client.post(f"/v1/runs/{departed['id']}/retry-ship", headers=dispatcher_headers)
+    assert r.status_code == 200 and r.json()["shipping"] == {"pending": 1, "done": 0, "failed": 0}
+    row = _call(db)
+    assert row.attempts == 0 and row.status == "pending"
+    worker.send_ship_calls(db, http.client, now=datetime.now(UTC) + timedelta(seconds=1))
+    assert _call(db).status == "done"
+    assert http.bodies()[0]["message_id"] == str(row.message_id)
