@@ -155,3 +155,42 @@ def test_two_workers_at_once_send_each_call_once(client, db, engine, dispatcher_
     assert len(sent) == 6 and len(set(sent)) == 6
     db.expire_all()
     assert {c.status for c in db.execute(select(OutboundCall)).scalars()} == {"done"}
+
+
+class SlowClock:
+    """The worker's clock, moved on five minutes by each answer: a slow batch."""
+    def __init__(self, start):
+        self.now = start
+
+    def __call__(self):
+        return self.now
+
+    def transport(self, answers):
+        def answer(request):
+            self.now += timedelta(minutes=5)
+            status, body = answers.pop(0) if answers else (202, {})
+            return httpx.Response(status, json=body)
+        return httpx.MockTransport(answer)
+
+
+def test_times_are_taken_after_each_call_not_at_the_start_of_the_batch(
+        client, db, dispatcher_headers, monkeypatch):
+    from tms.config import get_settings
+    monkeypatch.setattr(get_settings(), "wms_url", "http://wms.test/")
+    vehicle(db)
+    driver(db)
+    run = new_run(client, dispatcher_headers)
+    for i in range(2):
+        assign(client, dispatcher_headers, run["id"], consignment(db, ref=f"0080034{i}", kg="10").id)
+    client.post(f"/v1/runs/{run['id']}/depart", headers=dispatcher_headers)
+    db.execute(OutboundCall.__table__.update().values(next_attempt_at=T0))
+    db.commit()
+    clock = SlowClock(T0)
+    monkeypatch.setattr(worker, "clock", clock)
+    with httpx.Client(transport=clock.transport([(202, {}), (503, {"detail": "down"})])) as h:
+        assert worker.send_ship_calls(db, h) == 2
+    db.expire_all()
+    first, second = db.execute(select(OutboundCall).order_by(OutboundCall.id)).scalars()
+    assert first.status == "done" and first.done_at == T0 + timedelta(minutes=5)
+    assert second.status == "pending"
+    assert second.next_attempt_at == T0 + timedelta(minutes=10) + timedelta(minutes=1)

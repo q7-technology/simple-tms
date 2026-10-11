@@ -47,28 +47,71 @@ def _claim(session: Session, model, now: datetime):
     ).scalar_one_or_none()
 
 
+def clock() -> datetime:
+    return datetime.now(UTC)
+
+
+def _ship_one(session: Session, http: httpx.Client, now: datetime | None) -> bool:
+    """Make the next ship call that is due, if there is one."""
+    row = _claim(session, OutboundCall, now or clock())
+    if row is None:
+        return False
+    error = wms_client.ship(http, row.path, row.body)
+    # after the answer, not before: a slow call would date it in the past
+    answered = now or clock()
+    row.attempts += 1
+    if error is None:
+        row.status = "done"
+        row.done_at = answered
+        row.last_error = None
+        log.info("ship call %s (%s) done", row.message_id, row.path)
+    else:
+        retry_later(row, answered, error)
+        log.warning("ship call %s (%s) try %d failed%s: %s", row.message_id, row.path,
+                    row.attempts, "; given up" if row.status == "failed" else "", error)
+    session.commit()
+    return True
+
+
+def _print_one(session: Session, http: httpx.Client, now: datetime | None) -> bool:
+    """Hand the next due print job to Platen, if there is one."""
+    job = _claim(session, PrintJob, now or clock())
+    if job is None:
+        return False
+    error = printing.send(http, job)
+    answered = now or clock()
+    job.attempts += 1
+    if error is None:
+        job.status = "accepted"
+        job.sent_at = answered
+        job.last_error = None
+        log.info("print job %s (%s) accepted by Platen", job.job_id, job.template)
+    else:
+        retry_later(job, answered, error)
+        log.warning("print job %s try %d failed%s: %s", job.job_id, job.attempts,
+                    "; given up" if job.status == "failed" else "", error)
+    session.commit()
+    return True
+
+
+def _ships_set_up() -> bool:
+    settings = get_settings()
+    return bool(settings.wms_url and settings.wms_api_key)
+
+
+def _printing_set_up() -> bool:
+    return bool(get_settings().platen_url)
+
+
 def send_ship_calls(session: Session, http: httpx.Client, now: datetime | None = None,
                     limit: int = 50) -> int:
-    """Make every ship call that is due. Returns how many were tried."""
-    settings = get_settings()
-    if not settings.wms_url or not settings.wms_api_key:
+    """Make every ship call that is due. Returns how many were tried. Each
+    time is taken when it happens unless `now` is given."""
+    if not _ships_set_up():
         return 0    # they wait, untried, until Simple WMS is set up
-    now = now or datetime.now(UTC)
     tried = 0
-    while tried < limit and (row := _claim(session, OutboundCall, now)) is not None:
-        error = wms_client.ship(http, row.path, row.body)
-        row.attempts += 1
+    while tried < limit and _ship_one(session, http, now):
         tried += 1
-        if error is None:
-            row.status = "done"
-            row.done_at = now
-            row.last_error = None
-            log.info("ship call %s (%s) done", row.message_id, row.path)
-        else:
-            retry_later(row, now, error)
-            log.warning("ship call %s (%s) try %d failed%s: %s", row.message_id, row.path,
-                        row.attempts, "; given up" if row.status == "failed" else "", error)
-        session.commit()
     return tried
 
 
@@ -76,24 +119,11 @@ def send_print_jobs(session: Session, http: httpx.Client, now: datetime | None =
                     limit: int = 50) -> int:
     """Hand every due print job to Platen. Platen answers that it has it, then
     says printed or failed on its own (POST /v1/print-jobs/{job_id}/status)."""
-    if not get_settings().platen_url:
+    if not _printing_set_up():
         return 0    # they wait until Platen is set up
-    now = now or datetime.now(UTC)
     tried = 0
-    while tried < limit and (job := _claim(session, PrintJob, now)) is not None:
-        error = printing.send(http, job)
-        job.attempts += 1
+    while tried < limit and _print_one(session, http, now):
         tried += 1
-        if error is None:
-            job.status = "accepted"
-            job.sent_at = now
-            job.last_error = None
-            log.info("print job %s (%s) accepted by Platen", job.job_id, job.template)
-        else:
-            retry_later(job, now, error)
-            log.warning("print job %s try %d failed%s: %s", job.job_id, job.attempts,
-                        "; given up" if job.status == "failed" else "", error)
-        session.commit()
     return tried
 
 

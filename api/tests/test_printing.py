@@ -157,3 +157,18 @@ def test_an_unknown_job_is_404_so_platen_stops_asking(client, db, capsys):
     r = client.post(f"/v1/print-jobs/{uuid.uuid4()}/status", headers=_platen_key(capsys),
                     json={"status": "printed"})
     assert r.status_code == 404
+
+
+def test_sent_at_is_when_platen_answered(client, db, platen, run, dispatcher_headers,
+                                         monkeypatch):
+    import httpx
+
+    from test_ship_calls import SlowClock
+    _print(client, dispatcher_headers, run["id"])
+    db.execute(PrintJob.__table__.update().values(next_attempt_at=T0))
+    db.commit()
+    clock = SlowClock(T0)
+    monkeypatch.setattr(worker, "clock", clock)
+    with httpx.Client(transport=clock.transport([])) as h:
+        assert worker.send_print_jobs(db, h) == 1
+    assert _job(db).sent_at == T0 + timedelta(minutes=5)
