@@ -224,3 +224,26 @@ def fail(id: int, consignment_id: int, body: FailIn, db: DB,
             where=body.position.where() if body.position else None)
         return _stop_done(db, body.message_id, run, stop, pod)
     return handle(db, who, body.message_id, f"/v1/runs/{id}/stops/{consignment_id}/fail", work)
+
+
+class FinishOut(BaseModel):
+    message_id: uuid.UUID
+    run_id: int
+    run_no: str
+    status: str
+    finished_at: dt.datetime | None
+    delivered: int
+    failed: int
+
+
+@router.post("/runs/{id}/finish", response_model=FinishOut)
+def finish_run(id: int, body: MessageIn, db: DB,
+               who: Principal = require_any("deliveries:write", "runs:write")):
+    """The driver back at the depot, or the office for them (runs:write)."""
+    def work():
+        run = deliveries.finish(db, who, id)
+        t = deliveries.tally(db, run.id)
+        return FinishOut(message_id=body.message_id, run_id=run.id, run_no=run.number,
+                         status=run.status, finished_at=run.finished_at,
+                         delivered=t.get("delivered", 0), failed=t.get("failed", 0))
+    return handle(db, who, body.message_id, f"/v1/runs/{id}/finish", work)

@@ -43,12 +43,16 @@ def get_run(db: Session, run_id: int) -> Run:
     return run
 
 
+# how a run that is past planning is described
+GONE = {"departed": "has left", "done": "is finished", "cancelled": "was cancelled"}
+
+
 def _planned(db: Session, run_id: int) -> Run:
     """The run, read after the lock, and still open to changes."""
     run = get_run(db, run_id)
     if run.status != "planned":
         raise Conflict("run_not_planned",
-                       f"{run.number} has {run.status}; its stops can't change")
+                       f"{run.number} {GONE.get(run.status, run.status)}; its stops can't change")
     return run
 
 

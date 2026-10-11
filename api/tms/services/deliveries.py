@@ -171,3 +171,20 @@ def tally(db: Session, run_id: int) -> dict[str | None, int]:
     rows = db.execute(select(Stop.outcome, func.count()).where(
         Stop.run_id == run_id, Stop.removed_at.is_(None)).group_by(Stop.outcome)).all()
     return {outcome: n for outcome, n in rows}
+
+
+def finish(db: Session, who, run_id: int) -> Run:
+    """Back at the depot: every stop is delivered or has a reason it wasn't.
+    Finishing a finished run changes nothing."""
+    run = _locked(db, who, run_id)
+    if run.status == "done":
+        return run
+    _on_the_road(run)
+    left = tally(db, run.id).get(None, 0)
+    if left:
+        raise Conflict("stops_left", f"{run.number} still has {left} "
+                                     f"{'stop' if left == 1 else 'stops'} to deliver or explain")
+    run.status = "done"
+    run.finished_at = datetime.now(UTC)
+    db.flush()
+    return run
