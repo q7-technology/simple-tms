@@ -1,4 +1,4 @@
-import { createEvent, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, createEvent, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Card, Consignment, Run } from "../api/types";
 import { json, path, renderApp, stubApi, type Call } from "./harness";
@@ -122,6 +122,33 @@ describe("Plan runs", () => {
     fireEvent.drop(kim, { dataTransfer: data });
     await waitFor(() => expect(calls.find((c) => c.url === "/v1/runs/1/assign")?.body)
       .toEqual({ consignment_id: 32, position: 4 }));
+  });
+
+  it("moves the stop that was dragged, even if the board was redrawn mid-drag", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const [a, b, c] = [card(11, "Hillside Bakery", "84"), card(12, "Two Rivers Vet", "41"),
+                         card(13, "Ridge Auto Workshop", "620")];
+      let stops = [a, b, c];
+      const { calls } = board({
+        "GET /v1/runs": () => json(200, { items: [run(1, "Kim", "TMS041", stops), MEL], total: 2 }),
+      });
+      renderApp("/plan");
+      const kim = await lane("Run R-0001");
+      const data = { setData: vi.fn(), getData: vi.fn(), effectAllowed: "" };
+      fireEvent.dragStart((await within(kim).findByText("Hillside Bakery")).closest(".stop")!, { dataTransfer: data });
+      // meanwhile someone else put Ridge Auto Workshop first, and the poll draws it
+      stops = [c, a, b];
+      await act(async () => { vi.advanceTimersByTime(20_000); });
+      await waitFor(() => expect(within(kim).getAllByText(/^(Hillside Bakery|Ridge Auto Workshop)$/)[0])
+        .toHaveTextContent("Ridge Auto Workshop"));
+      fireEvent(kim, createEvent.dragOver(kim, { dataTransfer: data }));
+      fireEvent.drop(kim, { dataTransfer: data });
+      await waitFor(() => expect(calls.find((x) => x.url === "/v1/runs/1/reorder")?.body)
+        .toMatchObject({ consignment_ids: [13, 12, 11] }));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("says plainly when someone else changed the run meanwhile", async () => {

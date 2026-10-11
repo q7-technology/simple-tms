@@ -11,7 +11,7 @@ import { Drawer } from "../ui/Drawer";
 import { Icon } from "../ui/icons";
 
 type Note = { tone: "r" | "a" | "g"; text: string } | null;
-interface Dragging { card: Card; from: number | null; index: number }
+interface Dragging { card: Card; from: number | null }
 interface Target { run: number | null; position: number }
 
 function said(e: unknown): string {
@@ -199,9 +199,12 @@ export function PlanRuns() {
     endDrag();
     if (!d) return;
     if (d.from === run.id) {
+      // the board as it is now: a poll may have redrawn it since the drag began
       const ids = run.stops.map((s) => s.consignment.id);
-      const to = positionWithout(d.index, position) - 1;
-      if (to !== d.index) void reorder(run, moved(ids, d.index, to));
+      const from = ids.indexOf(d.card.id);
+      if (from < 0) { load().catch(() => undefined); return; }
+      const to = positionWithout(from, position) - 1;
+      if (to !== from) void reorder(run, moved(ids, from, to));
     } else {
       void assign(run.id, d.card, position);
     }
@@ -294,7 +297,7 @@ export function PlanRuns() {
           {drag?.from != null && <div className="drop">Drop here to take it off its run</div>}
           {shown.map((c) => (
             <div key={c.id} className={`con${drag?.card.id === c.id ? " dragging" : ""}`} data-card={c.id} draggable tabIndex={0}
-                 onDragStart={(e) => startDrag(e, { card: c, from: null, index: -1 })} onDragEnd={endDrag}>
+                 onDragStart={(e) => startDrag(e, { card: c, from: null })} onDragEnd={endDrag}>
               <span style={{ width: 22, display: "grid", placeItems: "center", color: "#9AA8A0" }} aria-hidden="true"><Icon name="grip" width={2.4} /></span>
               <div className="c"><b>{c.customer}</b><span className="small">{c.suburb}</span>
                 <div className="meta num"><span>{packagesLabel(c)}</span><span>{kg(c)}</span><span>{m3(c)}</span></div>
@@ -339,7 +342,7 @@ export function PlanRuns() {
                 <div key={s.consignment.id}>
                   {j === hintAt && hint}
                   <div className={`stop${drag?.card.id === s.consignment.id ? " dragging" : ""}`} data-index={j} data-stop={s.consignment.id} tabIndex={open ? 0 : undefined}
-                       draggable={open} onDragStart={(e) => startDrag(e, { card: s.consignment, from: run.id, index: j })} onDragEnd={endDrag}>
+                       draggable={open} onDragStart={(e) => startDrag(e, { card: s.consignment, from: run.id })} onDragEnd={endDrag}>
                     {open && <span className="h" aria-hidden="true"><Icon name="grip" width={2.4} /></span>}
                     <span className="n" style={{ background: colour }}>{s.sequence}</span>
                     <span className="c"><b>{s.consignment.customer}</b>
