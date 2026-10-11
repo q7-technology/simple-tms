@@ -1,0 +1,155 @@
+@import "tailwindcss";
+
+/* Simple TMS colours (design/README.md). Simple WMS's bones, road green for
+ * its own. Amber and red text use their darker ink, never the fill. */
+@theme {
+  --color-page: #F3F6F4;
+  --color-ink: #17251F;
+  --color-ink-2: #4B5A53;
+  --color-muted: #5B6B63;
+  --color-green: #1F8A5B;
+  --color-green-dark: #146B45;
+  --color-tint: #E7F4EC;
+  --color-line: #DCE7DF;
+  --color-line-2: #C9DBCF;
+  --color-card-line: #E3EDE6;
+  --color-row: #EDF3EF;
+  --color-field: #F7FAF8;
+  --color-amber: #E8A317;
+  --color-amber-ink: #8A5A00;
+  --color-amber-bg: #FFF3D6;
+  --color-amber-line: #F0D08A;
+  --color-red: #C9343D;
+  --color-red-ink: #A3242C;
+  --color-red-bg: #FCE9EA;
+  --color-red-line: #F1B9BD;
+  --color-blue: #2F6FB8;
+  --color-violet: #7B5CC4;
+  --font-sans: Manrope, ui-sans-serif, system-ui, sans-serif;
+  --shadow-soft: 0 6px 20px rgba(23, 37, 31, 0.08);
+  --shadow-lift: 0 10px 30px rgba(23, 37, 31, 0.12);
+}
+
+@layer base {
+  html, body, #root { min-height: 100%; }
+  body { margin: 0; background: var(--color-page); color: var(--color-ink); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+  a { color: #146B45; }
+  a:hover { color: #0E5034; }
+  :focus-visible { outline: 3px solid rgba(31, 138, 91, 0.45); outline-offset: 2px; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+}
+
+/* The classes of design/screens/Main.html and PlanRuns.html, as drawn. */
+@layer components {
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .eyebrow { font-size: 12px; font-weight: 800; letter-spacing: 1.2px; color: var(--color-muted); text-transform: uppercase; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; white-space: nowrap; line-height: 1.3; }
+  .p-green { background: #E3F3EA; color: #146B45; }
+  .p-amber { background: var(--color-amber-bg); color: var(--color-amber-ink); }
+  .p-red { background: var(--color-red-bg); color: var(--color-red-ink); }
+  .p-grey { background: #EEF2EF; color: #4B5A53; }
+  .btn { height: 44px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--color-line-2); background: #fff; color: var(--color-ink); font-weight: 700; font-size: 14px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none; white-space: nowrap; }
+  .btn:hover { color: var(--color-ink); border-color: var(--color-green); }
+  .btn:disabled { opacity: 0.55; cursor: default; }
+  .btn.primary { border: 0; background: var(--color-green); color: #fff; font-weight: 800; }
+  .btn.primary:hover { background: var(--color-green-dark); color: #fff; }
+  .btn.sm { height: 36px; padding: 0 12px; font-size: 13px; border-radius: 10px; }
+  .field { height: 44px; padding: 0 12px; border: 1px solid var(--color-line-2); border-radius: 12px; background: #fff; font-size: 14px; color: var(--color-ink); width: 100%; }
+  .search { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border: 1px solid var(--color-line); border-radius: 12px; background: var(--color-field); color: var(--color-muted); font-size: 14px; }
+  .search input { flex: 1; border: 0; background: transparent; outline: none; min-width: 0; color: var(--color-ink); }
+  .search input::placeholder { color: var(--color-muted); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; display: inline-block; }
+  .num { font-variant-numeric: tabular-nums; }
+  .small { font-size: 12px; color: var(--color-muted); }
+
+  /* the map */
+  .app { height: 100vh; min-height: 680px; display: flex; flex-direction: column; }
+  .hdr { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 14px 24px; background: #fff; border-bottom: 1px solid var(--color-line); }
+  .brand { display: flex; align-items: center; gap: 10px; font-size: 19px; font-weight: 800; letter-spacing: -0.2px; }
+  .hdr .search { flex: 1 1 280px; max-width: 460px; }
+  .hright { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+  .live { display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border-radius: 999px; background: #E3F3EA; color: #146B45; font-size: 13px; font-weight: 700; }
+  .avatar { width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--color-green); color: #fff; font-weight: 800; font-size: 14px; cursor: pointer; }
+  .stage { position: relative; flex: 1; overflow: hidden; }
+  .stage > img { display: block; width: 100%; max-width: 1540px; height: auto; margin: 0 auto; }
+  .ov { position: absolute; }
+  .hud { padding: 10px 12px; border-radius: 14px; background: #fff; box-shadow: var(--shadow-soft); text-decoration: none; color: inherit; }
+  .hud .eyebrow { font-size: 11px; }
+  .hud .v { font-size: 24px; font-weight: 800; }
+  .nav { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px; border-radius: 16px; background: #17251F; box-shadow: 0 10px 30px rgba(23, 37, 31, 0.25); }
+  .nav a { height: 48px; padding: 0 16px; border-radius: 12px; color: #fff; font-weight: 700; font-size: 14px; text-decoration: none; display: flex; align-items: center; gap: 8px; }
+  .nav a:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+  .nav a.on { background: var(--color-green); font-weight: 800; }
+  .nav a i { font-style: normal; padding: 1px 7px; border-radius: 999px; background: rgba(255, 255, 255, 0.22); font-size: 12px; font-weight: 800; }
+
+  /* a drawer over the map */
+  .dim { position: fixed; inset: 0; background: rgba(23, 37, 31, 0.38); backdrop-filter: blur(2px); }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 72%; background: #fff; border-radius: 24px 0 0 24px; box-shadow: -20px 0 50px rgba(23, 37, 31, 0.25); display: flex; flex-direction: column; }
+  .drawer.wide { width: 88%; }
+  .dhead { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 22px 28px 14px; }
+  .dhead h1 { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.3px; }
+  .dhead .sub { font-size: 13px; color: var(--color-muted); }
+  .closebtn { width: 44px; height: 44px; border-radius: 12px; background: var(--color-page); color: var(--color-ink); display: grid; place-items: center; text-decoration: none; flex: none; border: 0; cursor: pointer; }
+  .dbody { flex: 1; min-height: 0; overflow: auto; padding: 0 28px 40px; display: flex; flex-direction: column; gap: 16px; }
+  .dbody > * { flex: none; }
+
+  /* the plan board */
+  .boardwrap { overflow-x: auto; padding-bottom: 6px; }
+  .board { display: grid; gap: 12px; align-items: start; }
+  .lane { border-radius: 18px; background: #F7FAF8; border: 1px solid var(--color-card-line); padding: 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .lane.tray { background: #FFFBEF; border-color: var(--color-amber-line); }
+  .lane.near { border-color: var(--color-amber-line); }
+  .lane.over { border-color: var(--color-red-line); background: #FFF8F8; }
+  .lane.out { background: #F1F3F2; border-style: dashed; border-color: #C9D2CD; }
+  .lane.target { border-color: var(--color-green); box-shadow: 0 0 0 2px var(--color-tint); }
+  .lhead { display: flex; align-items: center; gap: 8px; }
+  .swatch { width: 12px; height: 12px; border-radius: 4px; flex: none; }
+  .lhead .t { font-size: 15px; font-weight: 800; }
+  .lhead .s { font-size: 12px; color: var(--color-muted); }
+  .meter { display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
+  .meter .row { display: flex; justify-content: space-between; gap: 6px; color: var(--color-ink-2); }
+  .meter .row b { color: var(--color-ink); }
+  .meter .track { height: 8px; border-radius: 999px; background: #E3EDE6; overflow: hidden; position: relative; }
+  .meter .track span { display: block; height: 100%; border-radius: 999px; background: var(--color-green); }
+  .meter.a .track span { background: var(--color-amber); }
+  .meter.a .row b { color: var(--color-amber-ink); }
+  .meter.r .track span { background: var(--color-red); }
+  .meter.r .row b { color: var(--color-red-ink); }
+  .stop { display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 4px; border-radius: 12px; background: #fff; border: 1px solid var(--color-card-line); font-size: 13px; min-height: 52px; }
+  .stop .h { width: 24px; height: 36px; display: grid; place-items: center; color: #9AA8A0; cursor: grab; flex: none; }
+  .stop .n { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 800; color: #fff; flex: none; }
+  .stop .c { flex: 1; min-width: 0; }
+  .stop .c b { display: block; line-height: 1.3; }
+  .stop .c span { color: var(--color-muted); font-size: 12px; }
+  .con { padding: 10px 12px 10px 4px; border-radius: 12px; background: #fff; border: 1px solid var(--color-card-line); display: flex; gap: 6px; font-size: 13px; cursor: grab; }
+  .con .c { flex: 1; min-width: 0; }
+  .con b { display: block; }
+  .con .meta { display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--color-ink-2); font-size: 12px; margin-top: 3px; }
+  .con .ref { font-size: 11px; color: var(--color-muted); margin-top: 3px; }
+  .drop { border: 2px dashed var(--color-green); border-radius: 12px; background: var(--color-tint); color: var(--color-green-dark); font-size: 12px; font-weight: 800; text-align: center; padding: 10px; }
+  .drop.r { border-color: var(--color-red); background: var(--color-red-bg); color: var(--color-red-ink); }
+  .dragging { transform: rotate(-2.5deg); box-shadow: 0 14px 30px rgba(23, 37, 31, 0.22); border-color: var(--color-green); }
+  .msg { font-size: 12px; border-radius: 10px; padding: 8px 10px; display: flex; gap: 6px; align-items: flex-start; }
+  .msg.r { background: var(--color-red-bg); color: var(--color-red-ink); }
+  .msg.a { background: var(--color-amber-bg); color: var(--color-amber-ink); }
+  .msg.g { background: var(--color-tint); color: var(--color-green-dark); }
+  /* The keyboard's way to do what a drag does. Tab to a card or a stop and
+   * its controls show over its right-hand end; so does pointing at it. */
+  .stop, .con { position: relative; }
+  .kb { display: none; gap: 2px; align-items: center; position: absolute; right: 6px; top: 50%; transform: translateY(-50%); padding: 3px; border-radius: 10px; background: #fff; box-shadow: var(--shadow-soft); }
+  .stop:hover .kb, .stop:focus-within .kb, .con:hover .kb, .con:focus-within .kb { display: flex; }
+  .kb button, .kb select { height: 30px; border-radius: 8px; border: 1px solid var(--color-line); background: #fff; font-size: 12px; cursor: pointer; }
+  .kb button { width: 30px; display: grid; place-items: center; padding: 0; }
+  .kb select { max-width: 120px; padding: 0 4px; }
+}
+
+@media (max-width: 960px) {
+  .app { height: auto; }
+  .ov { position: static; width: auto !important; max-width: none !important; transform: none !important; }
+  .stage { display: flex; flex-direction: column; gap: 12px; padding: 12px; }
+  .drawer, .drawer.wide { position: fixed; width: 100%; border-radius: 0; }
+}
+
+@keyframes tms-drawer-in { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+.drawer { animation: tms-drawer-in 0.22s ease-out; }
+@media (prefers-reduced-motion: reduce) { .drawer { animation: none; } }
