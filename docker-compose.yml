@@ -29,6 +29,9 @@ services:
       TMS_WMS_API_KEY: ${TMS_WMS_API_KEY:-}
       TMS_PLATEN_URL: ${TMS_PLATEN_URL:-}
       TMS_RUN_SHEET_PRINTER: ${TMS_RUN_SHEET_PRINTER:-dispatch}
+    volumes:
+      # signatures and photos for proof of delivery (TMS_POD_DIR)
+      - pod_files:/data/pod
     depends_on:
       db:
         condition: service_healthy
@@ -85,5 +88,6 @@ services:
 
 volumes:
   pgdata:
+  pod_files:
   caddy_data:
   caddy_config:
