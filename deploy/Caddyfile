@@ -29,7 +29,20 @@ http://{$TMS_DOMAIN} {
 		reverse_proxy api:8000
 	}
 
-	# The desktop app (build step 2). The driver app arrives with step 3.
+	# The driver app (build step 3): a PWA under /driver/. Its pictures are
+	# blob: URLs of photos taken on the phone; nothing else comes from outside.
+	@driverbare path /driver
+	redir @driverbare /driver/ 308
+	handle_path /driver/* {
+		header Content-Security-Policy "default-src 'self'; img-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		# checked on every launch, so a new build reaches the phones
+		header /sw.js Cache-Control "no-cache"
+		root * /srv/driver
+		try_files {path} /index.html
+		file_server
+	}
+
+	# The desktop app (build step 2).
 	handle {
 		# Only the desktop: the API's /docs page loads its scripts from a CDN.
 		# The build has no inline scripts or styles, and its fonts are its own.

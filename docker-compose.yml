@@ -81,6 +81,8 @@ services:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       # the desktop app, built on the host: cd apps/desktop && npm run build
       - ./apps/desktop/dist:/srv/desktop:ro
+      # the driver app, built on the host: cd apps/driver && npm run build
+      - ./apps/driver/dist:/srv/driver:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
