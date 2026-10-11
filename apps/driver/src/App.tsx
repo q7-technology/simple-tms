@@ -1,5 +1,7 @@
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { SessionProvider, useSession } from "./auth/Session";
+import { CantDeliver } from "./pages/CantDeliver";
+import { Proof } from "./pages/Proof";
 import { RunHome } from "./pages/RunHome";
 import { SignIn } from "./pages/SignIn";
 import { Stop } from "./pages/Stop";
@@ -19,6 +21,8 @@ export function AppRoutes() {
         <Route index element={<Today />} />
         <Route path="/run/:runId" element={<RunHome />} />
         <Route path="/run/:runId/stop/:consignmentId" element={<Stop />} />
+        <Route path="/run/:runId/stop/:consignmentId/proof" element={<Proof />} />
+        <Route path="/run/:runId/stop/:consignmentId/cant" element={<CantDeliver />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
