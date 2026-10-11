@@ -215,14 +215,17 @@ def unassign(db: Session, run_id: int, consignment_id: int, by: str) -> Run:
     return run
 
 
-def reorder(db: Session, run_id: int, consignment_ids: list[int]) -> Run:
-    """The whole order, as the dispatcher sees it. If the run has changed
-    since (someone else added or took off a stop), it is refused rather than
-    guessed at: the screen reloads and they drag again."""
+def reorder(db: Session, run_id: int, consignment_ids: list[int], seen: list[int]) -> Run:
+    """The whole order, as the dispatcher sees it, and the order they saw
+    before they moved a stop. If the run has changed since (someone else
+    added, took off or moved a stop), it is refused rather than guessed at or
+    written over: the screen reloads and they drag again."""
     lock_planning(db)
     run = _planned(db, run_id)
-    stops = {s.consignment_id: s for s in _live_stops(db, run.id)}
-    if len(consignment_ids) != len(set(consignment_ids)) or set(consignment_ids) != set(stops):
+    live = _live_stops(db, run.id)
+    stops = {s.consignment_id: s for s in live}
+    if (len(consignment_ids) != len(set(consignment_ids)) or set(consignment_ids) != set(stops)
+            or seen != [s.consignment_id for s in live]):
         raise Conflict("stale", f"{run.number} changed while you were looking; it has been "
                                 "reloaded, so try that again")
     _renumber([stops[cid] for cid in consignment_ids])

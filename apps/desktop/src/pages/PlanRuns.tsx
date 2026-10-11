@@ -15,6 +15,8 @@ interface Dragging { card: Card; from: number | null }
 interface Target { run: number | null; position: number }
 
 function said(e: unknown): string {
+  // a reorder from a board that was out of date: the board reloads after every change
+  if (e instanceof ApiError && e.code === "stale") return "Someone else changed this run. Here it is as it is now.";
   return e instanceof ApiError ? e.message : "Simple TMS could not be reached. Check the connection and try again.";
 }
 
@@ -143,8 +145,10 @@ export function PlanRuns() {
     act(() => api.post(`/v1/runs/${runId}/assign`, { consignment_id: c.id, position }));
   const unassign = (runId: number, c: Card) =>
     act(() => api.post(`/v1/runs/${runId}/unassign`, { consignment_id: c.id }));
+  // with the order as drawn, so the API can refuse it if someone else has moved a stop since
   const reorder = (run: Run, ids: number[]) =>
-    act(() => api.post(`/v1/runs/${run.id}/reorder`, { consignment_ids: ids }));
+    act(() => api.post(`/v1/runs/${run.id}/reorder`,
+                       { consignment_ids: ids, seen: run.stops.map((s) => s.consignment.id) }));
 
   function depart(run: Run) {
     if (!window.confirm(`${run.run_no} leaves now? Each consignment on it is marked shipped in Simple WMS.`)) return;

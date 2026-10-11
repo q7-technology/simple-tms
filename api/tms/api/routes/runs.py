@@ -195,6 +195,8 @@ class UnassignIn(BaseModel):
 class ReorderIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     consignment_ids: list[int] = Field(max_length=500)
+    # the stops in the order the dispatcher drew them: anything else is stale
+    seen: list[int] = Field(max_length=500)
 
 
 @router.post("/runs/{id}/assign", response_model=RunOut)
@@ -211,7 +213,7 @@ def unassign(id: int, body: UnassignIn, db: DB, who: Principal = require("runs:w
 
 @router.post("/runs/{id}/reorder", response_model=RunOut)
 def reorder(id: int, body: ReorderIn, db: DB, who: Principal = require("runs:write")):
-    runs.reorder(db, id, body.consignment_ids)
+    runs.reorder(db, id, body.consignment_ids, body.seen)
     return _fresh(db, id)
 
 

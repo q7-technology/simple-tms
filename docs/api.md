@@ -230,17 +230,20 @@ Each answers with the run as it now is.
   `over`, and cannot print or leave until a stop moves.
 - `POST /v1/runs/{id}/unassign` — `{ "consignment_id" }`. Back to the tray
   (`packed`, history `unassigned`). Not on this run: nothing happens.
-- `POST /v1/runs/{id}/reorder` — `{ "consignment_ids": [ … ] }`, every stop on
-  the run in the new order. If that is not exactly the run's stops (someone
-  else added or took one off meanwhile, or an id is twice), it is
-  `409 stale` and nothing changes: reload and drag again.
+- `POST /v1/runs/{id}/reorder` — `{ "consignment_ids": [ … ], "seen": [ … ] }`:
+  every stop on the run in the new order, and the stops in the order you saw
+  them before the move. If `seen` is not the run's order as it is now
+  (someone else added, took off or moved a stop meanwhile), or
+  `consignment_ids` is not exactly the run's stops (or an id is twice), it is
+  `409 stale` and nothing changes: reload and move it again. So one
+  dispatcher's reorder never silently undoes another's.
 
 | `409` code | When |
 | --- | --- |
 | `run_not_planned` | the run has departed or been cancelled; its stops are fixed |
 | `not_plannable` | the consignment has departed (or is otherwise past planning) |
 | `vehicle_unavailable` | the run's truck has been deactivated |
-| `stale` | a reorder that is not the run's stops as they are |
+| `stale` | a reorder from an order that is not the run's as it is now |
 
 An unknown consignment is a `422` on `consignment_id`; an unknown run `404`.
 

@@ -102,11 +102,37 @@ def test_reorder_takes_the_whole_order(client, db, dispatcher_headers):
     for x in (a, b, c):
         assign(client, dispatcher_headers, run["id"], x.id)
     r = client.post(f"/v1/runs/{run['id']}/reorder", headers=dispatcher_headers,
-                    json={"consignment_ids": [c.id, a.id, b.id]})
+                    json={"consignment_ids": [c.id, a.id, b.id], "seen": [a.id, b.id, c.id]})
     assert r.status_code == 200 and order(r.json()) == [c.id, a.id, b.id]
     same = client.post(f"/v1/runs/{run['id']}/reorder", headers=dispatcher_headers,
-                       json={"consignment_ids": [c.id, a.id, b.id]})
+                       json={"consignment_ids": [c.id, a.id, b.id], "seen": [c.id, a.id, b.id]})
     assert order(same.json()) == [c.id, a.id, b.id]
+
+
+def test_a_second_reorder_from_the_same_starting_order_is_refused(client, db,
+                                                                   dispatcher_headers):
+    """Two dispatchers each move a stop on the board as they both drew it: the
+    second would silently undo the first, so it is refused and reloads."""
+    run, _, (a, b, c) = _depot(client, db, dispatcher_headers)
+    for x in (a, b, c):
+        assign(client, dispatcher_headers, run["id"], x.id)
+    first = client.post(f"/v1/runs/{run['id']}/reorder", headers=dispatcher_headers,
+                        json={"consignment_ids": [c.id, a.id, b.id], "seen": [a.id, b.id, c.id]})
+    assert first.status_code == 200
+    second = client.post(f"/v1/runs/{run['id']}/reorder", headers=dispatcher_headers,
+                         json={"consignment_ids": [b.id, a.id, c.id], "seen": [a.id, b.id, c.id]})
+    assert second.status_code == 409 and second.json()["code"] == "stale"
+    now = client.get(f"/v1/runs/{run['id']}", headers=dispatcher_headers).json()
+    assert order(now) == [c.id, a.id, b.id]
+
+
+def test_a_reorder_says_what_it_saw(client, db, dispatcher_headers):
+    run, _, (a, b, _c) = _depot(client, db, dispatcher_headers)
+    assign(client, dispatcher_headers, run["id"], a.id)
+    assign(client, dispatcher_headers, run["id"], b.id)
+    r = client.post(f"/v1/runs/{run['id']}/reorder", headers=dispatcher_headers,
+                    json={"consignment_ids": [b.id, a.id]})
+    assert r.status_code == 422
 
 
 def test_an_order_from_before_someone_else_changed_the_run_is_refused(client, db,
@@ -116,11 +142,11 @@ def test_an_order_from_before_someone_else_changed_the_run_is_refused(client, db
     assign(client, dispatcher_headers, run["id"], b.id)
     assign(client, dispatcher_headers, run["id"], c.id)     # someone else, meanwhile
     r = client.post(f"/v1/runs/{run['id']}/reorder", headers=dispatcher_headers,
-                    json={"consignment_ids": [b.id, a.id]})
+                    json={"consignment_ids": [b.id, a.id], "seen": [a.id, b.id]})
     assert r.status_code == 409 and r.json()["code"] == "stale"
     assert "changed while you were looking" in r.json()["detail"]
     twice = client.post(f"/v1/runs/{run['id']}/reorder", headers=dispatcher_headers,
-                        json={"consignment_ids": [a.id, a.id, b.id]})
+                        json={"consignment_ids": [a.id, a.id, b.id], "seen": [a.id, b.id, c.id]})
     assert twice.status_code == 409
 
 

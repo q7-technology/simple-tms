@@ -95,7 +95,7 @@ describe("Plan runs", () => {
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Move Hillside Bakery down" }));
     await waitFor(() => expect(calls.find((c) => c.url === "/v1/runs/1/reorder")?.body)
-      .toEqual({ consignment_ids: [12, 11, 13] }));
+      .toEqual({ consignment_ids: [12, 11, 13], seen: [11, 12, 13] }));
     expect(screen.getByRole("button", { name: "Move Hillside Bakery up" })).toBeDisabled();
   });
 
@@ -145,21 +145,33 @@ describe("Plan runs", () => {
       fireEvent(kim, createEvent.dragOver(kim, { dataTransfer: data }));
       fireEvent.drop(kim, { dataTransfer: data });
       await waitFor(() => expect(calls.find((x) => x.url === "/v1/runs/1/reorder")?.body)
-        .toMatchObject({ consignment_ids: [13, 12, 11] }));
+        .toEqual({ consignment_ids: [13, 12, 11], seen: [13, 11, 12] }));
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("says plainly when someone else changed the run meanwhile", async () => {
-    board({
-      "POST /v1/runs/1/reorder": () => json(409, {
-        code: "stale", detail: "R-0001 changed while you were looking; it has been reloaded, so try that again" }),
+  it("says plainly when someone else changed the run meanwhile, and shows it as it is now", async () => {
+    const [a, b, c] = [card(11, "Hillside Bakery", "84"), card(12, "Two Rivers Vet", "41"),
+                       card(13, "Ridge Auto Workshop", "620")];
+    let stops = [a, b, c];
+    const { calls } = board({
+      "GET /v1/runs": () => json(200, { items: [run(1, "Kim", "TMS041", stops), MEL], total: 2 }),
+      "POST /v1/runs/1/reorder": () => {
+        stops = [c, a, b];      // someone else got there first
+        return json(409, { code: "stale",
+          detail: "R-0001 changed while you were looking; it has been reloaded, so try that again" });
+      },
     });
     renderApp("/plan");
+    const kim = await lane("Run R-0001");
     await userEvent.setup().click(await screen.findByRole("button", { name: "Move Two Rivers Vet up" }));
+    await waitFor(() => expect(calls.find((x) => x.url === "/v1/runs/1/reorder")?.body)
+      .toEqual({ consignment_ids: [12, 11, 13], seen: [11, 12, 13] }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "R-0001 changed while you were looking; it has been reloaded, so try that again");
+      "Someone else changed this run. Here it is as it is now.");
+    await waitFor(() => expect(within(kim).getAllByText(/^(Hillside Bakery|Ridge Auto Workshop)$/)[0])
+      .toHaveTextContent("Ridge Auto Workshop"));
   });
 
   it("prints every run sheet it can and says what it could not", async () => {
@@ -226,7 +238,7 @@ describe("Plan runs", () => {
     // once it is last, down is off, so the keyboard lands on up
     await user.keyboard("{Enter}");
     await waitFor(() => expect(calls.filter((c) => c.url === "/v1/runs/1/reorder").at(-1)?.body)
-      .toEqual({ consignment_ids: [12, 13, 11] }));
+      .toEqual({ consignment_ids: [12, 13, 11], seen: [12, 11, 13] }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Move Hillside Bakery up" })).toHaveFocus());
 
     // put on a run from the tray, the keyboard follows it to its stop
