@@ -126,8 +126,9 @@ def cancel(db: Session, run_id: int) -> Run:
 
 # ---- stops -------------------------------------------------------------------
 
-# a consignment that may still go on a run, or move to another
-PLANNABLE = ("packed", "assigned")
+# a consignment that may still go on a run, or move to another; one the driver
+# couldn't deliver comes back to the depot and is planned again
+PLANNABLE = ("packed", "assigned", "failed")
 
 
 def _now() -> datetime:
@@ -172,8 +173,10 @@ def assign(db: Session, run_id: int, consignment_id: int, position: int | None,
         raise Conflict("vehicle_unavailable",
                        f"{run.vehicle.rego} is deactivated, so {run.number} can't take stops")
     c = _plannable(db, consignment_id)
+    # its stop on a run now; a stop on a trip already made (it has an outcome) is a record
     current = db.execute(select(Stop).where(
-        Stop.consignment_id == c.id, Stop.removed_at.is_(None))).scalar_one_or_none()
+        Stop.consignment_id == c.id, Stop.removed_at.is_(None),
+        Stop.outcome.is_(None))).scalar_one_or_none()
 
     if current is not None and current.run_id != run.id:
         old = _planned(db, current.run_id)          # a departed run keeps its stops
