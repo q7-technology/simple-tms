@@ -27,8 +27,8 @@ DRIVER_TTL_SECONDS = 12 * 3600
 # What each desktop role may do.
 ROLE_SCOPES: dict[str, list[str]] = {
     "admin": ["*"],
-    "manager": ["fleet:read", "fleet:write", "consignments:read"],
-    "dispatcher": ["fleet:read", "consignments:read"],
+    "manager": ["fleet:read", "fleet:write", "consignments:read", "runs:read", "runs:write"],
+    "dispatcher": ["fleet:read", "consignments:read", "runs:read", "runs:write"],
 }
 ROLES = tuple(ROLE_SCOPES)
 # A driver picks a truck after signing in, so may see the fleet. More with step 3.

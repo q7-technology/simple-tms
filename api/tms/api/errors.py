@@ -21,6 +21,16 @@ class NotFound(Exception):
         super().__init__(message)
 
 
+class Conflict(Exception):
+    """Well formed, but not possible as things stand: a run that has left, a
+    truck over its limit. `code` is for programs, `message` for people."""
+
+    def __init__(self, code: str, message: str):
+        self.code = code
+        self.message = message
+        super().__init__(message)
+
+
 class Unauthorised(Exception):
     def __init__(self, message: str):
         self.message = message
@@ -61,6 +71,10 @@ def install(app: FastAPI) -> None:
     @app.exception_handler(NotFound)
     async def _not_found(request: Request, exc: NotFound):
         return JSONResponse(status_code=404, content={"detail": exc.message})
+
+    @app.exception_handler(Conflict)
+    async def _conflict(request: Request, exc: Conflict):
+        return JSONResponse(status_code=409, content={"detail": exc.message, "code": exc.code})
 
     @app.exception_handler(Unauthorised)
     async def _unauthorised(request: Request, exc: Unauthorised):

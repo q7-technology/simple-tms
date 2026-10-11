@@ -21,6 +21,17 @@ class Settings(BaseSettings):
     # Shorter than the WMS worker's own 10 s wait, so it hears our answer.
     wms_timeout_seconds: float = 5.0
 
+    # Platen, or any print service that takes the same job: its intake
+    # address (https://<platen>/intake/jobs), a Platen key, and the printer
+    # run sheets go to (a Platen printer's id or name).
+    platen_url: str = ""
+    platen_key: str = ""
+    run_sheet_printer: str = "dispatch"
+
+    # The worker that sends the ship calls and print jobs.
+    worker_poll_seconds: float = 5.0
+    worker_http_timeout_seconds: float = 10.0
+
     @field_validator("secret_key")
     @classmethod
     def _strong_secret_key(cls, value: str) -> str:
