@@ -116,3 +116,42 @@ def test_failed_calls_are_tried_again_on_request(client, db, http, departed,
     worker.send_ship_calls(db, http.client, now=datetime.now(UTC) + timedelta(seconds=1))
     assert _call(db).status == "done"
     assert http.bodies()[0]["message_id"] == str(row.message_id)
+
+
+def test_two_workers_at_once_send_each_call_once(client, db, engine, dispatcher_headers,
+                                                 monkeypatch):
+    """Each claims one row at a time, locked, so the other passes it by."""
+    import threading
+    import time
+
+    from sqlalchemy.orm import Session
+
+    from conftest import all_at_once
+    from tms.config import get_settings
+    monkeypatch.setattr(get_settings(), "wms_url", "http://wms.test/")
+    vehicle(db)
+    driver(db)
+    run = new_run(client, dispatcher_headers)
+    for i in range(6):
+        c = consignment(db, ref=f"00800345{i:02d}", kg="10")
+        assign(client, dispatcher_headers, run["id"], c.id)
+    client.post(f"/v1/runs/{run['id']}/depart", headers=dispatcher_headers)
+    db.execute(OutboundCall.__table__.update().values(next_attempt_at=T0))
+    db.commit()
+
+    sent, lock = [], threading.Lock()
+
+    def slow(request):
+        time.sleep(0.05)
+        with lock:
+            sent.append(request.read())
+        return httpx.Response(202, json={})
+
+    def one_worker():
+        with Session(engine) as s, httpx.Client(transport=httpx.MockTransport(slow)) as h:
+            return worker.send_ship_calls(s, h, now=T0)
+
+    assert sum(all_at_once(2, one_worker)) == 6
+    assert len(sent) == 6 and len(set(sent)) == 6
+    db.expire_all()
+    assert {c.status for c in db.execute(select(OutboundCall)).scalars()} == {"done"}
