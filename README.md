@@ -4,12 +4,14 @@ An open source, self-hosted transport management system for businesses that
 deliver with their own trucks and also send freight with outside carriers.
 It sits beside Simple WMS and Platen and works without either.
 
-Status: **build step 2, own fleet.** Runs planned on a map-and-drawer
-desktop, run sheets printed through Platen, and Simple WMS told each delivery
-shipped when its run leaves; on top of step 1 (sign-in, vehicles and drivers,
-consignments from Simple WMS's `delivery.packed`). The driver app, fleet care,
-live location and carriers come with the next steps in
-`docs/plans/2026-10-10-simple-tms-design.md`.
+Status: **build step 3, the driver app.** Drivers sign in on their phones,
+start the run, deliver each stop with a signature, a photo or both (or say
+why they couldn't), and finish the run, with or without signal; on top of
+step 2 (runs planned on a map-and-drawer desktop, run sheets printed through
+Platen, Simple WMS told each delivery shipped when its run leaves) and step 1
+(sign-in, vehicles and drivers, consignments from Simple WMS's
+`delivery.packed`). Fleet care, live location and carriers come with the
+next steps in `docs/plans/2026-10-10-simple-tms-design.md`.
 
 ## What is in this repo
 
@@ -21,6 +23,7 @@ docs/api.md          every endpoint
 design/              static HTML of each screen, and a gallery
 api/                 FastAPI app, migrations, tests
 apps/desktop/        the dispatcher's desktop app (Vite + React)
+apps/driver/         the driver's phone app, a PWA at /driver/ (Vite + React)
 deploy/Caddyfile     the only door in
 docker-compose.yml   api, worker, db, caddy
 ```
@@ -32,6 +35,7 @@ git clone https://github.com/q7-technology/simple-tms
 cd simple-tms
 cp .env.example .env            # set POSTGRES_PASSWORD, and TMS_SECRET_KEY to: openssl rand -hex 32
 (cd apps/desktop && npm ci && npm run build)
+(cd apps/driver && npm ci && npm run build)
 docker compose up -d
 docker compose exec api tms create-user --username you --role admin
 ```
@@ -43,6 +47,19 @@ also published on `127.0.0.1:8022` (`TMS_API_PORT`) for local work. The
 `worker` makes the calls to Simple WMS and sends run sheets to Platen, taking
 one of each in turn so neither queue holds up the other; it needs no port. Rebuild the desktop (`npm run build`) after pulling changes to
 `apps/desktop`; Caddy serves `apps/desktop/dist` as it is.
+
+The driver app is at `https://<TMS_DOMAIN>/driver/`. A driver signs in with
+their code (in any case) and PIN (given when the driver is made, `POST /v1/drivers`, or
+changed by a manager, `PATCH /v1/drivers/{code}` with a new `pin`), starts
+the day's run, and works through it one stop at a time; it keeps working with
+no signal and sends what waited when the signal is back, each confirmation
+once however often it is sent. A consignment that couldn't be delivered goes
+back to the **Plan runs** tray, marked "Came back: not delivered", to be
+planned again. A driver who is back but didn't finish on the phone can be
+finished from **Plan runs** (**Finish run**, once every stop is delivered or
+coming back). Rebuild it (`npm run build` in `apps/driver`) after pulling
+changes; Caddy serves `apps/driver/dist` as it is. Signatures and photos are
+kept in the `pod_files` volume: back it up with the database.
 
 ## Production on a real domain
 
@@ -74,6 +91,15 @@ not run the TMS one: start Simple TMS with
   	handle @api {
   		reverse_proxy 127.0.0.1:8022
   	}
+  	@driverbare path /driver
+  	redir @driverbare /driver/ 308
+  	handle_path /driver/* {
+  		header Content-Security-Policy "default-src 'self'; img-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+  		header /sw.js Cache-Control "no-cache"
+  		root * /path/to/simple-tms/apps/driver/dist
+  		try_files {path} /index.html
+  		file_server
+  	}
   	handle {
   		header Content-Security-Policy "default-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
   		root * /path/to/simple-tms/apps/desktop/dist
@@ -93,8 +119,9 @@ not run the TMS one: start Simple TMS with
     caddy:
       networks: [default, simple-tms]
       volumes:
-        # the TMS desktop build, served by this Caddy too
+        # the TMS desktop and driver app builds, served by this Caddy too
         - /path/to/simple-tms/apps/desktop/dist:/srv/tms-desktop:ro
+        - /path/to/simple-tms/apps/driver/dist:/srv/tms-driver:ro
   networks:
     simple-tms:
       external: true
@@ -116,6 +143,15 @@ not run the TMS one: start Simple TMS with
   	@api path /v1/* /docs* /openapi.json
   	handle @api {
   		reverse_proxy simple-tms-api-1:8000
+  	}
+  	@driverbare path /driver
+  	redir @driverbare /driver/ 308
+  	handle_path /driver/* {
+  		header Content-Security-Policy "default-src 'self'; img-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+  		header /sw.js Cache-Control "no-cache"
+  		root * /srv/tms-driver
+  		try_files {path} /index.html
+  		file_server
   	}
   	handle {
   		header Content-Security-Policy "default-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
@@ -202,6 +238,54 @@ The dev server sends `/v1` to the API on `http://127.0.0.1:8022`;
 desktop's tests, `npm run typecheck` its type check, and `npm run build`
 writes `dist/` for Caddy.
 
+## Run the driver app
+
+```
+cd apps/driver
+npm ci
+npm run dev                     # http://localhost:5175/driver/, and on this computer's LAN address
+npm run build && npm run preview   # the built app with its service worker, on 4175
+```
+
+Both send `/v1` to the API on `http://127.0.0.1:8022` (`TMS_API_URL=…` for
+another). `npm test` runs its tests and `npm run typecheck` its type check.
+The service worker (the app opening with no signal) is only in the build,
+not in `npm run dev`.
+
+**Through Caddy on this computer.** At `https://localhost:8543/driver/` (with
+`TMS_HTTPS_PORT=8543`) the app works, but the browser won't register its
+service worker over a certificate it doesn't trust, and Caddy's local one
+isn't, so the app won't open with no signal. To try that, trust Caddy's
+root: copy it out with
+`docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt caddy-root.crt`,
+then on a Mac
+`sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain caddy-root.crt`
+(on Ubuntu, copy it into `/usr/local/share/ca-certificates/` and run
+`sudo update-ca-certificates`; Firefox keeps its own list, under Settings →
+Privacy & Security → Certificates). Restart the browser. Or use
+`npm run preview` at `http://localhost:4175/driver/`: `localhost` counts as
+secure without a certificate.
+
+**On a phone.** A phone's browser gives the camera to any page, but location
+and the service worker only to a secure one: `https://` with a certificate
+the phone trusts, or `http://localhost`.
+
+- **Android:** turn on USB debugging, plug the phone in, open
+  `chrome://inspect/#devices` in Chrome on the computer and under **Port
+  forwarding** forward `4175` to `localhost:4175`. Run `npm run build && npm
+  run preview` and open `http://localhost:4175/driver/` in Chrome on the
+  phone. Everything works, black spots included (aeroplane mode).
+- **iPhone:** serve it through Caddy on the computer's LAN address. Set
+  `TMS_DOMAIN` to that address (say `192.168.1.20`) in `.env` and
+  `docker compose up -d caddy`; copy Caddy's local root certificate out as
+  above, AirDrop it to the phone, install the profile (**Settings → Profile
+  Downloaded**) and turn on full trust for it (**Settings → General → About →
+  Certificate Trust Settings**). Open `https://192.168.1.20:8543/driver/`.
+  Put `TMS_DOMAIN` back afterwards: the desktop answers on that one name only.
+- **Any phone, just to look:** `npm run dev` and open
+  `http://<the computer's LAN address>:5175/driver/`. No location and no
+  offline start, but the screens, the camera and the queue all work.
+
 ## Tests
 
 pytest against a real PostgreSQL, so the append-only trigger is exercised for
@@ -219,6 +303,9 @@ The desktop's tests are Vitest, in jsdom, with the API stubbed:
 ```
 cd apps/desktop && npm test
 ```
+
+The driver app's tests are Vitest too, with the API stubbed and IndexedDB
+stood in for by `fake-indexeddb`: `cd apps/driver && npm test`.
 
 ## Stack
 

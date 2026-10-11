@@ -47,13 +47,14 @@ docs/api.md          every endpoint: keep it in step with the routes
 design/index.html    gallery of every screen; open a screen's HTML
 design/screens/      static HTML of each screen: build to these
 api/                 FastAPI app (package tms), migrations, tests
-apps/desktop/        the dispatcher's desktop app; apps/driver comes with step 3
+apps/desktop/        the dispatcher's desktop app
+apps/driver/         the driver's phone app, a PWA served at /driver/
 deploy/Caddyfile     the only door in
 docker-compose.yml   api, worker, db, caddy
 ```
-The driver app arrives with its build step. `npm` commands run from
-`apps/desktop/`: `npm test`, `npm run typecheck`, `npm run build` (Caddy
-serves `apps/desktop/dist`).
+`npm` commands run from the app's folder (`apps/desktop/` or `apps/driver/`):
+`npm test`, `npm run typecheck`, `npm run build` (Caddy serves each app's
+`dist`).
 
 When building a screen, open its file in `design/screens/` and match layout,
 copy and states. Do not edit anything under `design/` unless asked.
