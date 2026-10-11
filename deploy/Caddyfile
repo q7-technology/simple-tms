@@ -25,8 +25,10 @@ http://{$TMS_DOMAIN} {
 		reverse_proxy api:8000
 	}
 
-	# The desktop and driver apps arrive with build steps 2 and 3.
+	# The desktop app (build step 2). The driver app arrives with step 3.
 	handle {
-		respond "Simple TMS. The API is at /v1, its docs at /docs." 404
+		root * /srv/desktop
+		try_files {path} /index.html
+		file_server
 	}
 }
