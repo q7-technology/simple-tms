@@ -9,7 +9,7 @@ import { RetryQueue } from "../lib/queue";
 import { saveRun } from "../lib/run";
 import { RUN } from "./samples";
 
-export { RUN, stop } from "./samples";
+export { CHECKLIST, RUN, stop, TODAY } from "./samples";
 
 export function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });

@@ -1,10 +1,7 @@
 import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { loadRun } from "../lib/run";
-import { json, KIM, MEL, onThePhone, renderApp, RUN, signedIn, stubApi } from "./harness";
-
-const TODAY = { id: 7, run_no: "R-0007", date: "2026-10-14", status: "planned",
-                vehicle: { rego: "TMS041", type: "rigid" }, stops: 2, packages: 4, delivered: 0, failed: 0 };
+import { json, KIM, MEL, onThePhone, renderApp, RUN, signedIn, stubApi, TODAY } from "./harness";
 
 describe("today's run", () => {
   beforeEach(() => signedIn());
