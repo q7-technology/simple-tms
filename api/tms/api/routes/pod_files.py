@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
@@ -35,8 +36,16 @@ def file_out(row: PodFile) -> PodFileOut:
                       size_bytes=row.size_bytes, sha256=row.sha256, created_at=row.created_at)
 
 
-async def picture(request: Request) -> bytes:
-    """The request body, read no further than the largest file we keep."""
+@dataclass(frozen=True)
+class Upload:
+    kind: str
+    data: bytes
+
+
+async def picture(request: Request, kind: Literal["signature", "photo"] = Query()) -> Upload:
+    """The kind, then the request body, read no further than the largest file
+    we keep. The kind is checked here, so a wrong one is refused before a byte
+    of the body is read (a dependency with an invalid parameter isn't run)."""
     declared = request.headers.get("content-length", "")
     if declared.isdigit() and int(declared) > pod_files.LARGEST:
         raise Refused(413, "too_large", "that file is too big")
@@ -45,16 +54,17 @@ async def picture(request: Request) -> bytes:
         data += chunk
         if len(data) > pod_files.LARGEST:
             raise Refused(413, "too_large", "that file is too big")
-    return bytes(data)
+    return Upload(kind=kind, data=bytes(data))
 
 
 @router.put("/pod-files/{file_id}", response_model=PodFileOut, status_code=201)
-def put_file(file_id: uuid.UUID, kind: Literal["signature", "photo"], db: DB,
-             who: Principal = require("deliveries:write"), data: bytes = Depends(picture)):
+def put_file(file_id: uuid.UUID, db: DB,
+             who: Principal = require("deliveries:write"), upload: Upload = Depends(picture)):
     """The picture as the body (Content-Type image/png or image/jpeg; what
     counts is its first bytes). 201 when new; the same bytes again, 200. The
-    caller is checked before the body is read (dependencies run in order)."""
-    row, new = pod_files.store(db, who, file_id, kind, data)
+    caller and the kind are checked before the body is read (dependencies run
+    in order)."""
+    row, new = pod_files.store(db, who, file_id, upload.kind, upload.data)
     db.commit()
     return JSONResponse(status_code=201 if new else 200,
                         content=file_out(row).model_dump(mode="json"))

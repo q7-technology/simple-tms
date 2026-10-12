@@ -95,3 +95,24 @@ def test_a_file_missing_from_disk_is_not_found_and_logged(client, db, pod_dir, c
     assert r.status_code == 404 and r.json() == {"detail": f"no file {file_id}"}
     assert [rec.levelname for rec in caplog.records if str(file_id) in rec.getMessage()] == [
         "WARNING"]
+
+
+def test_a_wrong_kind_is_refused_before_the_body_is_read(client, db, monkeypatch):
+    driver(db)
+    kim = driver_headers(client)
+    read = []
+    monkeypatch.setattr(pod_files, "LARGEST", 50)
+    from starlette.requests import Request
+
+    stream = Request.stream
+
+    async def spy(self):
+        read.append(True)
+        async for chunk in stream(self):
+            yield chunk
+
+    monkeypatch.setattr(Request, "stream", spy)
+    _, r = put_file(client, kim, kind="selfie", data=PNG * 10)
+    assert r.status_code == 422, r.text
+    assert r.json()["errors"][0]["field"].endswith("kind")
+    assert read == []

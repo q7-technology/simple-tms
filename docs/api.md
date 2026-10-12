@@ -386,7 +386,8 @@ A signature or a photo, sent before the confirmation that names it.
 `file_id` is a UUID the phone chose when the picture was made; the body is
 the picture (`Content-Type: image/png` or `image/jpeg`). What counts is its
 first bytes: a signature is a PNG of at most 1 MB, a photo a JPEG or PNG of
-at most 5 MB (`415 unsupported_type`, `413 too_large`). → `201`:
+at most 5 MB (`415 unsupported_type`, `413 too_large`). A `kind` other
+than `signature` or `photo` is `422`, before any of the body is read. → `201`:
 ```json
 { "id": "3f2a…", "kind": "signature", "content_type": "image/png", "size_bytes": 18886,
   "sha256": "…", "created_at": "2026-10-14T00:52:09.931Z" }
