@@ -127,6 +127,22 @@ describe("today's run", () => {
     });
   });
 
+  it("counts the confirmations that weren't taken, one or many", async () => {
+    const FAIL = { path: "/v1/runs/7/stops/31/fail", body: { reason: "closed" }, label: "Stop 1 · couldn't deliver · closed",
+                   run_id: 7, consignment_id: 31, outcome: "failed" as const };
+    stubApi((method, url) => {
+      if (url.startsWith("/v1/driver/runs?date=")) return json(200, [TODAY]);
+      if (method === "POST") return json(409, { code: "run_done", detail: "R-0007 is finished" });
+      return null;
+    });
+    const { queue } = renderApp("/");
+    await screen.findByRole("radio", { name: /TMS041/ });
+    await act(async () => { await queue.submit(FAIL); });
+    expect(await screen.findByText("1 confirmation wasn't taken. Open the run to see why.")).toBeInTheDocument();
+    await act(async () => { await queue.submit({ ...FAIL, consignment_id: 32, path: "/v1/runs/7/stops/32/fail" }); });
+    expect(await screen.findByText("2 confirmations weren't taken. Open the run to see why.")).toBeInTheDocument();
+  });
+
   it("says when there is no run today", async () => {
     stubApi((_method, url) => (url.startsWith("/v1/driver/runs") ? json(200, []) : null));
     renderApp("/");

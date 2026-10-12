@@ -234,6 +234,8 @@ describe("the pre-start check", () => {
     await passAll(user);
     await user.click(screen.getByRole("button", { name: "Finish check" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Your pre-start wasn't taken: The rigid checklist has changed");
+    // its reason is right here, so the footer doesn't send the driver off to the run for it
+    expect(screen.queryByText(/wasn't taken\. Open the run/)).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Do the check again" }));
     expect(await screen.findByRole("region", { name: "Checklist for a rigid" })).toBeInTheDocument();
   });

@@ -123,6 +123,11 @@ export function Today() {
   const checking = run?.status === "planned" && !blocked && !run.prestart && !check;
   const canStart = run?.status === "planned" && !blocked && !!run.prestart;
 
+  // what wasn't taken and needs the run opened to see why: the refused
+  // pre-start shown above already says why, with Do the check again
+  const shownHere = run && check?.status === "failed" && !run.prestart ? check.id : null;
+  const refused = queue.failed().filter((i) => i.id !== shownHere);
+
   function again() {
     if (check) void queue.dismiss(check.id);
   }
@@ -207,9 +212,10 @@ export function Today() {
         <button type="button" className="big primary" style={{ flex: "none" }} disabled={busy} onClick={() => void go(run)}>
           <Icon name="truck" size={22} />{run.status === "planned" ? "Start run" : "Carry on"}</button>
       )}
-      {queue.failed().length > 0 && (
+      {refused.length > 0 && (
         <div className="small" style={{ color: "var(--color-red-ink)" }}>
-          {plural(queue.failed().length, "confirmation")} wasn't taken. Open the run to see why.</div>
+          {plural(refused.length, "confirmation")} {refused.length === 1 ? "wasn't" : "weren't"} taken.
+          {" "}Open the run to see why.</div>
       )}
     </Phone>
   );
