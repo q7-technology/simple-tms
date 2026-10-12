@@ -4,14 +4,18 @@ An open source, self-hosted transport management system for businesses that
 deliver with their own trucks and also send freight with outside carriers.
 It sits beside Simple WMS and Platen and works without either.
 
-Status: **build step 3, the driver app.** Drivers sign in on their phones,
-start the run, deliver each stop with a signature, a photo or both (or say
-why they couldn't), and finish the run, with or without signal; on top of
-step 2 (runs planned on a map-and-drawer desktop, run sheets printed through
+Status: **build step 4, fleet care.** Drivers do a pre-start check of the
+truck on their phones before each run; a failed critical item grounds the
+truck until a fleet manager marks it fixed, and the desktop's **Fleet**
+shows each truck's rego and service due (amber a month or 1,000 km out, red
+when overdue). A grounded or overdue truck can't be given a run. On top of
+step 3 (the driver app: start the run, deliver each stop with a signature, a
+photo or both, or say why not, and finish, with or without signal), step 2
+(runs planned on a map-and-drawer desktop, run sheets printed through
 Platen, Simple WMS told each delivery shipped when its run leaves) and step 1
 (sign-in, vehicles and drivers, consignments from Simple WMS's
-`delivery.packed`). Fleet care, live location and carriers come with the
-next steps in `docs/plans/2026-10-10-simple-tms-design.md`.
+`delivery.packed`). Live location and carriers come with the next steps in
+`docs/plans/2026-10-10-simple-tms-design.md`.
 
 ## What is in this repo
 
@@ -60,6 +64,24 @@ finished from **Plan runs** (**Finish run**, once every stop is delivered or
 coming back). Rebuild it (`npm run build` in `apps/driver`) after pulling
 changes; Caddy serves `apps/driver/dist` as it is. Signatures and photos are
 kept in the `pod_files` volume: back it up with the database.
+
+**Fleet care.** Before starting a run the driver does the truck's pre-start
+check on the phone: the odometer (the phone shows the last reading and won't
+take a lower one), then each item passed or failed, a failed one with a
+photo and a note. It goes through the phone's queue like a delivery, so it
+can be done with no signal, but the run starts only once the office has it.
+A failed critical item (Lights and Brakes, to start with) grounds the truck;
+a fleet manager (the `manager` role, or an admin) opens **Fleet**, looks at
+the check with its photos and notes, and marks it fixed with what was done.
+The check that grounded the truck never counts as the run's pre-start: once
+it is marked fixed, the driver does a fresh check of the truck before
+starting. In **Fleet** a fleet manager also records each new rego expiry and
+each service (with its odometer reading), and puts a wrong odometer reading
+right; set how often a truck is serviced with `service_every_months` and/or
+`service_every_km` on `PATCH /v1/vehicles/{rego}`. A truck with nothing
+recorded is never due, so record each truck's rego expiry and last service
+when you start. The checklists are the design's six items for each type of
+vehicle; change them with `PUT /v1/checklists/{type}` (see `docs/api.md`).
 
 ## Production on a real domain
 
@@ -322,6 +344,18 @@ The driver app's tests are Vitest too, with the API stubbed and IndexedDB
 stood in for by `fake-indexeddb`: `cd apps/driver && npm test`.
 
 ## Known limitations
+
+- **The office's Leaves now doesn't ask for a pre-start.** The driver app
+  won't start a run until the truck's pre-start is in, but **Leaves now** on
+  the desktop (for a driver without a phone, who does a paper check) sends it
+  without one. **Plan runs** says "No pre-start yet" on such a run. A
+  grounded or overdue truck is refused either way.
+- **Fleet doesn't add vehicles or drivers yet.** Add them, and set how often
+  each is serviced, through the API (`POST /v1/vehicles`, `POST /v1/drivers`,
+  `PATCH …`); the checklists too (`PUT /v1/checklists/{type}`).
+- **Due dates are on screen only.** The `vehicle.due` event in the design, for
+  another system to send email or SMS, comes with the first system that
+  subscribes.
 
 - **What came back is still shipped in Simple WMS.** When a driver can't
   deliver, the consignment comes back to the depot and returns to the
