@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from conftest import all_at_once, fresh_client
 from deliveries_samples import (
-    JPEG, delivered, driver_headers, now, on_the_road, planned_run, put_file,
+    JPEG, delivered, driver_headers, now, on_the_road, planned_run, prestart, put_file,
 )
 from runs_samples import driver
 from tms.models import ConsignmentEvent, InboundMessage, Pod
@@ -159,6 +159,7 @@ def test_a_driver_delivers_only_on_their_own_run(client, db, dispatcher_headers)
 def test_a_message_id_used_for_another_action_is_refused(client, db, dispatcher_headers):
     run, (a, b) = planned_run(client, db, dispatcher_headers)
     kim = driver_headers(client)
+    prestart(client, kim, run["id"])
     message_id = uuid.uuid4()
     started = client.post(f"/v1/runs/{run['id']}/start", headers=kim,
                           json={"message_id": str(message_id)})

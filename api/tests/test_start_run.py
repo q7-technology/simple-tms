@@ -5,7 +5,7 @@ import uuid
 from sqlalchemy import select
 
 from conftest import all_at_once, fresh_client
-from deliveries_samples import driver_headers, on_the_road, planned_run
+from deliveries_samples import driver_headers, on_the_road, planned_run, prestart
 from runs_samples import driver
 from tms.models import InboundMessage, OutboundCall
 
@@ -18,6 +18,7 @@ def _start(client, headers, run_id, message_id=None):
 def test_starting_a_planned_run_departs_it(client, db, dispatcher_headers):
     run, cons = planned_run(client, db, dispatcher_headers)
     kim = driver_headers(client)
+    prestart(client, kim, run["id"])
     message_id = uuid.uuid4()
     r = _start(client, kim, run["id"], message_id)
     assert r.status_code == 200, r.text
@@ -40,17 +41,20 @@ def test_starting_a_run_the_office_already_sent_changes_nothing(client, db, disp
 def test_the_same_start_twice_gets_the_same_reply(client, db, dispatcher_headers):
     run, _ = planned_run(client, db, dispatcher_headers)
     kim = driver_headers(client)
+    prestart(client, kim, run["id"])
     message_id = uuid.uuid4()
     first = _start(client, kim, run["id"], message_id)
     again = _start(client, kim, run["id"], message_id)
     assert again.status_code == 200 and again.json() == first.json()
-    seen = db.execute(select(InboundMessage)).scalar_one()
-    assert seen.message_id == message_id and seen.duplicates == 1 and seen.sender.startswith("driver:")
+    seen = db.execute(select(InboundMessage).where(InboundMessage.message_id == message_id)
+                      ).scalar_one()
+    assert seen.duplicates == 1 and seen.sender.startswith("driver:")
 
 
 def test_a_start_sent_four_times_at_once_departs_once(client, db, dispatcher_headers):
     run, _ = planned_run(client, db, dispatcher_headers)
     kim = driver_headers(client)
+    prestart(client, kim, run["id"])
     message_id = str(uuid.uuid4())
 
     def start():
@@ -74,6 +78,7 @@ def test_a_driver_starts_only_their_own_run(client, db, dispatcher_headers):
 def test_a_message_id_is_one_senders(client, db, dispatcher_headers):
     run, _ = planned_run(client, db, dispatcher_headers)
     message_id = uuid.uuid4()
+    prestart(client, driver_headers(client), run["id"])
     _start(client, driver_headers(client), run["id"], message_id)
     driver(db, code="mel", name="Mel")
     r = _start(client, driver_headers(client, code="mel"), run["id"], message_id)
@@ -85,6 +90,8 @@ def test_an_over_full_run_is_not_started_from_the_phone(client, db, dispatcher_h
     run, _ = planned_run(client, db, dispatcher_headers)
     heavy = consignment(db, ref="0080039999", kg="1100")
     assign(client, dispatcher_headers, run["id"], heavy.id)
+    prestart(client, driver_headers(client), run["id"])
     r = _start(client, driver_headers(client), run["id"])
     assert r.status_code == 409 and r.json()["code"] == "over_capacity"
-    assert db.execute(select(InboundMessage)).first() is None
+    assert db.execute(select(InboundMessage).where(
+        InboundMessage.path.endswith("/start"))).first() is None

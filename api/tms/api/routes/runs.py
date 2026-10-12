@@ -12,7 +12,7 @@ from sqlalchemy import func, select, update
 from tms.api.deps import DB, Principal, require
 from tms.api.schemas import Dec, Page
 from tms.models import Consignment, OutboundCall, Pod, PrintJob, Run
-from tms.services import runs
+from tms.services import fleet, records, runs
 from tms.services.load import consignment_totals
 
 router = APIRouter(tags=["runs"])
@@ -69,6 +69,8 @@ class RunVehicle(BaseModel):
     max_kg: Dec
     max_m3: Dec
     active: bool
+    # why the truck can't take this run (grounded, or overdue on its day), or null
+    blocked: dict | None = None
 
 
 class RunDriver(BaseModel):
@@ -106,6 +108,8 @@ class RunOut(BaseModel):
     load: LoadOut
     run_sheet: RunSheetOut | None
     shipping: ShippingOut
+    # the latest pre-start of its truck for it: { id, at, result }, or null
+    prestart: dict | None = None
 
 
 def stop_consignment(c: Consignment) -> StopConsignment:
@@ -126,10 +130,16 @@ def run_out(db, run: Run) -> RunOut:
                             .where(OutboundCall.run_id == run.id)
                             .group_by(OutboundCall.status)).all())
     v = run.vehicle
+    why = fleet.standing(db, v, run.day).blocked
+    check = records.run_check(db, run)
     return RunOut(
         id=run.id, run_no=run.number, date=run.day, status=run.status,
         vehicle=RunVehicle(rego=v.rego, type=v.type, max_kg=v.max_kg, max_m3=v.max_m3,
-                           active=v.active),
+                           active=v.active,
+                           blocked=None if why is None else {"code": why.code,
+                                                             "message": why.message}),
+        prestart=None if check is None else {"id": check.id, "at": check.at,
+                                             "result": check.result},
         driver=RunDriver(code=run.driver.code, name=run.driver.name),
         created_by=run.created_by, created_at=run.created_at, departed_at=run.departed_at,
         finished_at=run.finished_at,

@@ -9,7 +9,7 @@ def test_a_dispatcher_makes_a_run_for_a_day(client, db, dispatcher_headers):
     assert run["run_no"] == f"R-{run['id']:04d}"
     assert run["date"] == "2026-10-14" and run["status"] == "planned"
     assert run["vehicle"] == {"rego": "TMS041", "type": "van", "max_kg": "1200", "max_m3": "9",
-                              "active": True}
+                              "active": True, "blocked": None}
     assert run["driver"] == {"code": "kim", "name": "Kim"}
     assert run["created_by"] == "dee"
     assert run["stops"] == []
@@ -18,6 +18,7 @@ def test_a_dispatcher_makes_a_run_for_a_day(client, db, dispatcher_headers):
                            "message": None}
     assert run["run_sheet"] is None
     assert run["shipping"] == {"pending": 0, "done": 0, "failed": 0}
+    assert run["prestart"] is None
 
 
 def test_the_rego_is_read_however_it_is_typed(client, db, dispatcher_headers):

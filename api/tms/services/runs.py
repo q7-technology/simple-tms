@@ -21,6 +21,7 @@ from tms.api.errors import Conflict, FieldError, NotFound
 from tms.models import (
     Consignment, ConsignmentEvent, Driver, OutboundCall, Run, Stop, Vehicle,
 )
+from tms.services import fleet
 from tms.services.load import Load, consignment_totals, load, total
 
 PLANNING_LOCK = 7_302_201
@@ -91,6 +92,7 @@ def _truck_free(db: Session, vehicle: Vehicle, day: date, other_than: int | None
 def create(db: Session, *, day: date, rego: str, driver_code: str, by: str) -> Run:
     lock_planning(db)
     vehicle, driver = _vehicle(db, rego), _driver(db, driver_code)
+    fleet.refuse_if_blocked(db, vehicle, day)
     _truck_free(db, vehicle, day)
     run = Run(day=day, vehicle_id=vehicle.id, driver_id=driver.id, status="planned",
               created_by=by)
@@ -104,6 +106,7 @@ def change(db: Session, run_id: int, *, rego: str | None, driver_code: str | Non
     run = _planned(db, run_id)
     if rego is not None:
         vehicle = _vehicle(db, rego)
+        fleet.refuse_if_blocked(db, vehicle, run.day)
         _truck_free(db, vehicle, run.day, other_than=run.id)
         run.vehicle_id = vehicle.id
     if driver_code is not None:
@@ -176,6 +179,7 @@ def assign(db: Session, run_id: int, consignment_id: int, position: int | None,
     if not run.vehicle.active:
         raise Conflict("vehicle_unavailable",
                        f"{run.vehicle.rego} is deactivated, so {run.number} can't take stops")
+    fleet.refuse_if_blocked(db, run.vehicle, run.day)
     c = _plannable(db, consignment_id)
     # its stop on a run now; a stop on a trip already made (it has an outcome) is a record
     current = db.execute(select(Stop).where(
@@ -260,6 +264,7 @@ def depart(db: Session, run_id: int, by: str) -> Run:
         raise Conflict("run_empty", f"{run.number} has no stops")
     if not run.vehicle.active:
         raise Conflict("vehicle_unavailable", f"{run.vehicle.rego} is deactivated")
+    fleet.refuse_if_blocked(db, run.vehicle, run.day)
     over = run_load(run)
     if over.state == "over":
         raise Conflict("over_capacity", f"{run.number}: {over.message}")

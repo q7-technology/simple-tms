@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from tms.api.errors import Conflict
 from tms.config import get_settings
 from tms.models import PrintJob, Run
+from tms.services import fleet
 from tms.services.load import consignment_totals, plain
 from tms.services.runs import get_run, lock_planning, run_load
 
@@ -58,6 +59,9 @@ def queue_run_sheet(db: Session, run_id: int, by: str) -> PrintJob:
     run = get_run(db, run_id)
     if run.status == "cancelled":
         raise Conflict("run_cancelled", f"{run.number} was cancelled")
+    if run.status == "planned":
+        # a sheet for a run its truck can't take would send someone out in it
+        fleet.refuse_if_blocked(db, run.vehicle, run.day)
     if not run.stops:
         raise Conflict("run_empty", f"{run.number} has no stops to print")
     ld = run_load(run)

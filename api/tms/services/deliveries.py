@@ -14,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from tms.api.errors import Conflict, FieldError, NotFound, violated_constraint
-from tms.models import ConsignmentEvent, Pod, PodFile, PrestartItem, Run, Stop
+from tms.models import ConsignmentEvent, Pod, PodFile, PrestartCheck, PrestartItem, Run, Stop
 from tms.services import runs
 from tms.services.envelope import sender_of
 
@@ -52,15 +52,26 @@ def driver_runs(db: Session, driver_id: int, day: date) -> list[Run]:
     return [runs.get_run(db, i) for i in ids]
 
 
+def _checked(db: Session, run: Run) -> bool:
+    """Whether the run's truck has had its pre-start for this run."""
+    return db.execute(select(PrestartCheck.id).where(
+        PrestartCheck.run_id == run.id, PrestartCheck.vehicle_id == run.vehicle_id)
+    ).first() is not None
+
+
 def start(db: Session, who, run_id: int) -> Run:
     """The driver is leaving: a planned run departs exactly as the
-    dispatcher's "Leaves now" does (ship calls and all); one that has already
-    left is left as it is."""
+    dispatcher's "Leaves now" does (ship calls and all), once the driver has
+    done the pre-start of its truck; one that has already left is left as it
+    is."""
     run = own_run(db, who, run_id)
     if run.status == "done":
         raise Conflict("run_done", f"{run.number} is finished")
     if run.status == "cancelled":
         raise Conflict("run_cancelled", f"{run.number} was cancelled")
+    if run.status == "planned" and not _checked(db, run):
+        raise Conflict("prestart_needed",
+                       f"Do the pre-start check of {run.vehicle.rego} before starting {run.number}.")
     return runs.depart(db, run_id, by=who.name)
 
 
