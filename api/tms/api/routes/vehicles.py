@@ -117,7 +117,7 @@ def blocked_out(s: fleet.Standing) -> Blocked | None:
 
 
 def vehicle_out(db, v: Vehicle, day: dt.date | None = None) -> VehicleOut:
-    s = fleet.standing(db, v, day or dt.date.today())
+    s = fleet.standing(db, v, day or fleet.today())
     g, last = s.grounded_by, s.last_check
     return VehicleOut(
         id=v.id, rego=v.rego, type=v.type, max_kg=v.max_kg, max_m3=v.max_m3,
@@ -168,8 +168,8 @@ def create_vehicle(body: VehicleIn, db: DB, who: Principal = require("fleet:writ
 def list_vehicles(db: DB, active: bool | None = None,
                   day: dt.date | None = Query(default=None, alias="date"),
                   who: Principal = require("fleet:read")):
-    """`date` is the day due and overdue are judged for: the caller's today
-    (the server's is UTC). Left out, the server's."""
+    """`date` is the day due and overdue are judged for: the caller's today.
+    Left out, today in UTC."""
     q = select(Vehicle)
     if active is not None:
         q = q.where(Vehicle.active.is_(active))

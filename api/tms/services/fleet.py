@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import calendar
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -24,6 +24,13 @@ DUE_DAYS = 30
 DUE_KM = 1_000
 # what is known outweighs what isn't: a truck serviced by km alone is judged by them
 WORST = {"unknown": -1, "ok": 0, "due": 1, "overdue": 2}
+
+
+def today() -> date:
+    """The day asked about when the caller doesn't say: today in UTC, the
+    server's clock, whatever time zone the host is set to. The desktop and
+    the phone send their own date."""
+    return datetime.now(UTC).date()
 
 
 def add_months(d: date, months: int) -> date:

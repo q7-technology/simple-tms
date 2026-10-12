@@ -1,11 +1,13 @@
 """Where a truck stands: rego and service due (amber 30 days or 1,000 km
 out, red when overdue), its odometer, and grounded by a failed pre-start."""
-from datetime import date
+from datetime import UTC, date, datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from fleet_samples import check, record, serviced
 from runs_samples import vehicle
+from tms.services import fleet
 from tms.services.fleet import add_months
 
 
@@ -127,3 +129,23 @@ def test_a_failed_critical_item_grounds_the_truck_until_it_is_marked_fixed(clien
     record(db, v, "fixed", check_id=bad.id, note="New brake pads, tested")
     out = _get(client, dispatcher_headers)
     assert out["state"] == "ok" and out["grounded"] is None and out["blocked"] is None
+
+
+class _SydneyServer(datetime):
+    """8 pm UTC on the 14th, on a server whose own clock reads the 15th."""
+    AT = datetime(2026, 10, 14, 20, 0, tzinfo=UTC)
+
+    @classmethod
+    def now(cls, tz=None):
+        if tz is None:
+            return cls.AT.astimezone(ZoneInfo("Australia/Sydney")).replace(tzinfo=None)
+        return cls.AT.astimezone(tz)
+
+
+def test_without_a_date_the_day_is_todays_in_utc(client, db, dispatcher_headers, monkeypatch):
+    v = vehicle(db)
+    record(db, v, "rego", expires_on=date(2026, 10, 14))
+    monkeypatch.setattr(fleet, "datetime", _SydneyServer)
+    out = client.get("/v1/vehicles/TMS041", headers=dispatcher_headers).json()
+    assert out["rego_due"] == {"expires_on": "2026-10-14", "days_left": 0, "state": "due"}
+    assert out["blocked"] is None

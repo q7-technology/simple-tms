@@ -121,7 +121,8 @@ password, at least 12 characters, is asked for, or given with `--password`).
 `service_every_km` (1 to 1,000,000): how often it is serviced, whichever
 comes first. Leave both out and its service is never due. `GET` takes
 `date=YYYY-MM-DD`, the day due and overdue are judged for: the caller's
-today (the server's clock is UTC); left out, the server's date.
+today, as the driver app sends its own date. Left out, it is today in UTC
+(in Australia, still yesterday until 10 or 11 am), so send it.
 
 Each vehicle, with where it stands that day:
 ```json
