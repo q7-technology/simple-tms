@@ -3,13 +3,17 @@ fleet manager records about each truck. Checks and records are kept as they
 were sent; a truck's standing is worked out from them."""
 from __future__ import annotations
 
-from fastapi import APIRouter
+import datetime as dt
+
+from fastapi import APIRouter, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy import select
 
 from tms.api.deps import DB, Principal, require
 from tms.api.routes.vehicles import VehicleType
-from tms.models import ChecklistItem
-from tms.services import checklists
+from tms.models import ChecklistItem, PrestartCheck, VehicleRecord
+from tms.services import checklists, records
 
 router = APIRouter(tags=["fleet"])
 
@@ -58,3 +62,107 @@ def put_checklist(vehicle_type: VehicleType, body: ChecklistIn, db: DB,
     rows = checklists.replace(db, vehicle_type, [(i.label, i.critical) for i in body.items])
     db.commit()
     return [item_out(i) for i in rows]
+
+
+# ---- what a fleet manager records -----------------------------------------------
+
+class RegoIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    expires_on: dt.date
+    note: str = Field(min_length=1, max_length=500)
+
+
+class ServiceIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    done_on: dt.date
+    odometer_km: int | None = Field(default=None, ge=0, le=9_999_999)
+    note: str = Field(min_length=1, max_length=500)
+
+
+class OdometerIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    odometer_km: int = Field(ge=0, le=9_999_999)
+    note: str = Field(min_length=1, max_length=500)
+
+
+class RecordOut(BaseModel):
+    id: int
+    vehicle: str
+    kind: str
+    check_id: int | None
+    done_on: dt.date | None
+    expires_on: dt.date | None
+    odometer_km: int | None
+    note: str
+    recorded_by: str
+    recorded_at: dt.datetime
+
+
+def record_out(r: VehicleRecord, rego: str) -> RecordOut:
+    return RecordOut(id=r.id, vehicle=rego, kind=r.kind, check_id=r.check_id,
+                     done_on=r.done_on, expires_on=r.expires_on, odometer_km=r.odometer_km,
+                     note=r.note, recorded_by=r.recorded_by, recorded_at=r.recorded_at)
+
+
+def _created(db, row: VehicleRecord, rego: str) -> JSONResponse:
+    db.commit()
+    out = record_out(row, records.vehicle_by_rego(db, rego).rego)
+    return JSONResponse(status_code=201, content=out.model_dump(mode="json"))
+
+
+@router.post("/vehicles/{rego}/rego", status_code=201, response_model=RecordOut)
+def record_rego(rego: str, body: RegoIn, db: DB, who: Principal = require("fleet:write")):
+    """The rego's new expiry. The newest record is the one that counts."""
+    row = records.add(db, rego, "rego", by=who.name, note=body.note, expires_on=body.expires_on)
+    return _created(db, row, rego)
+
+
+@router.post("/vehicles/{rego}/service", status_code=201, response_model=RecordOut)
+def record_service(rego: str, body: ServiceIn, db: DB, who: Principal = require("fleet:write")):
+    """A service done: the next one falls due from it, by date and by km."""
+    row = records.add(db, rego, "service", by=who.name, note=body.note, done_on=body.done_on,
+                      odometer_km=body.odometer_km)
+    return _created(db, row, rego)
+
+
+@router.post("/vehicles/{rego}/odometer", status_code=201, response_model=RecordOut)
+def record_odometer(rego: str, body: OdometerIn, db: DB, who: Principal = require("fleet:write")):
+    """The reading put right (a slip of the finger, a new odometer): readings
+    from before it no longer count."""
+    row = records.add(db, rego, "odometer", by=who.name, note=body.note,
+                      odometer_km=body.odometer_km)
+    return _created(db, row, rego)
+
+
+class HistoryItem(BaseModel):
+    # prestart, fixed, service, rego, odometer
+    kind: str
+    id: int
+    recorded_at: dt.datetime
+    by: str
+    note: str | None = None
+    # a pre-start: passed, failed or grounded, and each item that failed
+    result: str | None = None
+    failed: list[str] = []
+    odometer_km: int | None = None
+    done_on: dt.date | None = None
+    expires_on: dt.date | None = None
+    check_id: int | None = None
+
+
+@router.get("/vehicles/{rego}/history", response_model=list[HistoryItem])
+def vehicle_history(rego: str, db: DB, limit: int = Query(default=50, ge=1, le=200),
+                    who: Principal = require("fleet:read")):
+    """Its checks and records, newest first. Nothing in it is ever changed."""
+    v = records.vehicle_by_rego(db, rego)
+    checks = db.execute(select(PrestartCheck).where(PrestartCheck.vehicle_id == v.id)
+                        .order_by(PrestartCheck.id.desc()).limit(limit)).scalars().all()
+    rows = db.execute(select(VehicleRecord).where(VehicleRecord.vehicle_id == v.id)
+                      .order_by(VehicleRecord.id.desc()).limit(limit)).scalars().all()
+    items = [HistoryItem(kind="prestart", id=c.id, recorded_at=c.recorded_at, by=c.recorded_by,
+                         result=c.result, failed=[i.label for i in c.items if not i.passed],
+                         odometer_km=c.odometer_km) for c in checks]
+    items += [HistoryItem(kind=r.kind, id=r.id, recorded_at=r.recorded_at, by=r.recorded_by,
+                          note=r.note, odometer_km=r.odometer_km, done_on=r.done_on,
+                          expires_on=r.expires_on, check_id=r.check_id) for r in rows]
+    return sorted(items, key=lambda i: i.recorded_at, reverse=True)[:limit]
