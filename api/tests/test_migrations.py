@@ -13,6 +13,7 @@ MIGRATION_URL = TEST_DATABASE_URL.rsplit("/", 1)[0] + "/tms_migration_check"
 TABLES = {"user", "user_session", "driver", "vehicle", "consignment", "package",
           "consignment_event", "inbound_event", "run", "stop", "outbound_call", "print_job",
           "api_key", "inbound_message", "pod_file", "pod",
+          "checklist_item", "prestart_check", "prestart_item", "vehicle_record",
           "alembic_version"}
 
 
@@ -57,7 +58,8 @@ def test_migrations_go_up_down_and_up_again(blank_database):
     with engine.connect() as conn:
         triggers = conn.execute(text(
             "select tgname from pg_trigger where not tgisinternal")).scalars().all()
-    assert "consignment_event_append_only" in triggers
+    assert {"consignment_event_append_only", "prestart_check_append_only",
+            "prestart_item_append_only", "vehicle_record_append_only"} <= set(triggers)
 
     command.downgrade(cfg, "base")
     assert _tables(engine) == {"alembic_version"}

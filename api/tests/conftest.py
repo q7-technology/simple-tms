@@ -66,6 +66,23 @@ def db(engine):
         with engine.begin() as conn:
             # TRUNCATE is not UPDATE or DELETE, so the append-only trigger lets it by
             conn.execute(text(f"truncate {tables} restart identity cascade"))
+            seed_checklists(conn)
+
+
+# The checklist migration 0005 gives a fresh install, put back after each
+# test as it was: van items 1-6, rigid 7-12, ute 13-18. (label, critical)
+DEFAULT_CHECKLIST = [("Tyres", False), ("Lights", True), ("Brakes", True), ("Mirrors", False),
+                     ("Load restraints", False), ("Damage", False)]
+
+
+def seed_checklists(conn):
+    conn.execute(text("delete from checklist_item"))
+    conn.execute(text("alter sequence checklist_item_id_seq restart"))
+    conn.execute(
+        text("insert into checklist_item (vehicle_type, position, label, critical) "
+             "values (:t, :p, :l, :c)"),
+        [{"t": t, "p": i, "l": label, "c": critical} for t in ("van", "rigid", "ute")
+         for i, (label, critical) in enumerate(DEFAULT_CHECKLIST, start=1)])
 
 
 @pytest.fixture
