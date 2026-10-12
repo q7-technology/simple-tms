@@ -239,7 +239,7 @@ export function Fleet() {
   const types = ["rigid", "van", "ute"].map((t) => [t, active.filter((v) => v.type === t).length] as const).filter(([, n]) => n > 0);
 
   return (
-    <Drawer label="Fleet" head={
+    <Drawer label="Fleet" wide head={
       <div style={{ flex: 1, minWidth: 200 }}>
         <div className="eyebrow" style={{ color: "var(--color-green)" }}>Own fleet</div>
         <h1>Fleet</h1>
