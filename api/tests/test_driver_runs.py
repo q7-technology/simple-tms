@@ -13,9 +13,13 @@ def test_a_driver_sees_their_own_runs_for_the_day(client, db, dispatcher_headers
     kim = driver_headers(client)
     r = client.get("/v1/driver/runs", params={"date": DAY.isoformat()}, headers=kim)
     assert r.status_code == 200, r.text
-    assert r.json() == [{"id": run["id"], "run_no": run["run_no"], "date": "2026-10-14",
-                         "status": "planned", "vehicle": {"rego": "TMS041", "type": "van"},
-                         "stops": 2, "packages": 2, "delivered": 0, "failed": 0}]
+    out = r.json()
+    assert len(out[0].pop("checklist")) == 6
+    assert out == [{"id": run["id"], "run_no": run["run_no"], "date": "2026-10-14",
+                    "status": "planned",
+                    "vehicle": {"rego": "TMS041", "type": "van", "odometer_km": None,
+                                "blocked": None},
+                    "stops": 2, "packages": 2, "delivered": 0, "failed": 0, "prestart": None}]
     later = client.get("/v1/driver/runs", params={"date": "2026-10-15"}, headers=kim)
     assert later.json() == []
 

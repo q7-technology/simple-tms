@@ -14,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from tms.api.errors import Conflict, FieldError, NotFound, violated_constraint
-from tms.models import ConsignmentEvent, Pod, PodFile, Run, Stop
+from tms.models import ConsignmentEvent, Pod, PodFile, PrestartItem, Run, Stop
 from tms.services import runs
 from tms.services.envelope import sender_of
 
@@ -92,7 +92,8 @@ def _open_stop(db: Session, run: Run, consignment_id: int) -> Stop:
     return stop
 
 
-def _file(db: Session, who, file_id: uuid.UUID | None, kind: str) -> PodFile | None:
+def own_file(db: Session, who, file_id: uuid.UUID | None, kind: str) -> PodFile | None:
+    """A picture this sender sent, not yet named by a stop or a pre-start item."""
     if file_id is None:
         return None
     row = db.get(PodFile, file_id)
@@ -102,6 +103,8 @@ def _file(db: Session, who, file_id: uuid.UUID | None, kind: str) -> PodFile | N
         or_(Pod.signature_file_id == file_id, Pod.photo_file_id == file_id))).first()
     if used is not None:
         raise FieldError(f"{kind}_file", f"{kind} {file_id} already belongs to another stop")
+    if db.execute(select(PrestartItem.id).where(PrestartItem.photo_file_id == file_id)).first():
+        raise FieldError(f"{kind}_file", f"{kind} {file_id} already belongs to a pre-start check")
     return row
 
 
@@ -150,8 +153,8 @@ def deliver(db: Session, who, run_id: int, consignment_id: int, *, message_id: u
     expected = sorted(p.package_no for p in stop.consignment.packages)
     if sorted(p["package_no"] for p in packages) != expected:
         raise FieldError("packages", f"name each of the {len(expected)} packages once")
-    signature = _file(db, who, signature_file, "signature")
-    photo = _file(db, who, photo_file, "photo")
+    signature = own_file(db, who, signature_file, "signature")
+    photo = own_file(db, who, photo_file, "photo")
     pod = _record(db, who, run, stop, message_id=message_id, outcome="delivered", at=at,
                   where=where, packages=packages, signed_name=signed_name, note=note,
                   signature_file_id=signature.id if signature else None,
@@ -170,7 +173,7 @@ def fail(db: Session, who, run_id: int, consignment_id: int, *, message_id: uuid
     run = _locked(db, who, run_id)
     _on_the_road(run)
     stop = _open_stop(db, run, consignment_id)
-    photo = _file(db, who, photo_file, "photo")
+    photo = own_file(db, who, photo_file, "photo")
     pod = _record(db, who, run, stop, message_id=message_id, outcome="failed", at=at,
                   where=where, reason=reason, note=note, packages=[],
                   photo_file_id=photo.id if photo else None,

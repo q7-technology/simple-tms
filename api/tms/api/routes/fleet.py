@@ -4,16 +4,19 @@ were sent; a truck's standing is worked out from them."""
 from __future__ import annotations
 
 import datetime as dt
+import uuid
+from typing import Literal
 
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import select
 
 from tms.api.deps import DB, Principal, require
 from tms.api.routes.vehicles import VehicleType
-from tms.models import ChecklistItem, PrestartCheck, VehicleRecord
-from tms.services import checklists, records
+from tms.models import ChecklistItem, PrestartCheck, Run, VehicleRecord
+from tms.services import checklists, fleet, records
+from tms.services.envelope import handle
 
 router = APIRouter(tags=["fleet"])
 
@@ -62,6 +65,64 @@ def put_checklist(vehicle_type: VehicleType, body: ChecklistIn, db: DB,
     rows = checklists.replace(db, vehicle_type, [(i.label, i.critical) for i in body.items])
     db.commit()
     return [item_out(i) for i in rows]
+
+
+# ---- the driver's pre-start ---------------------------------------------------
+
+class Answer(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    item_id: int
+    result: Literal["pass", "fail"]
+    note: str | None = Field(default=None, max_length=500)
+    photo_file: uuid.UUID | None = None
+
+    @model_validator(mode="after")
+    def _a_fail_says_why(self):
+        if self.result == "fail" and (not self.note or not self.photo_file):
+            raise ValueError("a failed item needs a photo and a note")
+        if self.result == "pass" and (self.note or self.photo_file):
+            raise ValueError("only a failed item takes a note and a photo")
+        return self
+
+
+class PrestartIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    message_id: uuid.UUID
+    at: AwareDatetime
+    odometer_km: int = Field(ge=0, le=9_999_999)
+    items: list[Answer] = Field(min_length=1, max_length=30)
+
+
+class PrestartOut(BaseModel):
+    message_id: uuid.UUID
+    check_id: int
+    run_id: int
+    run_no: str
+    vehicle: str
+    # passed, failed (a non-critical item: the truck may go), grounded
+    result: str
+    failed: list[str]
+    # whether the truck is grounded now, by this check or one before it
+    grounded: bool
+    odometer_km: int
+    at: dt.datetime
+
+
+@router.post("/runs/{id}/prestart", response_model=PrestartOut)
+def send_prestart(id: int, body: PrestartIn, db: DB,
+                  who: Principal = require("deliveries:write")):
+    """The driver's pre-start check of the run's truck, once per message_id."""
+    def work():
+        check = records.prestart(db, who, id, message_id=body.message_id, at=body.at,
+                                 odometer_km=body.odometer_km,
+                                 answers=[a.model_dump() for a in body.items])
+        run = db.get(Run, check.run_id)
+        return PrestartOut(message_id=body.message_id, check_id=check.id, run_id=run.id,
+                           run_no=run.number, vehicle=run.vehicle.rego, result=check.result,
+                           failed=[i.label for i in check.items if not i.passed],
+                           grounded=fleet.grounding(db, check.vehicle_id) is not None,
+                           odometer_km=check.odometer_km, at=check.at)
+    return handle(db, who, body.message_id, f"/v1/runs/{id}/prestart", work)
 
 
 # ---- what a fleet manager records -----------------------------------------------

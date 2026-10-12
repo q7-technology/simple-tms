@@ -62,3 +62,26 @@ def failed(client, headers, run_id, c, message_id=None, **over):
     body = {"message_id": str(message_id or uuid.uuid4()), "at": now(), "reason": "closed",
             **over}
     return client.post(f"/v1/runs/{run_id}/stops/{c.id}/fail", headers=headers, json=body)
+
+
+# the design's checklist for a van, as a fresh install has it: (id, label)
+VAN_ITEMS = [(1, "Tyres"), (2, "Lights"), (3, "Brakes"), (4, "Mirrors"), (5, "Load restraints"),
+             (6, "Damage")]
+
+
+def prestart(client, headers, run_id, km=61208, failed=(), message_id=None, items=VAN_ITEMS):
+    """Kim's pre-start of the run's van: every item passed but those named,
+    each failed one with its own photo (sent first) and a note."""
+    answers = []
+    for item_id, label in items:
+        if label in failed:
+            photo, r = put_file(client, headers, kind="photo", data=JPEG,
+                                content_type="image/jpeg")
+            assert r.status_code == 201, r.text
+            answers.append({"item_id": item_id, "result": "fail", "note": f"{label} not right",
+                            "photo_file": str(photo)})
+        else:
+            answers.append({"item_id": item_id, "result": "pass"})
+    body = {"message_id": str(message_id or uuid.uuid4()), "at": now(), "odometer_km": km,
+            "items": answers}
+    return client.post(f"/v1/runs/{run_id}/prestart", headers=headers, json=body)

@@ -1,0 +1,151 @@
+"""The driver's pre-start check, from the phone: every item of the truck's
+checklist passed or failed, a failed one with a photo and a note, and the
+odometer. A failed critical item grounds the truck at once. Kept as sent,
+once per message_id."""
+import uuid
+
+from sqlalchemy import select
+
+from conftest import all_at_once, fresh_client
+from deliveries_samples import (
+    JPEG, VAN_ITEMS, delivered, driver_headers, on_the_road, planned_run, prestart, put_file,
+)
+from runs_samples import DAY, driver
+from tms.models import InboundMessage, PrestartCheck
+
+
+def _vehicle(client, headers):
+    return client.get("/v1/vehicles/TMS041", headers=headers,
+                      params={"date": DAY.isoformat()}).json()
+
+
+def _my_run(client, kim, run_id):
+    runs = client.get("/v1/driver/runs", params={"date": DAY.isoformat()}, headers=kim).json()
+    return next(r for r in runs if r["id"] == run_id)
+
+
+def test_a_passed_check_is_kept_once_with_the_odometer(client, db, dispatcher_headers):
+    run, _ = planned_run(client, db, dispatcher_headers)
+    kim = driver_headers(client)
+    mine = _my_run(client, kim, run["id"])
+    assert mine["prestart"] is None
+    assert mine["checklist"][1] == {"id": 2, "label": "Lights", "critical": True}
+    message_id = uuid.uuid4()
+    r = prestart(client, kim, run["id"], km=61208, message_id=message_id)
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert {k: out[k] for k in ("message_id", "run_no", "vehicle", "result", "failed",
+                                "grounded", "odometer_km")} == {
+        "message_id": str(message_id), "run_no": run["run_no"], "vehicle": "TMS041",
+        "result": "passed", "failed": [], "grounded": False, "odometer_km": 61208}
+    # the same message again: the same reply, nothing more kept
+    again = prestart(client, kim, run["id"], km=61208, message_id=message_id)
+    assert again.status_code == 200 and again.json() == out
+    check = db.execute(select(PrestartCheck)).scalar_one()
+    assert [(i.label, i.passed) for i in check.items][:2] == [("Tyres", True), ("Lights", True)]
+    assert check.recorded_by == "kim" and check.driver_id is not None
+    assert db.execute(select(InboundMessage)).scalar_one().duplicates == 1
+    mine = _my_run(client, kim, run["id"])
+    assert mine["prestart"]["id"] == out["check_id"] and mine["prestart"]["result"] == "passed"
+    assert mine["vehicle"]["odometer_km"] == 61208
+
+
+def test_a_failed_item_needs_a_photo_and_a_note_and_the_truck_may_still_go(
+        client, db, dispatcher_headers):
+    run, _ = planned_run(client, db, dispatcher_headers)
+    kim = driver_headers(client)
+    answers = [{"item_id": i, "result": "pass"} for i in range(1, 7)]
+    answers[4] = {"item_id": 5, "result": "fail", "note": "Rear strap frayed"}
+    r = client.post(f"/v1/runs/{run['id']}/prestart", headers=kim, json={
+        "message_id": str(uuid.uuid4()), "at": "2026-10-14T06:40:00+11:00",
+        "odometer_km": 61208, "items": answers})
+    assert r.status_code == 422
+    assert "a failed item needs a photo and a note" in r.text
+    r = prestart(client, kim, run["id"], failed=("Load restraints",))
+    assert r.status_code == 200, r.text
+    assert (r.json()["result"], r.json()["failed"], r.json()["grounded"]) == (
+        "failed", ["Load restraints"], False)
+    item = db.execute(select(PrestartCheck)).scalar_one().items[4]
+    assert (item.label, item.passed, item.note) == ("Load restraints", False,
+                                                    "Load restraints not right")
+    assert item.photo_file_id is not None
+    assert _vehicle(client, dispatcher_headers)["state"] == "ok"
+
+
+def test_a_failed_critical_item_grounds_the_truck_there_and_then(client, db, dispatcher_headers):
+    run, _ = planned_run(client, db, dispatcher_headers)
+    kim = driver_headers(client)
+    r = prestart(client, kim, run["id"], failed=("Brakes",))
+    assert r.status_code == 200, r.text
+    assert (r.json()["result"], r.json()["grounded"]) == ("grounded", True)
+    v = _vehicle(client, dispatcher_headers)
+    assert v["state"] == "grounded" and v["grounded"]["failed"] == ["Brakes"]
+    assert _my_run(client, kim, run["id"])["vehicle"]["blocked"]["code"] == "vehicle_grounded"
+
+
+def test_the_odometer_never_goes_back(client, db, dispatcher_headers):
+    run, _ = planned_run(client, db, dispatcher_headers)
+    kim = driver_headers(client)
+    assert prestart(client, kim, run["id"], km=61208).status_code == 200
+    r = prestart(client, kim, run["id"], km=61200)
+    assert r.status_code == 422 and r.json()["errors"] == [{
+        "field": "odometer_km", "message": "61,200 km is less than TMS041's last reading, "
+                                           "61,208 km. Check the odometer and try again."}]
+    assert prestart(client, kim, run["id"], km=61208).status_code == 200
+
+
+def test_each_item_answered_once_from_the_list_as_it_is(client, db, dispatcher_headers,
+                                                       manager_headers):
+    run, _ = planned_run(client, db, dispatcher_headers)
+    kim = driver_headers(client)
+    r = prestart(client, kim, run["id"], items=[(1, "Tyres"), (2, "Lights")])
+    assert r.status_code == 409 and r.json()["code"] == "checklist_changed"
+    # the fleet manager adds a line while the phone has the old list
+    client.put("/v1/checklists/van", headers=manager_headers, json={"items": [
+        {"label": "Tyres"}, {"label": "Lights", "critical": True},
+        {"label": "Brakes", "critical": True}, {"label": "Mirrors"},
+        {"label": "Load restraints"}, {"label": "Damage"}, {"label": "Tail lift"}]})
+    r = prestart(client, kim, run["id"])
+    assert r.status_code == 409 and r.json() == {
+        "code": "checklist_changed",
+        "detail": "The van checklist has changed since this check began. Do the check again."}
+    assert prestart(client, kim, run["id"], items=[*VAN_ITEMS, (19, "Tail lift")]).status_code == 200
+
+
+def test_a_photo_is_the_drivers_own_and_goes_with_one_thing(client, db, dispatcher_headers):
+    run, (a, _), kim = on_the_road(client, db, dispatcher_headers)
+    photo, _ = put_file(client, kim, kind="photo", data=JPEG, content_type="image/jpeg")
+    assert delivered(client, kim, run["id"], a, photo_file=str(photo)).status_code == 200
+    answers = [{"item_id": i, "result": "pass"} for i in range(1, 7)]
+    answers[0] = {"item_id": 1, "result": "fail", "note": "Bald", "photo_file": str(photo)}
+    r = client.post(f"/v1/runs/{run['id']}/prestart", headers=kim, json={
+        "message_id": str(uuid.uuid4()), "at": "2026-10-14T06:40:00Z", "odometer_km": 1,
+        "items": answers})
+    assert r.status_code == 422 and r.json()["errors"][0]["field"] == "photo_file"
+
+
+def test_only_the_runs_driver_and_only_until_it_is_finished(client, db, dispatcher_headers):
+    run, (a,), kim = on_the_road(client, db, dispatcher_headers, n=1)
+    driver(db, code="mel", name="Mel")
+    assert prestart(client, driver_headers(client, code="mel"), run["id"]).status_code == 404
+    assert prestart(client, dispatcher_headers, run["id"]).status_code == 403
+    # on the road it is still taken: the check was done, so it is kept
+    assert prestart(client, kim, run["id"]).status_code == 200
+    delivered(client, kim, run["id"], a)
+    client.post(f"/v1/runs/{run['id']}/finish", headers=kim,
+                json={"message_id": str(uuid.uuid4())})
+    r = prestart(client, kim, run["id"])
+    assert r.status_code == 409 and r.json()["code"] == "run_done"
+
+
+def test_two_copies_at_once_keep_one_check(client, db, dispatcher_headers):
+    run, _ = planned_run(client, db, dispatcher_headers)
+    kim = driver_headers(client)
+    message_id = uuid.uuid4()
+
+    def send():
+        with fresh_client() as c:
+            return prestart(c, kim, run["id"], message_id=message_id).status_code
+
+    assert all_at_once(3, send) == [200, 200, 200]
+    assert len(db.execute(select(PrestartCheck)).scalars().all()) == 1

@@ -15,7 +15,7 @@ from tms.api.deps import DB, Principal, require, require_any
 from tms.api.errors import Forbidden
 from tms.api.schemas import Dec
 from tms.models import Run
-from tms.services import deliveries
+from tms.services import checklists, deliveries, fleet, records
 from tms.services.envelope import handle
 
 router = APIRouter(tags=["deliveries"])
@@ -28,11 +28,16 @@ class DriverRunOut(BaseModel):
     run_no: str
     date: dt.date
     status: str
+    # rego, type, its last odometer reading, and why it can't go (or null)
     vehicle: dict
     stops: int
     packages: int
     delivered: int
     failed: int
+    # the latest pre-start of this truck for this run: { id, at, result }, or null
+    prestart: dict | None
+    # the truck's checklist: [{ id, label, critical }]
+    checklist: list[dict]
 
 
 class PackageLine(BaseModel):
@@ -65,13 +70,22 @@ class RunStopsOut(BaseModel):
     stops: list[StopDetail]
 
 
-def driver_run_out(run: Run) -> DriverRunOut:
+def driver_run_out(db, run: Run) -> DriverRunOut:
+    v = run.vehicle
+    s = fleet.standing(db, v, run.day)
+    why = s.blocked
+    check = records.run_check(db, run)
     return DriverRunOut(
         id=run.id, run_no=run.number, date=run.day, status=run.status,
-        vehicle={"rego": run.vehicle.rego, "type": run.vehicle.type},
+        vehicle={"rego": v.rego, "type": v.type, "odometer_km": s.odometer_km,
+                 "blocked": None if why is None else {"code": why.code, "message": why.message}},
         stops=len(run.stops), packages=sum(len(s.consignment.packages) for s in run.stops),
         delivered=sum(s.outcome == "delivered" for s in run.stops),
-        failed=sum(s.outcome == "failed" for s in run.stops))
+        failed=sum(s.outcome == "failed" for s in run.stops),
+        prestart=None if check is None else {"id": check.id, "at": check.at,
+                                             "result": check.result},
+        checklist=[{"id": i.id, "label": i.label, "critical": i.critical}
+                   for i in checklists.live(db, v.type)])
 
 
 def run_stops_out(run: Run) -> RunStopsOut:
@@ -95,7 +109,7 @@ def my_runs(db: DB, day: dt.date = Query(alias="date"),
     of theirs that left on an earlier day and were never finished."""
     if who.kind != "driver":
         raise Forbidden("only a driver has runs of their own")
-    return [driver_run_out(r) for r in deliveries.driver_runs(db, who.id, day)]
+    return [driver_run_out(db, r) for r in deliveries.driver_runs(db, who.id, day)]
 
 
 @router.get("/runs/{id}/stops", response_model=RunStopsOut)
