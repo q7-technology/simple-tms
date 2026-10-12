@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { useQueueItems } from "../auth/Session";
 import { addressLine, mapsLink } from "../lib/maps";
@@ -29,10 +29,18 @@ export function Stop() {
     setTicks((t) => {
       const next = { ...t };
       if (how) next[packageNo] = how; else delete next[packageNo];
-      saveTicks(me, runId, consignmentId, next);
       return next;
     });
   }
+
+  // kept on the phone as they change, so a reload keeps them; said if it can't
+  useEffect(() => {
+    try {
+      saveTicks(me, runId, consignmentId, ticks);
+    } catch {
+      setSaid({ tone: "r", text: "The cartons ticked couldn't be kept on the phone: its storage is full. Call the office." });
+    }
+  }, [me, runId, consignmentId, ticks]);
 
   useScanWedge((code) => {
     if (!run || !stop) return;

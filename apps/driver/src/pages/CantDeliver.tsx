@@ -47,7 +47,7 @@ export function CantDeliver() {
         run_id: runId, consignment_id: consignmentId, outcome: "failed",
         pictures: photo ? [{ kind: "photo", field: "photo_file", blob: photo }] : [],
       });
-      saveTicks(me, runId, consignmentId, {});
+      try { saveTicks(me, runId, consignmentId, {}); } catch { /* kept: the ticks no longer matter */ }
       navigate(`/run/${runId}`, { state: { note: `Stop ${stop.sequence} is coming back to the depot.` } });
     } catch (e) {
       setError(e instanceof Error ? e.message : "That couldn't be kept on the phone. Try again.");

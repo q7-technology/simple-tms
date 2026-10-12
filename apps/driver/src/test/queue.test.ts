@@ -252,4 +252,24 @@ describe("the offline queue", () => {
       await expect(queue(null).submit(item("Stop 1"))).rejects.toThrow(/Sign in/);
     });
   });
+
+  it("says so, and keeps nothing half, when the phone won't keep a confirmation", async () => {
+    online = false;
+    const q = new RetryQueue({
+      send: async () => json(200, {}), files, online: () => false,
+      storage: { get: (k) => store.get(k), set: () => { throw new DOMException("full", "QuotaExceededError"); } },
+    });
+    q.setDriver(KIM);
+    await expect(q.submit({ ...item("Stop 1"), pictures: [{ kind: "photo", field: "photo_file", blob: PNG() }] }))
+      .rejects.toThrow("This couldn't be kept on the phone. Don't leave the stop yet — try again or call the office.");
+    expect(q.all()).toEqual([]);
+    expect(files.size()).toBe(0);
+  });
+
+  it("names the runs it still needs, whoever's they are", async () => {
+    online = false;
+    await queue(KIM).submit(item("Stop 1"));
+    await queue(MEL).submit({ ...item("Stop 1"), run_id: 9 });
+    expect([...queue(null).runsInUse()].sort()).toEqual(["3.7", "4.9"]);
+  });
 });

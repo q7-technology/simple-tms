@@ -22,7 +22,10 @@ export function RunHome() {
   useEffect(() => {
     if (!online) return;
     api.get<RunStops>(`/v1/runs/${runId}/stops`)
-      .then((fresh) => { saveRun(me, fresh); setRun(fresh); })
+      .then((fresh) => {
+        try { saveRun(me, fresh); } catch { /* the copy already on the phone will do */ }
+        setRun(fresh);
+      })
       .catch(() => undefined);   // the phone's copy will do
   }, [runId, online, me]);
 

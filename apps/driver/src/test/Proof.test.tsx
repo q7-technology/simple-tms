@@ -54,4 +54,21 @@ describe("proof of delivery", () => {
     renderApp("/run/7/stop/31/proof");
     await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent(/^\/run\/7\/stop\/31$/));
   });
+
+  it("says so, and doesn't say Ding!, when the phone won't keep the delivery", async () => {
+    stubApi();
+    const real = Storage.prototype.setItem;
+    const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, k: string, v: string) {
+      if (k === "tms.driver.queue") throw new DOMException("full", "QuotaExceededError");
+      real.call(this, k, v);
+    });
+    renderApp("/run/7/stop/31/proof", { online: () => false });
+    const user = userEvent.setup();
+    await user.upload(await screen.findByLabelText(/Add a photo/), new File(["x"], "door.jpg", { type: "image/jpeg" }));
+    await user.click(await screen.findByRole("button", { name: "Confirm delivery" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This couldn't be kept on the phone. Don't leave the stop yet — try again or call the office.");
+    expect(screen.queryByText("Ding!")).not.toBeInTheDocument();
+    spy.mockRestore();
+  });
 });

@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import type { DriverSessionOut, Me } from "../api/types";
 import { indexedDbFiles } from "../lib/files";
 import { RetryQueue, waitingCount, type Driver } from "../lib/queue";
+import { keepRunsFor, pruneRuns } from "../lib/run";
 
 interface Stored { token: string; expires_at: number; driver: Me }
 
@@ -32,11 +33,23 @@ function readSession(): Stored | null {
   }
 }
 
+export const SIGN_IN_NOT_KEPT =
+  "This phone couldn't keep your sign-in, so it couldn't keep your deliveries either. Free some space on it, or call the office.";
+
+/** A sign-in the phone can't keep is refused: a phone that can't keep it
+ * can't keep the run's confirmations either. Signing out can't fail. */
 function writeSession(s: Stored | null) {
   try {
     if (s) window.localStorage.setItem(SESSION_KEY, JSON.stringify(s));
     else window.localStorage.removeItem(SESSION_KEY);
-  } catch { /* private mode: signed in for this visit only */ }
+  } catch {
+    if (s) throw new Error(SIGN_IN_NOT_KEPT);
+  }
+}
+
+/** Ask the browser not to clear what the phone keeps when it is short of space. */
+function keepOnPhone() {
+  try { void navigator.storage?.persist?.().catch(() => undefined); } catch { /* not offered */ }
 }
 
 function owner(s: Stored | null): Driver | null {
@@ -70,6 +83,12 @@ export function SessionProvider({ children, queue = defaultQueue }: { children: 
   }, [queue]);
 
   useEffect(() => {
+    keepOnPhone();
+    keepRunsFor(() => queue.runsInUse());
+    pruneRuns(queue.runsInUse());
+  }, [queue]);
+
+  useEffect(() => {
     api.onSignedOut = signOut;
     const up = () => { setOnline(true); void queue.drain(); };
     const down = () => setOnline(false);
@@ -94,8 +113,8 @@ export function SessionProvider({ children, queue = defaultQueue }: { children: 
   const signIn = useCallback(async (code: string, pin: string) => {
     const out = await api.post<DriverSessionOut>("/v1/auth/driver-login", { code, pin });
     const s = { token: out.token, expires_at: Date.now() + out.expires_in * 1000, driver: out.driver };
-    signedInAs(queue, s);
     writeSession(s);
+    signedInAs(queue, s);
     setSession(s);
   }, [queue]);
 

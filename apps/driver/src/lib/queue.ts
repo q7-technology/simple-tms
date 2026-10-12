@@ -7,7 +7,13 @@
  * A confirmation may carry pictures (a signature, a photo). They go first,
  * each to PUT /v1/pod-files/{id} under an id chosen when it was taken, so
  * sending one twice is harmless too; then the confirmation that names them.
- * The pictures wait in a FileStore; the rest in localStorage.
+ * The pictures wait in a FileStore; the rest in localStorage. localStorage
+ * rather than IndexedDB for the items: it is read and written at once, with
+ * no await in between, so a write can't interleave with another in this tab,
+ * and the items are small text (the pictures, which are not, are already in
+ * IndexedDB). A write that fails is never silent: a confirmation the phone
+ * couldn't keep is refused there and then, so the driver doesn't leave the
+ * stop thinking it went.
  *
  * The queue belongs to the driver, not the phone: each confirmation keeps who
  * made it, and is sent only while that driver is signed in, with their own
@@ -71,8 +77,11 @@ export interface Request {
 type Sender = (req: Request) => Promise<Response>;
 interface Storage {
   get(key: string): string | undefined;
+  /** throws when it can't keep it (full, or blocked) */
   set(key: string, value: string): unknown;
 }
+
+export const NOT_KEPT = "This couldn't be kept on the phone. Don't leave the stop yet — try again or call the office.";
 
 const KEY = "tms.driver.queue";
 const MAX = 300;
@@ -80,7 +89,7 @@ const MAX = 300;
 function browserStorage(): Storage {
   return {
     get: (k) => { try { return window.localStorage.getItem(k) ?? undefined; } catch { return undefined; } },
-    set: (k, v) => { try { window.localStorage.setItem(k, v); } catch { /* full or private: kept in memory */ } },
+    set: (k, v) => { window.localStorage.setItem(k, v); },
   };
 }
 
@@ -124,6 +133,7 @@ export class RetryQueue {
     }
   }
 
+  /** Kept on the phone, or it throws. */
   private save() {
     // forget the oldest that went, never one still waiting
     while (this.items.length > MAX) {
@@ -131,8 +141,18 @@ export class RetryQueue {
       if (i < 0) break;
       this.items.splice(i, 1);
     }
-    this.storage.set(KEY, JSON.stringify(this.items));
-    this.listeners.forEach((fn) => fn());
+    try {
+      this.storage.set(KEY, JSON.stringify(this.items));
+    } finally {
+      this.listeners.forEach((fn) => fn());
+    }
+  }
+
+  /** While sending: a write that fails leaves the change in memory, and the
+   * next write tries again. Nothing is lost by it: what is kept is at worst
+   * an item still queued, which the API answers again with the same reply. */
+  private saveQuietly() {
+    try { this.save(); } catch { /* kept in memory until the next write */ }
   }
 
   subscribe(fn: () => void) {
@@ -157,6 +177,12 @@ export class RetryQueue {
   pending(): QueueItem[] { return this.mine().filter((i) => i.status === "queued"); }
   failed(): QueueItem[] { return this.mine().filter((i) => i.status === "failed"); }
 
+  /** Each run something still waits for or was refused on, as "<driver>.<run>":
+   * its copy on the phone is kept while so. */
+  runsInUse(): Set<string> {
+    return new Set(this.items.filter((i) => i.status !== "sent").map((i) => `${i.driver_id}.${i.run_id}`));
+  }
+
   /** Confirmations other drivers made on this phone, still to send: they go
    * when that driver signs in again. */
   othersWaiting(): { driver_id: number; name: string; count: number }[] {
@@ -180,7 +206,12 @@ export class RetryQueue {
     for (const p of input.pictures ?? []) {
       const id = crypto.randomUUID();
       // on the phone before the confirmation that names it, so a reload never finds one without the other
-      await this.files.put(id, p.blob);
+      try {
+        await this.files.put(id, p.blob);
+      } catch {
+        for (const f of files) await this.files.delete(f.id).catch(() => undefined);
+        throw new Error(NOT_KEPT);
+      }
       files.push({ id, kind: p.kind, sent: false });
       body[p.field] = id;
     }
@@ -191,7 +222,14 @@ export class RetryQueue {
       outcome: input.outcome, created_at: new Date().toISOString(), status: "queued", attempts: 0,
     };
     this.items.push(item);
-    this.save();
+    try {
+      this.save();
+    } catch {
+      this.items.pop();
+      for (const f of files) await this.files.delete(f.id).catch(() => undefined);
+      this.listeners.forEach((fn) => fn());
+      throw new Error(NOT_KEPT);
+    }
     void this.drain();
     return item;
   }
@@ -216,7 +254,7 @@ export class RetryQueue {
                                       driver_id: item.driver_id });
         if (res.ok) {
           f.sent = true;
-          this.save();
+          this.saveQuietly();
           continue;
         }
         const why = describe(await readJson(res), res.status);
@@ -242,7 +280,7 @@ export class RetryQueue {
     } catch (e) {
       item.error = e instanceof Error && e.message ? e.message : "no signal";
     } finally {
-      this.save();
+      this.saveQuietly();
     }
   }
 

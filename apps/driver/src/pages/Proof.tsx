@@ -60,7 +60,7 @@ export function Proof() {
         label: `Stop ${stop.sequence} · delivered · ${plural(stop.packages.length, "carton")}`,
         run_id: runId, consignment_id: consignmentId, outcome: "delivered", pictures,
       });
-      saveTicks(me, runId, consignmentId, {});
+      try { saveTicks(me, runId, consignmentId, {}); } catch { /* the delivery is kept: the ticks no longer matter */ }
       const done = outcomes(run, queue.forRun(runId));
       setDing({ sequence: stop.sequence, doneCount: done.size, cartons: stop.packages.length,
                 by: withSignature ? `signed by ${name.trim()}` : "photo taken", at });

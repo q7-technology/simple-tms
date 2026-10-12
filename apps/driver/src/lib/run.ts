@@ -19,8 +19,56 @@ function read<T>(key: string): T | null {
   }
 }
 
+export const RUN_NOT_KEPT = "This run couldn't be kept on the phone: its storage is full. Call the office.";
+
+/** Kept, or it throws: tidying away what nothing needs first if the phone is full. */
 function write(key: string, value: unknown) {
-  try { window.localStorage.setItem(key, JSON.stringify(value)); } catch { /* full: kept for this visit only */ }
+  const text = JSON.stringify(value);
+  try {
+    window.localStorage.setItem(key, text);
+    return;
+  } catch { /* full, perhaps: make room and try once more */ }
+  try {
+    pruneRuns(inUse());
+    window.localStorage.setItem(key, text);
+  } catch {
+    throw new Error(RUN_NOT_KEPT);
+  }
+}
+
+let inUse: () => Set<string> = () => new Set();
+/** Where to ask which runs still have confirmations waiting (the queue). */
+export function keepRunsFor(fn: () => Set<string>) { inUse = fn; }
+
+const KEEP_DAYS = 7;
+
+/** Forget the run copies nothing needs: a run that is done, or from more than
+ * a week ago, with nothing of it waiting to send or refused ("<driver>.<run>"
+ * in `keep`); and the carton ticks of any run no longer kept. Copies kept the
+ * old way, under no driver, go too. */
+export function pruneRuns(keep: Set<string>, now = new Date()) {
+  let ls: globalThis.Storage;
+  try { ls = window.localStorage; } catch { return; }
+  const keys: string[] = [];
+  for (let i = 0; i < ls.length; i++) keys.push(ls.key(i)!);
+  const cutoff = new Date(now.getTime() - KEEP_DAYS * 86_400_000).toISOString().slice(0, 10);
+  const kept = new Set<string>();
+  const gone = (k: string) => { try { ls.removeItem(k); } catch { /* nothing to do */ } };
+  for (const k of keys) {
+    const m = /^tms\.driver\.run\.(\d+)\.(\d+)$/.exec(k);
+    if (m) {
+      const id = `${m[1]}.${m[2]}`;
+      const run = read<RunStops>(k);
+      const over = !run || run.status === "done" || run.status === "cancelled" || run.date < cutoff;
+      if (over && !keep.has(id)) gone(k); else kept.add(id);
+    } else if (/^tms\.driver\.run\.\d+$/.test(k) || /^tms\.driver\.ticks\.\d+\.\d+$/.test(k) || k === "tms.driver.current") {
+      gone(k);
+    }
+  }
+  for (const k of keys) {
+    const m = /^tms\.driver\.ticks\.(\d+)\.(\d+)\.\d+$/.exec(k);
+    if (m && !kept.has(`${m[1]}.${m[2]}`)) gone(k);
+  }
 }
 
 export function saveRun(driver: number, run: RunStops) { write(RUN(driver, run.id), run); }

@@ -63,7 +63,7 @@ export function Today() {
         const out = await api.post<StartOut>(`/v1/runs/${r.id}/start`, { message_id: id });
         saveRun(me, { ...whole, status: out.status, departed_at: out.departed_at });
       }
-      rememberCurrent(me, r.id);
+      try { rememberCurrent(me, r.id); } catch { /* only for carrying on from memory */ }
       navigate(`/run/${r.id}`);
     } catch (e) {
       setError(said(e));

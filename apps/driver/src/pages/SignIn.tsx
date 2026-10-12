@@ -1,13 +1,14 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Navigate } from "react-router-dom";
 import { ApiError } from "../api/client";
-import { useSession } from "../auth/Session";
+import { SIGN_IN_NOT_KEPT, useSession } from "../auth/Session";
 import { Icon, Logo } from "../ui/icons";
 import { Phone } from "../ui/kit";
 
 const MAX_PIN = 8;
 
 function refusal(e: unknown): string {
+  if (e instanceof Error && e.message === SIGN_IN_NOT_KEPT) return e.message;
   if (!(e instanceof ApiError)) return "No signal: signing in needs a connection. Try again in range.";
   if (e.code === "locked") return e.message.charAt(0).toUpperCase() + e.message.slice(1) + ".";
   if (e.code === "wrong_pin") return "Wrong driver code or PIN.";

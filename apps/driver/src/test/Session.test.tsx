@@ -37,4 +37,16 @@ describe("what waits goes by itself", () => {
     await waitFor(() => expect(queue.pending()).toHaveLength(0));
     expect(calls.filter((c) => c.url === "/v1/runs/7/stops/31/fail")).toHaveLength(1);
   });
+
+  it("asks the browser to keep what is on the phone", async () => {
+    const persist = vi.fn(async () => true);
+    Object.defineProperty(navigator, "storage", { value: { persist }, configurable: true });
+    try {
+      stubApi(() => json(200, RUN));
+      renderApp("/run/7");
+      await waitFor(() => expect(persist).toHaveBeenCalled());
+    } finally {
+      delete (navigator as { storage?: unknown }).storage;
+    }
+  });
 });
