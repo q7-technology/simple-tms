@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { saveTicks } from "../lib/run";
 import { json, onThePhone, renderApp, signedIn, stubApi } from "./harness";
@@ -70,5 +70,16 @@ describe("proof of delivery", () => {
       "This couldn't be kept on the phone. Don't leave the stop yet — try again or call the office.");
     expect(screen.queryByText("Ding!")).not.toBeInTheDocument();
     spy.mockRestore();
+  });
+
+  it("keeps one delivery however fast Confirm is tapped twice", async () => {
+    stubApi();
+    const { queue } = renderApp("/run/7/stop/31/proof", { online: () => false });
+    const user = userEvent.setup();
+    await user.upload(await screen.findByLabelText(/Add a photo/), new File(["x"], "door.jpg", { type: "image/jpeg" }));
+    const button = await screen.findByRole("button", { name: "Confirm delivery" });
+    await act(async () => { button.click(); button.click(); });
+    await screen.findByRole("status", { name: "Delivered" });
+    expect(queue.all()).toHaveLength(1);
   });
 });

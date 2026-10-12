@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { useSession } from "../auth/Session";
 import { loadRun, plural, saveTicks, stopOf } from "../lib/run";
@@ -30,11 +30,14 @@ export function CantDeliver() {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // set at once, unlike state: a second tap before the screen updates does nothing
+  const going = useRef(false);
 
   if (!run || !stop) return <Navigate to="/" replace />;
 
   async function confirm() {
-    if (!run || !stop || !reason) return;
+    if (!run || !stop || !reason || going.current) return;
+    going.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -50,6 +53,7 @@ export function CantDeliver() {
       try { saveTicks(me, runId, consignmentId, {}); } catch { /* kept: the ticks no longer matter */ }
       navigate(`/run/${runId}`, { state: { note: `Stop ${stop.sequence} is coming back to the depot.` } });
     } catch (e) {
+      going.current = false;
       setError(e instanceof Error ? e.message : "That couldn't be kept on the phone. Try again.");
       setBusy(false);
     }

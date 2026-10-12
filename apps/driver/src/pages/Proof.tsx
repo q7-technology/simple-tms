@@ -30,6 +30,8 @@ export function Proof() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ding, setDing] = useState<Dinged | null>(null);
+  // set at once, unlike state: a second tap before the screen updates does nothing
+  const going = useRef(false);
   // as the stop page left them: cleared on the phone once the delivery is kept
   const [ticks] = useState(() => loadTicks(me, runId, consignmentId));
 
@@ -39,7 +41,8 @@ export function Proof() {
   const ready = (signed && name.trim().length > 0) || photo !== null;
 
   async function confirm() {
-    if (!run || !stop) return;
+    if (!run || !stop || going.current) return;
+    going.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -65,6 +68,7 @@ export function Proof() {
       setDing({ sequence: stop.sequence, doneCount: done.size, cartons: stop.packages.length,
                 by: withSignature ? `signed by ${name.trim()}` : "photo taken", at });
     } catch (e) {
+      going.current = false;
       setError(e instanceof Error ? e.message : "That couldn't be kept on the phone. Try again.");
     } finally {
       setBusy(false);

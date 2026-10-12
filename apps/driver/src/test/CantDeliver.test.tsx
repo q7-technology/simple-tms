@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { json, onThePhone, renderApp, RUN, signedIn, stubApi } from "./harness";
 
@@ -20,5 +20,15 @@ describe("can't deliver", () => {
     await waitFor(() => expect(calls.some((c) => c.url === "/v1/runs/7/stops/32/fail")).toBe(true));
     expect(calls.find((c) => c.url === "/v1/runs/7/stops/32/fail")!.body).toEqual({
       message_id: expect.any(String), at: expect.any(String), reason: "closed", note: "Rang the number, no answer." });
+  });
+
+  it("puts the cartons back once however fast it is tapped twice", async () => {
+    stubApi(() => json(200, RUN));
+    const { queue } = renderApp("/run/7/stop/32/cant", { online: () => false });
+    await userEvent.setup().click(await screen.findByRole("radio", { name: /Closed/ }));
+    const button = screen.getByRole("button", { name: /Back on the truck/ });
+    await act(async () => { button.click(); button.click(); });
+    await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent(/^\/run\/7$/));
+    expect(queue.all()).toHaveLength(1);
   });
 });
