@@ -114,7 +114,8 @@ password, at least 12 characters, is asked for, or given with `--password`).
 - `GET /v1/vehicles/{rego}` — the rego in the URL is read the same way, so
   `/v1/vehicles/1ab2cd` finds `1AB2CD`.
 - `PATCH /v1/vehicles/{rego}` — any of `type`, `max_kg`, `max_m3`,
-  `service_every_months`, `service_every_km`. The rego does not change.
+  `service_every_months`, `service_every_km`. A field left out is kept;
+  `null` clears a service interval. The rego does not change.
 - `POST /v1/vehicles/{rego}/deactivate`, `/reactivate`
 
 `POST` and `PATCH` also take `service_every_months` (1 to 120) and

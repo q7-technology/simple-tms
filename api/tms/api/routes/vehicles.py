@@ -44,6 +44,10 @@ class VehicleIn(BaseModel):
         return normal_rego(v) if isinstance(v, str) else v
 
 
+# PATCH fields that an explicit null clears
+CLEARABLE = {"service_every_months", "service_every_km"}
+
+
 class VehiclePatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
     type: VehicleType | None = None
@@ -185,9 +189,13 @@ def get_vehicle(rego: str, db: DB, day: dt.date | None = Query(default=None, ali
 
 @router.patch("/vehicles/{rego}", response_model=VehicleOut)
 def update_vehicle(rego: str, body: VehiclePatch, db: DB, who: Principal = require("fleet:write")):
+    """Only what is given changes. A service interval given as null is
+    cleared (never due that way); a field left out is kept."""
     v = _get(db, rego)
-    for field, value in body.model_dump(exclude_none=True).items():
-        setattr(v, field, value)
+    for field in body.model_fields_set:
+        value = getattr(body, field)
+        if value is not None or field in CLEARABLE:
+            setattr(v, field, value)
     db.commit()
     return vehicle_out(db, v)
 

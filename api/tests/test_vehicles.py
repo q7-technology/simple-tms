@@ -48,6 +48,23 @@ def test_update_changes_type_and_limits(client, manager_headers):
     assert r.json()["max_m3"] == "8.5"
 
 
+def test_a_service_schedule_is_kept_unless_cleared_with_null(client, manager_headers):
+    make_vehicle(client, manager_headers, {**VAN, "service_every_months": 6,
+                                           "service_every_km": 15000})
+    # left out: kept
+    r = client.patch("/v1/vehicles/1ab2cd", headers=manager_headers, json={"max_kg": "1300"})
+    assert (r.json()["service_every_months"], r.json()["service_every_km"]) == (6, 15000)
+    # null: cleared, the other kept
+    r = client.patch("/v1/vehicles/1ab2cd", headers=manager_headers,
+                     json={"service_every_months": None})
+    assert r.status_code == 200, r.text
+    assert (r.json()["service_every_months"], r.json()["service_every_km"]) == (None, 15000)
+    r = client.patch("/v1/vehicles/1ab2cd", headers=manager_headers,
+                     json={"service_every_km": None})
+    assert (r.json()["service_every_months"], r.json()["service_every_km"]) == (None, None)
+    assert r.json()["max_kg"] == "1300"
+
+
 def test_deactivated_not_deleted(client, manager_headers):
     make_vehicle(client, manager_headers)
     r = client.post("/v1/vehicles/1AB2CD/deactivate", headers=manager_headers)
