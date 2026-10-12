@@ -310,4 +310,49 @@ describe("the offline queue", () => {
       expect(q.pending().map((i) => [i.message_id, i.driver_id])).toEqual([[old.message_id, 4]]);
     });
   });
+
+  describe("open twice on one phone (the installed app and a browser tab)", () => {
+    it("keeps both one's and the other's confirmations, whichever writes last", async () => {
+      online = false;
+      const app = queue();
+      const tab = queue();
+      const a = await app.submit(item("Stop 1", 1));
+      const b = await tab.submit(item("Stop 2", 2));
+      expect(queue().pending().map((i) => i.message_id)).toEqual([a.message_id, b.message_id]);
+    });
+
+    it("never puts back as waiting what the other has sent", async () => {
+      online = false;
+      const app = queue();
+      const tab = queue();
+      const a = await app.submit(item("Stop 1", 1));
+      tab.reload();
+      online = true;
+      expect(await app.drain()).toBe(1);
+      online = false;
+      // the tab still thinks stop 1 waits, and keeps another
+      await tab.submit(item("Stop 2", 2));
+      const kept = queue();
+      expect(kept.all().map((i) => [i.message_id, i.status])).toEqual([
+        [expect.any(String), "queued"], [a.message_id, "sent"]]);
+      online = true;
+      await tab.drain();
+      expect(sent.map((r) => r.path)).toEqual(["/v1/runs/7/stops/1/fail", "/v1/runs/7/stops/2/fail"]);
+    });
+
+    it("sends from one at a time, under the phone's lock", async () => {
+      online = false;
+      await queue().submit(item("Stop 1"));
+      online = true;
+      const names: string[] = [];
+      const q = new RetryQueue({
+        send: async (req) => { sent.push(req); return json(200, {}); }, files, online: () => true,
+        storage: { get: (k) => store.get(k), set: (k, v) => store.set(k, v) },
+        locks: { request: (name, fn) => { names.push(name); return fn(); } },
+      });
+      q.setDriver(KIM);
+      expect(await q.drain()).toBe(1);
+      expect(names).toEqual(["tms-queue"]);
+    });
+  });
 });

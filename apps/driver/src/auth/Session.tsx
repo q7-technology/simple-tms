@@ -92,6 +92,9 @@ export function SessionProvider({ children, queue = defaultQueue }: { children: 
     api.onSignedOut = signOut;
     const up = () => { setOnline(true); void queue.drain(); };
     const down = () => setOnline(false);
+    // another tab of the app (the installed one and a browser tab) kept something
+    const kept = (e: StorageEvent) => { if (e.key === "tms.driver.queue") queue.reload(); };
+    window.addEventListener("storage", kept);
     window.addEventListener("online", up);
     window.addEventListener("offline", down);
     const unsubscribe = queue.subscribe(() => {
@@ -100,6 +103,7 @@ export function SessionProvider({ children, queue = defaultQueue }: { children: 
     });
     const tick = setInterval(() => { if (navigator.onLine && queue.pending().length) void queue.drain(); }, DRAIN_EVERY_MS);
     return () => {
+      window.removeEventListener("storage", kept);
       window.removeEventListener("online", up);
       window.removeEventListener("offline", down);
       unsubscribe();

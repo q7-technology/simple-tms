@@ -50,6 +50,8 @@ export interface QueueItem {
   created_at: string;
   status: "queued" | "sent" | "failed";
   attempts: number;
+  /** goes up with each change, so the newer copy wins when two tabs' meet */
+  rev?: number;
   sent_at?: string;
   reply?: unknown;
   error?: string;
@@ -84,6 +86,9 @@ interface Storage {
 export const NOT_KEPT = "This couldn't be kept on the phone. Don't leave the stop yet — try again or call the office.";
 
 const KEY = "tms.driver.queue";
+/** the ids of confirmations let go on purpose, so another tab's copy doesn't bring them back */
+const GONE = "tms.driver.queue.gone";
+const GONE_MAX = 1000;
 const MAX = 300;
 
 function browserStorage(): Storage {
@@ -139,6 +144,26 @@ function readItems(storage: Storage): QueueItem[] {
   return good;
 }
 
+const RANK = { queued: 0, failed: 1, sent: 2 } as const;
+
+/** Of two copies of one confirmation, the one further on: the later change,
+ * or on a tie the further status. A picture sent in either copy is sent. */
+function further(mine: QueueItem, theirs: QueueItem): QueueItem {
+  const a = mine.rev ?? 0, b = theirs.rev ?? 0;
+  const win = b > a || (b === a && RANK[theirs.status] > RANK[mine.status]) ? theirs : mine;
+  const sent = new Set([...mine.files, ...theirs.files].filter((f) => f.sent).map((f) => f.id));
+  return { ...win, files: win.files.map((f) => ({ ...f, sent: f.sent || sent.has(f.id) })) };
+}
+
+export interface Locks {
+  request<T>(name: string, fn: () => Promise<T>): Promise<T>;
+}
+
+function browserLocks(): Locks | undefined {
+  const locks = typeof navigator === "undefined" ? undefined : (navigator as { locks?: LockManager }).locks;
+  return locks ? { request: <T,>(name: string, fn: () => Promise<T>) => locks.request(name, fn) as Promise<T> } : undefined;
+}
+
 async function readJson(res: Response): Promise<unknown> {
   const text = await res.text();
   try { return text ? JSON.parse(text) : null; } catch { return null; }
@@ -153,24 +178,64 @@ export class RetryQueue {
   private draining: Promise<number> | null = null;
   private driver: Driver | null = null;
   private listeners = new Set<() => void>();
+  private locks: Locks | undefined;
+  private gone = new Set<string>();
 
-  constructor(opts: { send: Sender; files: FileStore; storage?: Storage; online?: () => boolean }) {
+  constructor(opts: { send: Sender; files: FileStore; storage?: Storage; online?: () => boolean; locks?: Locks }) {
     this.send = opts.send;
     this.files = opts.files;
     this.storage = opts.storage ?? browserStorage();
     this.online = opts.online ?? (() => typeof navigator === "undefined" || navigator.onLine);
+    this.locks = opts.locks ?? browserLocks();
     this.items = readItems(this.storage);
   }
 
-  /** Kept on the phone, or it throws. */
-  private save() {
-    // forget the oldest that went, never one still waiting
-    while (this.items.length > MAX) {
-      const i = this.items.findIndex((x) => x.status !== "queued");
-      if (i < 0) break;
-      this.items.splice(i, 1);
-    }
+  private readGone(): Set<string> {
     try {
+      const ids = JSON.parse(this.storage.get(GONE) ?? "[]");
+      if (Array.isArray(ids)) for (const id of ids) if (typeof id === "string") this.gone.add(id);
+    } catch { /* none, then */ }
+    return this.gone;
+  }
+
+  /** Let a confirmation go for good, in every tab. */
+  private forget(ids: string[]) {
+    for (const id of ids) this.gone.add(id);
+    this.items = this.items.filter((i) => !this.gone.has(i.id));
+  }
+
+  /** What is kept (perhaps by another tab of the app) and what is here, as one:
+   * each confirmation once, the copy further on, in the order they were made. */
+  private merge(): QueueItem[] {
+    const gone = this.readGone();
+    const here = new Map(this.items.map((i) => [i.id, i]));
+    const out = new Map<string, QueueItem>();
+    // what is kept first, in its order: it was made before what is only here
+    for (const k of readItems(this.storage)) {
+      if (gone.has(k.id)) continue;
+      const mine = here.get(k.id);
+      // the same object stays, changed in place, for whoever holds it
+      out.set(k.id, mine ? Object.assign(mine, further(mine, k)) : k);
+    }
+    for (const i of this.items) if (!gone.has(i.id) && !out.has(i.id)) out.set(i.id, i);
+    return [...out.values()].sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0));
+  }
+
+  /** Take in what another tab kept. */
+  reload() {
+    this.items = this.merge();
+    this.listeners.forEach((fn) => fn());
+  }
+
+  /** Kept on the phone, or it throws. Read again and merged first, so two
+   * tabs of the app never write over each other's confirmations. */
+  private save() {
+    this.items = this.merge();
+    // forget the oldest that went, never one still waiting
+    const over = this.items.length - MAX;
+    if (over > 0) this.forget(this.items.filter((x) => x.status !== "queued").slice(0, over).map((x) => x.id));
+    try {
+      if (this.gone.size) this.storage.set(GONE, JSON.stringify([...this.gone].slice(-GONE_MAX)));
       this.storage.set(KEY, JSON.stringify(this.items));
     } finally {
       this.listeners.forEach((fn) => fn());
@@ -258,7 +323,7 @@ export class RetryQueue {
     try {
       this.save();
     } catch {
-      this.items.pop();
+      this.items = this.items.filter((i) => i.id !== item.id);
       for (const f of files) await this.files.delete(f.id).catch(() => undefined);
       this.listeners.forEach((fn) => fn());
       throw new Error(NOT_KEPT);
@@ -287,6 +352,7 @@ export class RetryQueue {
                                       driver_id: item.driver_id });
         if (res.ok) {
           f.sent = true;
+          item.rev = (item.rev ?? 0) + 1;
           this.saveQuietly();
           continue;
         }
@@ -313,6 +379,7 @@ export class RetryQueue {
     } catch (e) {
       item.error = e instanceof Error && e.message ? e.message : "no signal";
     } finally {
+      item.rev = (item.rev ?? 0) + 1;
       this.saveQuietly();
     }
   }
@@ -323,7 +390,10 @@ export class RetryQueue {
    * A sign-out (or another driver signing in) stops it before the next. */
   drain(): Promise<number> {
     // cleared once it has settled, never before it is stored
-    this.draining ??= this.drainNow().finally(() => { this.draining = null; });
+    // one tab of the app at a time, where the browser can say so
+    const run = () => this.drainNow();
+    this.draining ??= (this.locks ? this.locks.request("tms-queue", run) : run())
+      .finally(() => { this.draining = null; });
     return this.draining;
   }
 
@@ -333,6 +403,8 @@ export class RetryQueue {
     if (who === undefined) return 0;
     for (;;) {
       if (this.driver?.id !== who) break;
+      // what another tab sent meanwhile isn't sent again
+      this.items = this.merge();
       const next = this.items.find((i) => i.status === "queued" && i.driver_id === who);
       if (!next || !this.online()) break;
       await this.attempt(next);
