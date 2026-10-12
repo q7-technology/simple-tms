@@ -142,7 +142,8 @@ right (or that reading). `rego_due` and `service_due` are each `ok`, `due`
 date, or past the due kilometres) or `unknown` (nothing recorded to judge
 by: it does not stop the truck). The service falls due `service_every_months`
 after the last service's date and `service_every_km` after its reading,
-whichever comes first. `grounded` is the check that grounded it,
+whichever comes first; a truck serviced by kilometres alone (or a service
+recorded without a reading) is judged by the one it has. `grounded` is the check that grounded it,
 `{ "check_id", "at", "failed": ["Brakes"] }`, until a fleet manager marks it
 fixed. `state` is the worst of them: `grounded`, `overdue`, `due` or `ok`.
 `blocked` is `{ "code", "message" }` when it can't take a run that day (rule

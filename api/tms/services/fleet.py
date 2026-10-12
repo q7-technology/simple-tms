@@ -22,7 +22,8 @@ from tms.models import PrestartCheck, Vehicle, VehicleRecord
 
 DUE_DAYS = 30
 DUE_KM = 1_000
-WORST = {"unknown": 0, "ok": 0, "due": 1, "overdue": 2}
+# what is known outweighs what isn't: a truck serviced by km alone is judged by them
+WORST = {"unknown": -1, "ok": 0, "due": 1, "overdue": 2}
 
 
 def add_months(d: date, months: int) -> date:
@@ -143,8 +144,6 @@ class Standing:
     @property
     def service_state(self) -> str:
         by_date, by_km = _by_days(self.service_days_left), _by_km(self.service_km_left)
-        if by_date == by_km == "unknown":
-            return "unknown"
         return max(by_date, by_km, key=WORST.__getitem__)
 
     @property

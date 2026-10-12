@@ -84,6 +84,18 @@ def test_service_is_due_by_date_or_kilometres_whichever_comes_first(client, db, 
     assert _get(client, manager_headers, "2026-11-02")["state"] == "ok"
 
 
+def test_a_service_by_kilometres_alone_is_judged_by_them(client, db, manager_headers):
+    v = vehicle(db)
+    client.patch("/v1/vehicles/TMS041", headers=manager_headers,
+                 json={"service_every_km": 15000})
+    serviced(db, v, date(2026, 4, 30), km=60000)
+    check(db, v, km=61000)
+    out = _get(client, manager_headers)
+    assert out["service_due"] == {"last_on": "2026-04-30", "last_km": 60000,
+                                  "due_on": None, "due_km": 75000, "days_left": None,
+                                  "km_left": 14000, "state": "ok"}
+
+
 def test_the_odometer_only_goes_up_until_a_fleet_manager_puts_it_right(client, db,
                                                                       dispatcher_headers):
     v = vehicle(db)
