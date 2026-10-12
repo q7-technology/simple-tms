@@ -87,3 +87,32 @@ def prestart(db: Session, who, run_id: int, *, message_id: uuid.UUID, at: dateti
     db.add(check)
     db.flush()
     return check
+
+
+def fix(db: Session, rego: str, *, check_id: int, by: str, note: str) -> VehicleRecord:
+    """A fleet manager has put right what grounded the truck. The record names
+    the check they looked at, which must be the latest that grounded it: if
+    another came in meanwhile, it is refused rather than cleared unseen."""
+    lock_planning(db)
+    v = vehicle_by_rego(db, rego)
+    grounded_by = fleet.grounding(db, v.id)
+    if grounded_by is None:
+        raise Conflict("not_grounded", f"{v.rego} isn't grounded")
+    if grounded_by.id != check_id:
+        raise Conflict("stale", f"Another failed check of {v.rego} has come in; it has been "
+                                "reloaded, so look at it and mark it fixed again")
+    row = VehicleRecord(vehicle_id=v.id, kind="fixed", check_id=check_id, note=note,
+                        recorded_by=by, recorded_at=datetime.now(UTC))
+    db.add(row)
+    db.flush()
+    return row
+
+
+def fixed_by(db: Session, check: PrestartCheck) -> VehicleRecord | None:
+    """For a check that grounded its truck: the record that cleared it, if any."""
+    if check.result != "grounded":
+        return None
+    return db.execute(select(VehicleRecord).where(
+        VehicleRecord.vehicle_id == check.vehicle_id, VehicleRecord.kind == "fixed",
+        VehicleRecord.check_id >= check.id).order_by(VehicleRecord.id).limit(1)
+    ).scalar_one_or_none()
