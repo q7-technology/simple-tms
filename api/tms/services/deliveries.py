@@ -10,15 +10,18 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from sqlalchemy import and_, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from tms.api.errors import Conflict, FieldError, NotFound
+from tms.api.errors import Conflict, FieldError, NotFound, violated_constraint
 from tms.models import ConsignmentEvent, Pod, PodFile, Run, Stop
 from tms.services import runs
 from tms.services.envelope import sender_of
 
 MICRO = Decimal("0.000001")
 TENTH = Decimal("0.1")
+# a picture belongs to one stop: the database's word for it, and which picture
+FILE_CONSTRAINTS = {"uq_pod_signature_file_id": "signature", "uq_pod_photo_file_id": "photo"}
 
 
 @dataclass(frozen=True)
@@ -115,7 +118,17 @@ def _record(db: Session, who, run: Run, stop: Stop, *, message_id: uuid.UUID, ou
                           if where and where.accuracy_m is not None else None),
               recorded_by=who.name, **pod)
     db.add(row)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as e:
+        # another stop took the picture between _file's check and this insert
+        name = violated_constraint(e)
+        kind = FILE_CONSTRAINTS.get(name or "")
+        if kind is None:
+            raise
+        db.rollback()
+        file_id = pod["signature_file_id" if kind == "signature" else "photo_file_id"]
+        raise FieldError(f"{kind}_file", f"{kind} {file_id} already belongs to another stop") from None
     stop.outcome = outcome
     stop.outcome_at = when
     c = stop.consignment

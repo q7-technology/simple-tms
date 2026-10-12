@@ -180,3 +180,31 @@ def test_a_message_id_used_for_another_action_is_refused(client, db, dispatcher_
     assert again.status_code == 200 and again.json() == started.json()
     assert db.execute(select(InboundMessage).where(
         InboundMessage.message_id == message_id)).scalar_one().duplicates == 1
+
+
+def test_a_picture_taken_by_another_stop_meanwhile_is_refused_not_a_crash(
+        client, db, dispatcher_headers, engine):
+    from conftest import beaten_to_it
+    from runs_samples import assign, consignment, new_run, vehicle
+    from tms.models import Stop
+
+    run, (a, _), kim = on_the_road(client, db, dispatcher_headers)
+    # another run of Kim's, whose stop takes the same signature in a race
+    vehicle(db, rego="TMS042")
+    other = new_run(client, dispatcher_headers, rego="TMS042")
+    c = consignment(db, ref="0080034599", customer="Elsewhere")
+    assert assign(client, dispatcher_headers, other["id"], c.id).status_code == 200
+    stop = db.execute(select(Stop).where(Stop.run_id == other["id"])).scalar_one()
+    sig, _ = put_file(client, kim)
+
+    def rival(obj):
+        if isinstance(obj, Pod):
+            return Pod(message_id=uuid.uuid4(), run_id=other["id"], stop_id=stop.id,
+                       consignment_id=c.id, outcome="delivered", at=datetime.now(UTC),
+                       packages=[], recorded_by="kim", signature_file_id=sig)
+
+    with beaten_to_it(engine, rival):
+        r = delivered(client, kim, run["id"], a, signature_file=str(sig), signed_name="Priya")
+    assert r.status_code == 422, r.text
+    assert r.json()["errors"] == [{"field": "signature_file",
+                                   "message": f"signature {sig} already belongs to another stop"}]
