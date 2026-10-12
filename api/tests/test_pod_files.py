@@ -77,7 +77,8 @@ def test_a_file_is_shown_to_the_office_and_to_whoever_sent_it(client, db, dispat
         assert r.status_code == 200 and r.content == PNG
         assert r.headers["content-type"] == "image/png"
         assert r.headers["cache-control"] == "private, no-store"
-        assert r.headers["content-security-policy"] == "default-src 'none'"
+        assert r.headers["content-security-policy"] == "default-src 'none'; sandbox"
+        assert r.headers["content-disposition"] == f'inline; filename="{file_id}.png"'
     assert client.get(f"/v1/pod-files/{file_id}",
                       headers=driver_headers(client, code="mel")).status_code == 404
     assert client.get(f"/v1/pod-files/{file_id}").status_code == 401

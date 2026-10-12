@@ -87,5 +87,8 @@ def get_file(file_id: uuid.UUID, db: DB, who: Who):
         raise NotFound(f"no file {file_id}") from None
     return Response(content=content, media_type=row.content_type,
                     headers={"Cache-Control": "private, no-store",
-                             "Content-Security-Policy": "default-src 'none'",
+                             # opened on its own, it runs nothing and reaches nothing
+                             "Content-Security-Policy": "default-src 'none'; sandbox",
+                             "Content-Disposition":
+                                 f'inline; filename="{row.id}.{pod_files.EXT[row.content_type]}"',
                              "X-Content-Type-Options": "nosniff"})
