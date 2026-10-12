@@ -321,6 +321,15 @@ cd apps/desktop && npm test
 The driver app's tests are Vitest too, with the API stubbed and IndexedDB
 stood in for by `fake-indexeddb`: `cd apps/driver && npm test`.
 
+## Known limitations
+
+- **What came back is still shipped in Simple WMS.** When a driver can't
+  deliver, the consignment comes back to the depot and returns to the
+  dispatcher's tray to be planned again. Simple WMS still has it as shipped,
+  because Simple TMS tells it what shipped when the run starts. A proper
+  "came back" flow needs a design change on the Simple WMS side, and is noted
+  for later.
+
 ## Stack
 
 Python 3.12 + FastAPI · PostgreSQL 16 · Vite + React + TypeScript +
