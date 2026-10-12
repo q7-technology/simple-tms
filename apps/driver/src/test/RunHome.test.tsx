@@ -84,4 +84,41 @@ describe("between stops", () => {
     await waitFor(() => expect(calls.some((c) => c.url === "/v1/runs/7/finish")).toBe(true));
     expect(screen.getByRole("link", { name: "Back to today's runs" })).toBeInTheDocument();
   });
+
+  it("tries a confirmation that wasn't taken again, or lets it go", async () => {
+    let refuse = true;
+    const { calls } = stubApi((method, url) => {
+      if (method === "POST" && url === "/v1/runs/7/stops/31/fail") {
+        return refuse ? json(409, { code: "run_cancelled", detail: "R-0007 was cancelled" }) : json(200, { outcome: "failed" });
+      }
+      if (method === "POST") return json(409, { code: "run_cancelled", detail: "R-0007 was cancelled" });
+      return json(200, RUN);
+    });
+    const { queue } = renderApp("/run/7");
+    await act(async () => {
+      await queue.submit({ path: "/v1/runs/7/stops/31/fail", body: { reason: "closed" }, label: "Stop 1 · couldn't deliver · closed",
+                           run_id: 7, consignment_id: 31, outcome: "failed" });
+      await queue.submit({ path: "/v1/runs/7/stops/32/fail", body: { reason: "closed" }, label: "Stop 2 · couldn't deliver · closed",
+                           run_id: 7, consignment_id: 32, outcome: "failed" });
+      await queue.drain();
+    });
+    expect(await screen.findAllByText("R-0007 was cancelled")).toHaveLength(2);
+    const user = userEvent.setup();
+
+    refuse = false;
+    await user.click(screen.getAllByRole("button", { name: "Try again" })[1]);
+    await waitFor(() => expect(screen.getAllByText(/^Sent /)).toHaveLength(1));
+    const ids = calls.filter((c) => c.url === "/v1/runs/7/stops/31/fail").map((c) => (c.body as { message_id: string }).message_id);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).toBe(ids[1]);
+
+    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.getByText("Stop 2 · couldn't deliver · closed")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(screen.queryByText("Stop 2 · couldn't deliver · closed")).not.toBeInTheDocument());
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(confirm.mock.calls[0][0]).toMatch(/won't be sent/);
+    confirm.mockRestore();
+  });
 });

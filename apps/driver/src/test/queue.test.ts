@@ -355,4 +355,43 @@ describe("the offline queue", () => {
       expect(names).toEqual(["tms-queue"]);
     });
   });
+
+  describe("a confirmation that wasn't taken", () => {
+    async function refused() {
+      const q = queue();
+      answers.push(json(201, {}), json(409, { code: "run_done", detail: "R-0007 is finished" }));
+      const a = await q.submit({ ...item("Stop 1"), pictures: [{ kind: "photo", field: "photo_file", blob: PNG() }] });
+      await q.drain();
+      expect(q.failed().map((i) => i.id)).toEqual([a.id]);
+      return { q, a };
+    }
+
+    it("can be tried again, as the same confirmation", async () => {
+      const { q, a } = await refused();
+      await q.retry(a.id);
+      expect(q.failed()).toEqual([]);
+      expect(q.all()[0].status).toBe("sent");
+      const posts = sent.filter((r) => r.method === "POST").map((r) => body(r).message_id);
+      expect(posts).toEqual([a.message_id, a.message_id]);
+      expect(files.size()).toBe(0);
+    });
+
+    it("can be let go, its pictures with it, for good", async () => {
+      const { q, a } = await refused();
+      expect(files.size()).toBe(1);
+      await q.dismiss(a.id);
+      expect(q.all()).toEqual([]);
+      expect(files.size()).toBe(0);
+      expect(queue().all()).toEqual([]);
+    });
+
+    it("goes, pictures and all, once the stop is done again", async () => {
+      const { q, a } = await refused();
+      online = false;
+      const again = await q.submit(item("Stop 1 again"));
+      expect(q.all().map((i) => i.id)).toEqual([again.id]);
+      expect(files.size()).toBe(0);
+      expect(a.files[0].id).toBeTruthy();
+    });
+  });
 });

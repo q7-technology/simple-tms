@@ -89,11 +89,14 @@ function since(iso: string): string {
   return clock(new Date(iso));
 }
 
-/** WAITING TO SEND: newest first, a row for each confirmation with its pictures in it. */
-export function WaitingList({ items }: { items: QueueItem[] }) {
+/** WAITING TO SEND: newest first, a row for each confirmation with its
+ * pictures in it. One that wasn't taken can be tried again or let go. */
+export function WaitingList({ items, onRetry, onDismiss }: {
+  items: QueueItem[]; onRetry?: (id: string) => void; onDismiss?: (id: string) => void;
+}) {
   if (items.length === 0) return null;
   const rows = waitingRows(items.slice(0, 8)).map((r) => ({
-    key: r.id, text: r.text, error: r.error,
+    key: r.id, text: r.text, error: r.error, failed: r.status === "failed",
     pill: r.status === "sent" ? <span className="pill p-green" style={{ fontSize: 11 }}>Sent {since(r.at)}</span>
       : r.status === "failed" ? <span className="pill p-red" style={{ fontSize: 11 }}>Not taken</span>
       : <span className="pill p-amber" style={{ fontSize: 11 }}>Waiting since {since(r.at)}</span>,
@@ -108,6 +111,12 @@ export function WaitingList({ items }: { items: QueueItem[] }) {
               <span style={{ fontSize: 14, fontWeight: 700 }}>{r.text}</span>{r.pill}
             </div>
             {r.error && <div className="small" style={{ color: "var(--color-red-ink)", marginTop: 4 }}>{r.error}</div>}
+            {r.failed && (onRetry || onDismiss) && (
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                {onRetry && <button type="button" className="chip" onClick={() => onRetry(r.key)}>Try again</button>}
+                {onDismiss && <button type="button" className="chip" onClick={() => onDismiss(r.key)}>Dismiss</button>}
+              </div>
+            )}
           </div>
         ))}
       </div>

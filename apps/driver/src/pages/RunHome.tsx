@@ -41,6 +41,11 @@ export function RunHome() {
                         run_id: runId, consignment_id: null, outcome: "finished" });
   }
 
+  function dismiss(id: string) {
+    if (!window.confirm("Let this go? It won't be sent, and the office won't see it. Do the stop again, or call the office.")) return;
+    void queue.dismiss(id);
+  }
+
   return (
     <Phone label={`Run ${run.run_no}`}>
       <RunTop run={run} />
@@ -72,7 +77,7 @@ export function RunHome() {
               {delivered} delivered{back ? `, ${back} back at the depot` : ""}. Thanks, {run.driver.name}.</div>
           </section>
         )}
-        <WaitingList items={items} />
+        <WaitingList items={items} onRetry={(id) => void queue.retry(id)} onDismiss={dismiss} />
         <div style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12, color: "var(--color-muted)" }}>
           <Icon name="info" size={16} width={2.2} />
           <span>Your whole run is saved on this phone, so keep going. Each confirmation has its own number, so sending it twice never records it twice.</span>

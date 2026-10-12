@@ -328,8 +328,36 @@ export class RetryQueue {
       this.listeners.forEach((fn) => fn());
       throw new Error(NOT_KEPT);
     }
+    // the stop done again: what it replaces, refused, goes, pictures and all
+    const replaced = this.items.filter((i) => i.status === "failed" && i.id !== item.id && i.driver_id === item.driver_id
+      && i.run_id === item.run_id && i.consignment_id === item.consignment_id);
+    if (replaced.length) await this.letGo(replaced);
     void this.drain();
     return item;
+  }
+
+  private async letGo(items: QueueItem[]) {
+    this.forget(items.map((i) => i.id));
+    this.saveQuietly();
+    for (const f of items.flatMap((i) => i.files)) await this.files.delete(f.id).catch(() => undefined);
+  }
+
+  /** A refused confirmation, sent again as itself (the same message_id),
+   * once whatever stopped it has been put right. */
+  async retry(id: string): Promise<void> {
+    const item = this.failed().find((i) => i.id === id);
+    if (!item) return;
+    item.status = "queued";
+    item.error = undefined;
+    item.rev = (item.rev ?? 0) + 1;
+    this.saveQuietly();
+    await this.drain();
+  }
+
+  /** A refused confirmation the driver lets go: it, and its pictures, are gone for good. */
+  async dismiss(id: string): Promise<void> {
+    const item = this.failed().find((i) => i.id === id);
+    if (item) await this.letGo([item]);
   }
 
   private fail(item: QueueItem, error: string) {
