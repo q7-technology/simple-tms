@@ -56,6 +56,34 @@ describe("today's run", () => {
     expect(starts[0]).toBe(starts[1]);
   });
 
+  it("keeps the run as the office has it once started", async () => {
+    let started = false;
+    // the phone thinks it has no signal, so the run page doesn't load the run itself
+    Object.defineProperty(navigator, "onLine", { value: false, configurable: true });
+    const { calls } = stubApi((_method, url) => {
+      if (url.startsWith("/v1/driver/runs?date=")) return json(200, [TODAY]);
+      if (url === "/v1/runs/7/stops") {
+        if (!started) return json(200, { ...RUN, status: "planned", departed_at: null });
+        // the office moved a stop while the driver was starting
+        return json(200, { ...RUN, stops: [RUN.stops[1], RUN.stops[0]] });
+      }
+      if (url === "/v1/runs/7/start") {
+        started = true;
+        return json(200, { message_id: "m", run_id: 7, run_no: "R-0007", status: "departed", departed_at: "2026-10-14T21:10:00Z" });
+      }
+      return null;
+    });
+    try {
+      renderApp("/");
+      await userEvent.setup().click(await screen.findByRole("button", { name: "Start run" }));
+      await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/run/7"));
+    } finally {
+      delete (navigator as { onLine?: boolean }).onLine;
+    }
+    expect(calls.filter((c) => c.url === "/v1/runs/7/stops")).toHaveLength(2);
+    expect(loadRun(3, 7)?.stops.map((s) => s.consignment_id)).toEqual([32, 31]);
+  });
+
   it("says when there is no run today", async () => {
     stubApi((_method, url) => (url.startsWith("/v1/driver/runs") ? json(200, []) : null));
     renderApp("/");

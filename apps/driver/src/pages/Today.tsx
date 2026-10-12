@@ -62,6 +62,10 @@ export function Today() {
         const id = (startIds.current[r.id] ??= crypto.randomUUID());
         const out = await api.post<StartOut>(`/v1/runs/${r.id}/start`, { message_id: id });
         saveRun(me, { ...whole, status: out.status, departed_at: out.departed_at });
+        // the office may have changed it meanwhile: keep the run as it left
+        try {
+          saveRun(me, await api.get<RunStops>(`/v1/runs/${r.id}/stops`));
+        } catch { /* the copy from before the start will do */ }
       }
       try { rememberCurrent(me, r.id); } catch { /* only for carrying on from memory */ }
       navigate(`/run/${r.id}`);
