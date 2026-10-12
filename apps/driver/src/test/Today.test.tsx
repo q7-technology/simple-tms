@@ -84,6 +84,52 @@ describe("today's run", () => {
     expect(loadRun(3, 7)?.stops.map((s) => s.consignment_id)).toEqual([32, 31]);
   });
 
+  describe("the phone's location", () => {
+    afterEach(() => {
+      delete (navigator as { geolocation?: unknown }).geolocation;
+      delete (navigator as { permissions?: unknown }).permissions;
+    });
+
+    function phone(state: PermissionState, calls: { url: string }[]) {
+      const asked: string[] = [];
+      Object.defineProperty(navigator, "permissions", { configurable: true,
+        value: { query: async () => ({ state }) } });
+      Object.defineProperty(navigator, "geolocation", { configurable: true,
+        value: { getCurrentPosition: (_ok: unknown, no: (e: unknown) => void) => {
+          asked.push(calls.some((c) => c.url === "/v1/runs/7/start") ? "after the start" : "before the start");
+          no({ code: 1 });
+        } } });
+      return asked;
+    }
+
+    function stub() {
+      return stubApi((_method, url) => {
+        if (url.startsWith("/v1/driver/runs?date=")) return json(200, [TODAY]);
+        if (url === "/v1/runs/7/stops") return json(200, { ...RUN, status: "planned" });
+        if (url === "/v1/runs/7/start") return json(200, { message_id: "m", run_id: 7, run_no: "R-0007", status: "departed", departed_at: null });
+        return null;
+      }).calls;
+    }
+
+    it("is asked for once the run has started, never read before", async () => {
+      const calls = stub();
+      const asked = phone("prompt", calls);
+      renderApp("/");
+      await userEvent.setup().click(await screen.findByRole("button", { name: "Start run" }));
+      await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/run/7"));
+      await waitFor(() => expect(asked).toEqual(["after the start"]));
+    });
+
+    it("isn't read at all when the driver has already said yes or no", async () => {
+      const calls = stub();
+      const asked = phone("granted", calls);
+      renderApp("/");
+      await userEvent.setup().click(await screen.findByRole("button", { name: "Start run" }));
+      await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/run/7"));
+      expect(asked).toEqual([]);
+    });
+  });
+
   it("says when there is no run today", async () => {
     stubApi((_method, url) => (url.startsWith("/v1/driver/runs") ? json(200, []) : null));
     renderApp("/");

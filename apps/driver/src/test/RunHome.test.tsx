@@ -4,7 +4,10 @@ import { json, onThePhone, renderApp, RUN, signedIn, stubApi } from "./harness";
 
 describe("between stops", () => {
   beforeEach(() => { signedIn(); onThePhone(); });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete (navigator as { permissions?: unknown }).permissions;
+  });
 
   it("works from memory with no signal, and sends what waited once it's back", async () => {
     let online = false;
@@ -70,6 +73,7 @@ describe("between stops", () => {
   });
 
   it("finishes the run once every stop is done", async () => {
+    Object.defineProperty(navigator, "permissions", { configurable: true, value: { query: async () => ({ state: "granted" }) } });
     const done = { ...RUN, stops: RUN.stops.map((s, i) => ({ ...s, outcome: i ? "failed" as const : "delivered" as const })) };
     onThePhone(done);
     const { calls } = stubApi((_method, url) => {
@@ -83,6 +87,8 @@ describe("between stops", () => {
     expect(await screen.findByText("R-0007 is finished.")).toBeInTheDocument();
     await waitFor(() => expect(calls.some((c) => c.url === "/v1/runs/7/finish")).toBe(true));
     expect(screen.getByRole("link", { name: "Back to today's runs" })).toBeInTheDocument();
+    // nothing is recorded once the run is over, so the top bar doesn't say it is
+    expect(screen.getByText("Location off")).toBeInTheDocument();
   });
 
   it("tries a confirmation that wasn't taken again, or lets it go", async () => {

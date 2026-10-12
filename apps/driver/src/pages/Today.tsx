@@ -5,7 +5,7 @@ import type { DriverRun, RunStops, StartOut } from "../api/types";
 import { useSession } from "../auth/Session";
 import { currentRun, loadRun, plural, rememberCurrent, saveRun } from "../lib/run";
 import { dayLabel, isoDay } from "../lib/time";
-import { getPosition } from "../lib/where";
+import { askForLocation } from "../lib/where";
 import { Icon } from "../ui/icons";
 import { Phone } from "../ui/kit";
 
@@ -57,11 +57,11 @@ export function Today() {
       const whole = await api.get<RunStops>(`/v1/runs/${r.id}/stops`);
       saveRun(me, whole);
       if (whole.status === "planned") {
-        // asked here, at the depot, rather than at the first drop
-        void getPosition(8000);
         const id = (startIds.current[r.id] ??= crypto.randomUUID());
         const out = await api.post<StartOut>(`/v1/runs/${r.id}/start`, { message_id: id });
         saveRun(me, { ...whole, status: out.status, departed_at: out.departed_at });
+        // the run has started: ask now, at the depot, rather than at the first drop
+        void askForLocation();
         // the office may have changed it meanwhile: keep the run as it left
         try {
           saveRun(me, await api.get<RunStops>(`/v1/runs/${r.id}/stops`));

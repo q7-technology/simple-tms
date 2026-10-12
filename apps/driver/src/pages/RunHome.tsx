@@ -48,7 +48,7 @@ export function RunHome() {
 
   return (
     <Phone label={`Run ${run.run_no}`}>
-      <RunTop run={run} />
+      <RunTop run={run} over={over} />
       <OfflineBanner online={online} waiting={waiting} />
       <Goal run={run} done={done} current={next?.consignment_id} />
       <div className="scroll">

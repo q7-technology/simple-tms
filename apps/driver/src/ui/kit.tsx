@@ -23,8 +23,9 @@ export function BackTop({ to, label, title, sub }: { to: string; label: string; 
 }
 
 /** The run, the truck, the driver and the time, and whether this phone
- * records where each drop happened. Only during a run, and it says so. */
-export function RunTop({ run }: { run: RunStops }) {
+ * records where each drop happened. Only during a run, and it says so: a
+ * finished run records nothing. */
+export function RunTop({ run, over = false }: { run: RunStops; over?: boolean }) {
   const [now, setNow] = useState(() => new Date());
   const [where, setWhere] = useState<string>("unknown");
   useEffect(() => {
@@ -32,7 +33,7 @@ export function RunTop({ run }: { run: RunStops }) {
     const t = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(t);
   }, []);
-  const on = where === "granted";
+  const on = where === "granted" && !over && run.status !== "done";
   return (
     <div className="top">
       <span className="tile"><Icon name="truck" size={22} /></span>

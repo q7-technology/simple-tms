@@ -34,3 +34,10 @@ export async function locationAllowed(): Promise<"granted" | "denied" | "prompt"
     return "unknown";
   }
 }
+
+/** Once the run has started, have the phone ask the driver (at the depot,
+ * not at the first drop). The answer is all that is wanted: where the phone
+ * is now is not kept. Asked only if the driver hasn't said yes or no. */
+export async function askForLocation(): Promise<void> {
+  if ((await locationAllowed()) === "prompt") await getPosition(8000);
+}
