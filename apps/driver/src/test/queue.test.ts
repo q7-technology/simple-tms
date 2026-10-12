@@ -1,5 +1,5 @@
 import { memoryFiles } from "../lib/files";
-import { RetryQueue, type Request } from "../lib/queue";
+import { RetryQueue, type QueueItem, type Request } from "../lib/queue";
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -271,5 +271,43 @@ describe("the offline queue", () => {
     await queue(KIM).submit(item("Stop 1"));
     await queue(MEL).submit({ ...item("Stop 1"), run_id: 9 });
     expect([...queue(null).runsInUse()].sort()).toEqual(["3.7", "4.9"]);
+  });
+
+  describe("when what is kept has been damaged", () => {
+    const aside = () => [...store.keys()].filter((k) => k.startsWith("tms.driver.queue.corrupt-"));
+
+    it("copies an unreadable queue aside before starting afresh", () => {
+      store.set("tms.driver.queue", "[{\"message_id\": \"m\", trunc");
+      const q = queue();
+      expect(q.all()).toEqual([]);
+      expect(aside()).toHaveLength(1);
+      expect(store.get(aside()[0])).toBe("[{\"message_id\": \"m\", trunc");
+    });
+
+    it("copies aside a queue that isn't a list", () => {
+      store.set("tms.driver.queue", "{\"message_id\": \"m\"}");
+      expect(queue().all()).toEqual([]);
+      expect(store.get(aside()[0])).toBe("{\"message_id\": \"m\"}");
+    });
+
+    it("drops the entries that aren't confirmations and keeps the rest", async () => {
+      online = false;
+      const good = await queue().submit(item("Stop 1"));
+      const raw = JSON.stringify([null, 5, "x", { path: "/v1/x" }, { message_id: "m" }, good]);
+      store.set("tms.driver.queue", raw);
+      const q = queue();
+      expect(q.pending().map((i) => i.message_id)).toEqual([good.message_id]);
+      expect(store.get(aside()[0])).toBe(raw);
+    });
+
+    it("gives a confirmation kept before drivers were named to the next driver who signs in", async () => {
+      online = false;
+      const old = { ...(await queue().submit(item("Stop 1"))) } as Partial<QueueItem>;
+      delete old.driver_id;
+      delete old.driver_name;
+      store.set("tms.driver.queue", JSON.stringify([old]));
+      const q = queue(MEL);
+      expect(q.pending().map((i) => [i.message_id, i.driver_id])).toEqual([[old.message_id, 4]]);
+    });
   });
 });

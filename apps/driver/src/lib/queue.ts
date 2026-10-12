@@ -106,6 +106,39 @@ export function describe(body: unknown, status: number): string {
   return typeof detail === "string" ? detail : `Simple TMS answered ${status}`;
 }
 
+/** Whatever is kept that looks like a confirmation: it has its message_id
+ * and where it goes. Anything else is dropped rather than trip the app up. */
+function confirmation(x: unknown): x is QueueItem {
+  const i = x as Partial<QueueItem> | null;
+  return !!i && typeof i === "object" && typeof i.message_id === "string" && typeof i.path === "string";
+}
+
+function tidy(i: QueueItem): QueueItem {
+  return {
+    ...i,
+    id: typeof i.id === "string" ? i.id : i.message_id,
+    body: i.body && typeof i.body === "object" ? i.body : {},
+    files: Array.isArray(i.files) ? i.files : [],
+    status: i.status === "sent" || i.status === "failed" ? i.status : "queued",
+    attempts: Number(i.attempts) || 0,
+  };
+}
+
+/** The queue as kept. One that can't be read whole is copied aside under
+ * tms.driver.queue.corrupt-<time> first, so nothing is lost for good. */
+function readItems(storage: Storage): QueueItem[] {
+  const raw = storage.get(KEY);
+  if (raw === undefined) return [];
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch { parsed = undefined; }
+  const list = Array.isArray(parsed) ? parsed : [];
+  const good = list.filter(confirmation).map(tidy);
+  if (!Array.isArray(parsed) || good.length !== list.length) {
+    try { storage.set(`${KEY}.corrupt-${Date.now()}`, raw); } catch { /* nowhere to put it */ }
+  }
+  return good;
+}
+
 async function readJson(res: Response): Promise<unknown> {
   const text = await res.text();
   try { return text ? JSON.parse(text) : null; } catch { return null; }
@@ -126,11 +159,7 @@ export class RetryQueue {
     this.files = opts.files;
     this.storage = opts.storage ?? browserStorage();
     this.online = opts.online ?? (() => typeof navigator === "undefined" || navigator.onLine);
-    try {
-      this.items = JSON.parse(this.storage.get(KEY) ?? "[]") as QueueItem[];
-    } catch {
-      this.items = [];
-    }
+    this.items = readItems(this.storage);
   }
 
   /** Kept on the phone, or it throws. */
@@ -164,7 +193,11 @@ export class RetryQueue {
   setDriver(driver: Driver | null) {
     if (driver?.id === this.driver?.id && driver?.name === this.driver?.name) return;
     this.driver = driver;
-    this.listeners.forEach((fn) => fn());
+    // kept before each confirmation named its driver: the next driver's
+    const unnamed = driver ? this.items.filter((i) => typeof i.driver_id !== "number") : [];
+    for (const i of unnamed) { i.driver_id = driver!.id; i.driver_name = driver!.name; }
+    if (unnamed.length) this.saveQuietly();
+    else this.listeners.forEach((fn) => fn());
   }
 
   private mine(): QueueItem[] {
