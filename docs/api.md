@@ -21,7 +21,7 @@ are at `/docs`.
   a `422` too. Something that is not there is `404` with `{ "detail" }`.
   Something well formed that cannot be done as things stand (a run that has
   left, a truck over its limit) is `409` with `{ "detail", "code" }`.
-- **Confirmations from the driver app** (start, deliver, fail, finish) carry a
+- **Confirmations from the driver app** (pre-start, start, deliver, fail, finish) carry a
   `message_id`, a UUID the phone makes when the confirmation is made. The
   first time, the API does the work and keeps the reply; the same
   `message_id` again from the same sender gets that reply back (status and
@@ -31,7 +31,9 @@ are at `/docs`.
   sender used for another confirmation (another action, or the same on
   another run or stop) is `409 message_id_reused`.
 - **Never deleted:** drivers and vehicles are deactivated, runs cancelled and
-  stops taken off, never deleted. A consignment's history is append-only.
+  stops taken off, never deleted. A consignment's history is append-only, and
+  so are pre-start checks and what a fleet manager records about a truck: a
+  mistake is put right by a newer record.
 
 ## Scopes
 
@@ -111,11 +113,101 @@ password, at least 12 characters, is asked for, or given with `--password`).
   of them (no paging).
 - `GET /v1/vehicles/{rego}` — the rego in the URL is read the same way, so
   `/v1/vehicles/1ab2cd` finds `1AB2CD`.
-- `PATCH /v1/vehicles/{rego}` — any of `type`, `max_kg`, `max_m3`. The rego
-  does not change.
+- `PATCH /v1/vehicles/{rego}` — any of `type`, `max_kg`, `max_m3`,
+  `service_every_months`, `service_every_km`. The rego does not change.
 - `POST /v1/vehicles/{rego}/deactivate`, `/reactivate`
 
-Each vehicle: `{ "id", "rego", "type", "max_kg", "max_m3", "active", "created_at" }`.
+`POST` and `PATCH` also take `service_every_months` (1 to 120) and
+`service_every_km` (1 to 1,000,000): how often it is serviced, whichever
+comes first. Leave both out and its service is never due. `GET` takes
+`date=YYYY-MM-DD`, the day due and overdue are judged for: the caller's
+today (the server's clock is UTC); left out, the server's date.
+
+Each vehicle, with where it stands that day:
+```json
+{ "id": 1, "rego": "TMS041", "type": "rigid", "max_kg": "4500", "max_m3": "22",
+  "active": true, "created_at": "…", "service_every_months": 6, "service_every_km": 15000,
+  "odometer_km": 61208,
+  "rego_due": { "expires_on": "2027-03-03", "days_left": 140, "state": "ok" },
+  "service_due": { "last_on": "2026-07-14", "last_km": 46900, "due_on": "2027-01-14",
+                   "due_km": 61900, "days_left": 92, "km_left": 692, "state": "due" },
+  "grounded": null,
+  "last_prestart": { "id": 12, "at": "…", "result": "passed", "by": "kim" },
+  "state": "due", "blocked": null }
+```
+Kilometres are whole numbers. `odometer_km` is the highest reading from a
+pre-start or a service since the last time a fleet manager put the reading
+right (or that reading). `rego_due` and `service_due` are each `ok`, `due`
+(30 days or 1,000 km or less), `overdue` (the day after the expiry or due
+date, or past the due kilometres) or `unknown` (nothing recorded to judge
+by: it does not stop the truck). The service falls due `service_every_months`
+after the last service's date and `service_every_km` after its reading,
+whichever comes first. `grounded` is the check that grounded it,
+`{ "check_id", "at", "failed": ["Brakes"] }`, until a fleet manager marks it
+fixed. `state` is the worst of them: `grounded`, `overdue`, `due` or `ok`.
+`blocked` is `{ "code", "message" }` when it can't take a run that day (rule
+3): `vehicle_grounded` ("TMS041 is grounded: Brakes failed the pre-start. A
+fleet manager has to mark it fixed first.") or `vehicle_overdue` ("TMS041's
+rego runs out on 3 Oct 2026. Record the new expiry in Fleet first.", or the
+service by date or kilometres).
+
+## Fleet care
+
+### Checklists
+- `GET /v1/checklists` (`fleet:read`) — each type's pre-start checklist, in
+  order: `{ "van": [{ "id": 1, "label": "Tyres", "critical": false }, …],
+  "rigid": […], "ute": […] }`. A fresh install has the design's six for each
+  type: Tyres, Lights (critical), Brakes (critical), Mirrors, Load
+  restraints, Damage.
+- `PUT /v1/checklists/{type}` (`fleet:write`) — `{ "items": [{ "label",
+  "critical"? }] }`, 1 to 30, each label once (any case): the type's whole
+  list, in order. A line with the same label and `critical` as before keeps
+  its id; the others are retired, never deleted. Each check keeps its own
+  copy of what it asked, so changing a list never changes a check.
+
+### What a fleet manager records
+`fleet:write` (managers and admins). Each is a new record with a `note`
+(required, at most 500) and answers `201`:
+```json
+{ "id": 4, "vehicle": "TMS041", "kind": "service", "check_id": null, "done_on": "2026-10-13",
+  "expires_on": null, "odometer_km": 61190, "note": "60,000 km service",
+  "recorded_by": "fleet.mgr", "recorded_at": "…" }
+```
+- `POST /v1/vehicles/{rego}/rego` — `{ "expires_on", "note" }`. The newest
+  rego record is the expiry.
+- `POST /v1/vehicles/{rego}/service` — `{ "done_on", "odometer_km"?, "note" }`.
+  The next service falls due from the newest one.
+- `POST /v1/vehicles/{rego}/odometer` — `{ "odometer_km", "note" }`: the reading
+  put right (a slip of the finger, a new odometer). Readings from before it
+  no longer count; it may be lower than them.
+- `POST /v1/vehicles/{rego}/fix` — `{ "check_id", "note" }`: what grounded it
+  is put right. `check_id` is the check the fleet manager looked at, which
+  must be the latest that grounded the truck: `409 stale` if another came in
+  meanwhile (look at it, then mark it fixed again), `409 not_grounded` if it
+  isn't grounded. It clears that check and every one before it; the checks
+  themselves never change.
+- `GET /v1/vehicles/{rego}/history?limit=50` (`fleet:read`) — its checks and
+  records, newest first: `[{ "kind": "prestart" | "fixed" | "service" | "rego"
+  | "odometer", "id", "recorded_at", "by", "note", "result", "failed",
+  "odometer_km", "done_on", "expires_on", "check_id" }]` (a check's `failed`
+  names every item that failed).
+
+### GET /v1/prestarts/{id}
+`fleet:read`. One check as the driver sent it:
+```json
+{ "id": 12, "run_id": 7, "run_no": "R-0007", "vehicle": "TMS027", "vehicle_type": "ute",
+  "driver": { "code": "tom", "name": "Tom" }, "at": "…", "recorded_at": "…",
+  "odometer_km": 84312, "result": "grounded",
+  "items": [{ "label": "Lights", "critical": true, "passed": false,
+              "note": "Left brake light out.", "photo_file": "3f2a…" }],
+  "fixed": { "id": 5, "note": "Replaced the globe, tested", "by": "fleet.mgr", "at": "…" } }
+```
+`result` is `passed`, `failed` (an item that isn't critical failed: the truck
+may go) or `grounded`. `fixed` is the record that cleared a check that
+grounded the truck, else `null`. The photos are at `GET /v1/pod-files/{id}`.
+
+Simple TMS doesn't send `vehicle.due` yet: due dates show on the desktop
+only. It comes with the first system that subscribes.
 
 ## Drivers
 
@@ -194,7 +286,8 @@ Each run:
 ```json
 {
   "id": 7, "run_no": "R-0007", "date": "2026-10-14", "status": "planned",
-  "vehicle": { "rego": "TMS041", "type": "rigid", "max_kg": "4500", "max_m3": "22", "active": true },
+  "vehicle": { "rego": "TMS041", "type": "rigid", "max_kg": "4500", "max_m3": "22", "active": true,
+               "blocked": null },
   "driver": { "code": "kim", "name": "Kim" },
   "created_by": "dee", "created_at": "2026-10-13T22:01:09.114Z", "departed_at": null,
   "finished_at": null,
@@ -205,7 +298,8 @@ Each run:
   "load": { "weight_kg": "72", "volume_m3": "0.5", "max_kg": "4500", "max_m3": "22",
             "unknown_weight": 0, "unknown_volume": 0, "state": "ok", "message": null },
   "run_sheet": null,
-  "shipping": { "pending": 0, "done": 0, "failed": 0 }
+  "shipping": { "pending": 0, "done": 0, "failed": 0 },
+  "prestart": null
 }
 ```
 `status` is `planned`, `departed`, `done` (the driver finished it) or
@@ -221,7 +315,20 @@ rounded down. `unknown_weight` and `unknown_volume` count packages with no
 weight, or without all three sides, which add nothing. `run_sheet` is the
 latest print of it (see Run sheets), `null` until it is first printed:
 `{ "job_id", "status", "printer", "last_error", "created_at", "printed_at" }`.
-`shipping` counts its ship calls to Simple WMS by state.
+`shipping` counts its ship calls to Simple WMS by state. `vehicle.blocked`
+is why its truck can't take it, on its day (see Vehicles), else `null`: a run
+planned for a truck that is then grounded stays as it is and says so.
+`prestart` is the latest pre-start of its truck for it, `{ "id", "at",
+"result" }`, else `null`.
+
+**Rule 3: a grounded or overdue truck does not go on a run.** Making a run
+for it (`POST /v1/runs`), giving a run that truck (`PATCH`), putting a stop on
+its run (`assign`), printing its run sheet while planned, and departing or
+starting it are each `409 vehicle_grounded` or `409 vehicle_overdue`, with
+the message from `blocked`. Overdue is judged for the run's own day, so a
+truck whose rego runs out on the 14th can go on the 14th but not on the 15th.
+Taking stops off, putting them in order, a new driver and cancelling are
+still allowed, and so is everything on a run that has already left.
 
 - `GET /v1/runs?date=2026-10-14` — that day's runs, oldest first, as
   `{ "items", "total" }`. Cancelled runs only with `status=cancelled` (or a
@@ -234,7 +341,8 @@ latest print of it (see Run sheets), `null` until it is first printed:
   `vehicle` or `driver`.
 - `GET /v1/runs/{id}`
 - `PATCH /v1/runs/{id}` — `vehicle` and/or `driver`, read and refused as
-  above, while it is planned (`409 run_not_planned` after).
+  above, while it is planned (`409 run_not_planned` after). Giving a run
+  whose truck can't go another truck that can is how it is mended.
 - `POST /v1/runs/{id}/cancel` — only an empty planned run: `409 run_not_empty`
   while it has stops, `409 run_not_planned` once it has departed. Cancelling a
   cancelled run is a no-op.
@@ -265,6 +373,7 @@ Each answers with the run as it now is.
 | `run_not_planned` | the run has departed or been cancelled; its stops are fixed |
 | `not_plannable` | the consignment has left or been delivered |
 | `vehicle_unavailable` | the run's truck has been deactivated |
+| `vehicle_grounded`, `vehicle_overdue` | the run's truck can't go (rule 3) |
 | `stale` | a reorder from an order that is not the run's as it is now |
 
 An unknown consignment is a `422` on `consignment_id`; an unknown run `404`.
@@ -277,7 +386,9 @@ queued for each, all in one go. Departing a departed run changes nothing and
 queues nothing more. Refused with `409`: `run_empty`, `vehicle_unavailable`,
 `over_capacity` (the detail is the run number and the load's message:
 "R-0007: 280 kg too heavy. Move a stop to another run before printing the run
-sheet."), `run_not_planned` for a cancelled run. The driver's
+sheet."), `vehicle_grounded`, `vehicle_overdue`, `run_not_planned` for a
+cancelled run. It doesn't need a pre-start: the office sends a driver
+without a phone. The driver's
 `POST /v1/runs/{id}/start` does the same.
 
 The worker then makes, for each consignment:
@@ -302,7 +413,8 @@ logged as an error naming the likely cause. Without `TMS_WMS_URL` and
 
 - `POST /v1/runs/{id}/print` → `202` with the print job. Each call prints
   again. Refused with `409`: `printing_not_set_up` (no `TMS_PLATEN_URL`),
-  `run_empty`, `run_cancelled`, `over_capacity`.
+  `run_empty`, `run_cancelled`, `over_capacity`, and for a planned run
+  `vehicle_grounded`, `vehicle_overdue`.
 
 ```json
 { "job_id": "uuid", "run_id": 7, "template": "run-sheet", "printer": "dispatch",
@@ -351,9 +463,43 @@ is UTC), not cancelled; and any of theirs from earlier days that left and
 were never finished. Only for a driver: anyone else is `403`.
 ```json
 [{ "id": 7, "run_no": "R-0007", "date": "2026-10-14", "status": "planned",
-   "vehicle": { "rego": "TMS041", "type": "rigid" },
-   "stops": 12, "packages": 46, "delivered": 0, "failed": 0 }]
+   "vehicle": { "rego": "TMS041", "type": "rigid", "odometer_km": 61208, "blocked": null },
+   "stops": 12, "packages": 46, "delivered": 0, "failed": 0,
+   "prestart": null,
+   "checklist": [{ "id": 7, "label": "Tyres", "critical": false }, …] }]
 ```
+`vehicle.odometer_km` is the truck's last reading (a new one may not be
+lower), `vehicle.blocked` why it can't take the run (see Vehicles),
+`prestart` the latest pre-start of the truck for this run, and `checklist`
+the truck's checklist as it is now.
+
+### POST /v1/runs/{id}/prestart
+The pre-start check of the run's truck, before starting:
+```json
+{ "message_id": "…", "at": "2026-10-14T06:40:00+11:00", "odometer_km": 61208,
+  "items": [{ "item_id": 7, "result": "pass" },
+            { "item_id": 11, "result": "fail", "note": "Rear strap frayed",
+              "photo_file": "…" }] }
+```
+Each item of the truck's checklist answered once (`409 checklist_changed` if
+the list has changed since: do the check again). A failed item needs a
+`note` and a `photo_file` (a photo sent first with `PUT /v1/pod-files`, by
+the same sender, not already a stop's or another item's); a passed one takes
+neither (`422`). `odometer_km` is whole kilometres and may not be lower than
+the truck's last reading (`422` on `odometer_km`). →
+```json
+{ "message_id": "…", "check_id": 12, "run_id": 7, "run_no": "R-0007", "vehicle": "TMS041",
+  "result": "failed", "failed": ["Load restraints"], "grounded": false,
+  "odometer_km": 61208, "at": "…" }
+```
+A failed critical item grounds the truck there and then (`"result":
+"grounded"`); any other failed item is kept and the truck may go
+(`"failed"`). `grounded` says whether the truck is grounded now, by this
+check or an earlier one. Taken on a planned run or one on the road (a check
+kept on the phone in a black spot still counts); `409 run_done`,
+`run_cancelled` after. Kept as sent, for good, once per `message_id`. Another
+check may follow (each is kept); a passed one never clears a grounding: only
+a fleet manager does.
 
 ### GET /v1/runs/{id}/stops
 The whole run as the phone keeps it for the day: the run's driver with
@@ -378,11 +524,15 @@ The whole run as the phone keeps it for the day: the run's driver with
 The driver is leaving: a planned run departs exactly as
 `POST /v1/runs/{id}/depart` does (history `departed` by the driver's code, a
 ship call to Simple WMS per consignment); a run that has already left is left
-as it is. `409`: `run_done`, `run_cancelled`, and depart's `run_empty`,
-`vehicle_unavailable`, `over_capacity`.
+as it is. A planned run starts only once its truck's pre-start for it is in:
+`409 prestart_needed` ("Do the pre-start check of TMS041 before starting
+R-0007.") until then. `409`: `run_done`, `run_cancelled`, `prestart_needed`,
+and depart's `run_empty`, `vehicle_unavailable`, `vehicle_grounded`,
+`vehicle_overdue`, `over_capacity`.
 
 ### PUT /v1/pod-files/{file_id}?kind=signature|photo
-A signature or a photo, sent before the confirmation that names it.
+A signature or a photo, sent before the confirmation that names it (a
+delivery, a failed delivery, or a pre-start's failed item).
 `file_id` is a UUID the phone chose when the picture was made; the body is
 the picture (`Content-Type: image/png` or `image/jpeg`). What counts is its
 first bytes: a signature is a PNG of at most 1 MB, a photo a JPEG or PNG of
@@ -452,6 +602,8 @@ left as it is.
 | `message_id_taken` | someone else sent that `message_id` |
 | `message_id_reused` | that `message_id` was used for another confirmation |
 | `file_id_taken` | that file id is already another picture |
+| `prestart_needed` | start before the truck's pre-start for the run is in |
+| `checklist_changed` | a pre-start that doesn't answer the checklist as it is now |
 
 A consignment that is not on the run is `404`.
 
