@@ -96,12 +96,16 @@ not run the TMS one: start Simple TMS with
   	handle_path /driver/* {
   		header Content-Security-Policy "default-src 'self'; img-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
   		header /sw.js Cache-Control "no-cache"
+  		@driverpage not path /assets/* /sw.js /manifest.webmanifest /favicon.svg /icon-192.png /icon-512.png
+  		header @driverpage Cache-Control "no-cache"
   		root * /path/to/simple-tms/apps/driver/dist
   		try_files {path} /index.html
   		file_server
   	}
   	handle {
   		header Content-Security-Policy "default-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+  		@desktoppage not path /assets/* /favicon.svg /region.svg
+  		header @desktoppage Cache-Control "no-cache"
   		root * /path/to/simple-tms/apps/desktop/dist
   		try_files {path} /index.html
   		file_server
@@ -149,12 +153,16 @@ not run the TMS one: start Simple TMS with
   	handle_path /driver/* {
   		header Content-Security-Policy "default-src 'self'; img-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
   		header /sw.js Cache-Control "no-cache"
+  		@driverpage not path /assets/* /sw.js /manifest.webmanifest /favicon.svg /icon-192.png /icon-512.png
+  		header @driverpage Cache-Control "no-cache"
   		root * /srv/tms-driver
   		try_files {path} /index.html
   		file_server
   	}
   	handle {
   		header Content-Security-Policy "default-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+  		@desktoppage not path /assets/* /favicon.svg /region.svg
+  		header @desktoppage Cache-Control "no-cache"
   		root * /srv/tms-desktop
   		try_files {path} /index.html
   		file_server

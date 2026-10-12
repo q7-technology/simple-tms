@@ -42,7 +42,8 @@ async function keepAssets(page) {
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
-    await cache.addAll(SHELL);
+    // past the browser's own cache, so a new worker never keeps an old page
+    await cache.addAll(SHELL.map((u) => new Request(u, { cache: "no-cache" })));
     await keepAssets(await cache.match(BASE));
     await self.skipWaiting();
   })());
@@ -68,7 +69,10 @@ self.addEventListener("fetch", (event) => {
     // the page: fresh when there is signal (and quickly), the kept one when not
     event.respondWith((async () => {
       try {
-        const res = await Promise.race([fetch(req), timeout(PAGE_WAIT_MS)]);
+        // asked of the server every time (the browser's cache may only
+        // answer once the server says it is unchanged); every route is the page
+        const res = await Promise.race([fetch(req.url, { cache: "no-cache", credentials: "same-origin" }),
+                                        timeout(PAGE_WAIT_MS)]);
         if (res.ok) {
           const cache = await caches.open(CACHE);
           await cache.put(BASE, res.clone());

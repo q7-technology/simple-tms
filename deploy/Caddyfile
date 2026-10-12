@@ -37,6 +37,10 @@ http://{$TMS_DOMAIN} {
 		header Content-Security-Policy "default-src 'self'; img-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 		# checked on every launch, so a new build reaches the phones
 		header /sw.js Cache-Control "no-cache"
+		# the page names the build's files: asked after every time, never
+		# taken from the browser's cache unchecked (any route is the page)
+		@driverpage not path /assets/* /sw.js /manifest.webmanifest /favicon.svg /icon-192.png /icon-512.png
+		header @driverpage Cache-Control "no-cache"
 		root * /srv/driver
 		try_files {path} /index.html
 		file_server
@@ -47,6 +51,9 @@ http://{$TMS_DOMAIN} {
 		# Only the desktop: the API's /docs page loads its scripts from a CDN.
 		# The build has no inline scripts or styles, and its fonts are its own.
 		header Content-Security-Policy "default-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		# the page names the build's files: asked after every time
+		@desktoppage not path /assets/* /favicon.svg /region.svg
+		header @desktoppage Cache-Control "no-cache"
 		root * /srv/desktop
 		try_files {path} /index.html
 		file_server
