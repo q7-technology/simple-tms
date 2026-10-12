@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./auth/AuthContext";
 import { RequireAuth } from "./auth/RequireAuth";
+import { Fleet } from "./pages/Fleet";
 import { MapHome } from "./pages/MapHome";
 import { PlanRuns } from "./pages/PlanRuns";
 import { Later } from "./pages/Later";
@@ -21,9 +22,7 @@ export function AppRoutes() {
           <Route path="/carriers" element={
             <Later title="Carriers" step="build step 6"
                    what="Today's carrier consignments, con note entry and the manifest." />} />
-          <Route path="/fleet" element={
-            <Later title="Fleet" step="build step 4"
-                   what="Vehicles, drivers, pre-start checks, and rego and service due." />} />
+          <Route path="/fleet" element={<Fleet />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

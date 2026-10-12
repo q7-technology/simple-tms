@@ -11,17 +11,19 @@ export function json(status: number, body: unknown) {
 export interface Call { method: string; url: string; body: unknown }
 type Handler = (method: string, url: string, body: unknown) => Response | null | Promise<Response | null>;
 
-/** Signed in as a dispatcher; `more` answers everything else, or it is a 404. */
-export function stubApi(more: Handler = () => null) {
+export const DISPATCHER = { kind: "user", id: 1, name: "dee", display_name: "Dee Dispatch", role: "dispatcher",
+                            scopes: ["fleet:read", "consignments:read", "runs:read", "runs:write"] };
+export const MANAGER = { kind: "user", id: 2, name: "fleet.mgr", display_name: "Fran Fleet", role: "manager",
+                         scopes: ["fleet:read", "fleet:write", "consignments:read", "runs:read", "runs:write"] };
+
+/** Signed in as a dispatcher (or `who`); `more` answers everything else, or it is a 404. */
+export function stubApi(more: Handler = () => null, who: object = DISPATCHER) {
   const calls: Call[] = [];
   const fetchMock = vi.fn(async (url: string, init: RequestInit = {}) => {
     const method = init.method ?? "GET";
     const body = init.body ? JSON.parse(init.body as string) : undefined;
     calls.push({ method, url, body });
-    if (url === "/v1/auth/me") {
-      return json(200, { kind: "user", id: 1, name: "dee", display_name: "Dee Dispatch", role: "dispatcher",
-                         scopes: ["fleet:read", "consignments:read", "runs:read", "runs:write"] });
-    }
+    if (url === "/v1/auth/me") return json(200, who);
     if (url === "/v1/auth/logout") return new Response(null, { status: 204 });
     const answer = await more(method, url, body);
     return answer ?? json(404, { detail: `no stub for ${method} ${url}` });

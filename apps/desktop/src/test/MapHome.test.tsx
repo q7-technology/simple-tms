@@ -25,7 +25,7 @@ describe("the map", () => {
     expect(calls.find((c) => path(c.url) === "/v1/runs")?.url).toMatch(/status=departed%2Cdone/);
     await userEvent.setup().click(screen.getByRole("link", { name: /Fleet/ }));
     expect(screen.getByTestId("where")).toHaveTextContent("/fleet");
-    expect(screen.getByText(/This screen arrives with build step 4/)).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Fleet" })).toBeInTheDocument();
   });
 
   it("signs out from the account button", async () => {
