@@ -192,9 +192,31 @@ describe("the pre-start check", () => {
     await screen.findByRole("region", { name: "Checklist for a rigid" });
     expect(screen.getByText("Last 61,000 km")).toBeInTheDocument();
     await passAll(user);
-    await user.type(screen.getByLabelText(/Odometer/), "6100");
+    const odometer = screen.getByLabelText(/Odometer/);
+    const finish = screen.getByRole("button", { name: "Finish check" });
+    // still typing: "6" on the way to "61,208" is no mistake yet
+    await user.type(odometer, "6");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(finish).toBeDisabled();
+    await user.type(odometer, "100");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    // done with the field: now it says so, and Finish stays off
+    await user.tab();
     expect(screen.getByRole("alert")).toHaveTextContent("That's less than the last reading, 61,000 km.");
-    expect(screen.getByRole("button", { name: "Finish check" })).toBeDisabled();
+    expect(finish).toBeDisabled();
+    // put right: gone while typing, and Finish goes
+    await user.type(odometer, "{Backspace>4}61,208");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(finish).toBeEnabled();
+  });
+
+  it("says a low reading when Go is pressed on the keyboard", async () => {
+    office();
+    renderApp("/");
+    const user = userEvent.setup();
+    await screen.findByRole("region", { name: "Checklist for a rigid" });
+    await user.type(screen.getByLabelText(/Odometer/), "6100{Enter}");
+    expect(screen.getByRole("alert")).toHaveTextContent("That's less than the last reading, 61,000 km.");
   });
 
   it("says why a check wasn't taken, and lets the driver do it again", async () => {

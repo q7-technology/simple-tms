@@ -43,6 +43,9 @@ export function PrestartCheck({ run }: { run: DriverRun }) {
   const lines = run.checklist ?? [];
   const last = run.vehicle.odometer_km ?? null;
   const [odometer, setOdometer] = useState("");
+  // the driver is done with the reading (left the field, or pressed Go): only
+  // then is a low one a mistake, not "6" on the way to "61,208"
+  const [entered, setEntered] = useState(false);
   const [answers, setAnswers] = useState<Record<number, Answer>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -89,12 +92,13 @@ export function PrestartCheck({ run }: { run: DriverRun }) {
                         borderRadius: 16, background: "#fff", border: "1px solid var(--color-line)" }}>
           <span style={{ flex: 1 }}>Odometer{last !== null && <span className="small" style={{ display: "block", fontWeight: 600 }}>Last {km(last)} km</span>}</span>
           <input className="num" type="text" inputMode="numeric" autoComplete="off" value={odometer}
-                 onChange={(e) => setOdometer(e.target.value)}
+                 onChange={(e) => { setOdometer(e.target.value); setEntered(false); }}
+                 onBlur={() => setEntered(true)} onKeyDown={(e) => { if (e.key === "Enter") setEntered(true); }}
                  style={{ width: 130, height: 44, padding: "0 12px", borderRadius: 12, border: "2px solid var(--color-line-2)",
                           fontSize: 17, fontWeight: 800, textAlign: "right" }} />
           <span style={{ color: "var(--color-ink-2)" }}>km</span>
         </label>
-        {backwards && <div className="msg r" role="alert">That's less than the last reading, {km(last!)} km. Check the odometer.</div>}
+        {backwards && entered && <div className="msg r" role="alert">That's less than the last reading, {km(last!)} km. Check the odometer.</div>}
         <section aria-label={`Checklist for a ${run.vehicle.type}`}
                  style={{ borderRadius: 18, background: "#fff", border: "1px solid var(--color-line)", overflow: "hidden" }}>
           <div className="lbl" style={{ padding: "10px 12px 6px" }}>{run.vehicle.type} checklist · {passed} of {lines.length} pass</div>
