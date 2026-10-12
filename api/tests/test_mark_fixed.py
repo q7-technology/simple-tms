@@ -79,3 +79,58 @@ def test_a_failed_check_that_came_in_meanwhile_is_not_cleared_unseen(client, db,
     # the one fix clears both: each check names it
     out = client.get(f"/v1/prestarts/{first}", headers=dispatcher_headers).json()
     assert out["fixed"]["note"] == "Globe and brake pads"
+
+
+def _start(client, kim, run_id):
+    return client.post(f"/v1/runs/{run_id}/start", headers=kim,
+                       json={"message_id": str(uuid.uuid4())})
+
+
+def _mine(client, kim, run_id):
+    runs = client.get("/v1/driver/runs", params={"date": DAY.isoformat()}, headers=kim).json()
+    return next(r for r in runs if r["id"] == run_id)
+
+
+def _fix(client, manager_headers, check_id):
+    r = client.post("/v1/vehicles/TMS041/fix", headers=manager_headers,
+                    json={"check_id": check_id, "note": "New globe"})
+    assert r.status_code == 201, r.text
+
+
+def test_the_check_that_grounded_the_truck_is_not_the_runs_pre_start(client, db,
+                                                                    dispatcher_headers,
+                                                                    manager_headers):
+    run, kim, check_id = _grounded(client, db, dispatcher_headers)
+    _fix(client, manager_headers, check_id)
+    # the truck is fixed, but nobody has checked it since: a fresh check first
+    assert _mine(client, kim, run["id"])["prestart"] is None
+    lane = client.get(f"/v1/runs/{run['id']}", headers=dispatcher_headers).json()
+    assert lane["prestart"] is None and lane["vehicle"]["blocked"] is None
+    r = _start(client, kim, run["id"])
+    assert r.status_code == 409 and r.json()["code"] == "prestart_needed"
+    fresh = prestart(client, kim, run["id"], message_id=uuid.uuid4())
+    assert fresh.status_code == 200 and fresh.json()["result"] == "passed"
+    assert _mine(client, kim, run["id"])["prestart"]["id"] == fresh.json()["check_id"]
+    assert _start(client, kim, run["id"]).status_code == 200
+
+
+def test_a_check_before_the_fix_does_not_count_after_it(client, db, dispatcher_headers,
+                                                         manager_headers):
+    run, _ = planned_run(client, db, dispatcher_headers)
+    kim = driver_headers(client)
+    assert prestart(client, kim, run["id"]).json()["result"] == "passed"
+    grounded = prestart(client, kim, run["id"], failed=("Brakes",), message_id=uuid.uuid4())
+    # passed while grounded: it doesn't clear it, and it isn't of the fixed truck
+    assert prestart(client, kim, run["id"], message_id=uuid.uuid4()).json()["grounded"] is True
+    _fix(client, manager_headers, grounded.json()["check_id"])
+    assert _mine(client, kim, run["id"])["prestart"] is None
+    assert _start(client, kim, run["id"]).json()["code"] == "prestart_needed"
+
+
+def test_a_failed_item_that_is_not_critical_still_counts(client, db, dispatcher_headers):
+    run, _ = planned_run(client, db, dispatcher_headers)
+    kim = driver_headers(client)
+    r = prestart(client, kim, run["id"], failed=("Load restraints",))
+    assert r.json()["result"] == "failed"
+    assert _mine(client, kim, run["id"])["prestart"]["result"] == "failed"
+    assert _start(client, kim, run["id"]).status_code == 200

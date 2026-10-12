@@ -321,8 +321,11 @@ latest print of it (see Run sheets), `null` until it is first printed:
 `shipping` counts its ship calls to Simple WMS by state. `vehicle.blocked`
 is why its truck can't take it, on its day (see Vehicles), else `null`: a run
 planned for a truck that is then grounded stays as it is and says so.
-`prestart` is the latest pre-start of its truck for it, `{ "id", "at",
-"result" }`, else `null`.
+`prestart` is the run's pre-start as Start counts it, `{ "id", "at",
+"result" }`, else `null`: the latest check of its truck for it that didn't
+ground it (`passed` or `failed`), made after that truck was last grounded and
+last marked fixed. A check that grounded the truck is never the run's
+pre-start, so once the truck is marked fixed it is `null` until a fresh check.
 
 **Rule 3: a grounded or overdue truck does not go on a run.** Making a run
 for it (`POST /v1/runs`), giving a run that truck (`PATCH`), putting a stop on
@@ -473,7 +476,9 @@ were never finished. Only for a driver: anyone else is `403`.
 ```
 `vehicle.odometer_km` is the truck's last reading (a new one may not be
 lower), `vehicle.blocked` why it can't take the run (see Vehicles),
-`prestart` the latest pre-start of the truck for this run, and `checklist`
+`prestart` the run's pre-start as Start counts it (see `GET /v1/runs/{id}`:
+never the check that grounded the truck, nor one from before it was fixed),
+and `checklist`
 the truck's checklist as it is now.
 
 ### POST /v1/runs/{id}/prestart
@@ -529,8 +534,11 @@ The driver is leaving: a planned run departs exactly as
 ship call to Simple WMS per consignment); a run that has already left is left
 as it is. A planned run starts only once its truck's pre-start for it is in:
 `409 prestart_needed` ("Do the pre-start check of TMS041 before starting
-R-0007.") until then. `409`: `run_done`, `run_cancelled`, `prestart_needed`,
-and depart's `run_empty`, `vehicle_unavailable`, `vehicle_grounded`,
+R-0007.") until then. Only a check that didn't ground the truck counts, made
+after the truck was last grounded and last marked fixed: after **Mark fixed**
+the driver checks the truck again. A grounded or overdue truck is refused
+for that (`vehicle_grounded`, `vehicle_overdue`) before any check is asked
+for. `409`: `run_done`, `run_cancelled`, `prestart_needed`, and depart's `run_empty`, `vehicle_unavailable`, `vehicle_grounded`,
 `vehicle_overdue`, `over_capacity`.
 
 ### PUT /v1/pod-files/{file_id}?kind=signature|photo

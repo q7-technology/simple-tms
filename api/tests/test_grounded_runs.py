@@ -57,7 +57,7 @@ def test_a_run_planned_for_a_truck_now_grounded_says_so_and_can_be_mended(
     run, (a, b), _ = _grounded_run(client, db, dispatcher_headers)
     lane = client.get(f"/v1/runs/{run['id']}", headers=dispatcher_headers).json()
     assert lane["vehicle"]["blocked"] == {"code": "vehicle_grounded", "message": GROUNDED}
-    assert lane["prestart"]["result"] == "grounded"
+    assert lane["prestart"] is None              # the check that grounded it is no pre-start
     # its stops can still be put in order or taken off, and the driver changed
     r = client.post(f"/v1/runs/{run['id']}/reorder", headers=dispatcher_headers,
                     json={"consignment_ids": [b.id, a.id], "seen": [a.id, b.id]})
@@ -103,7 +103,12 @@ def test_the_driver_does_the_pre_start_before_starting(client, db, dispatcher_he
     _refused(client.post(f"/v1/runs/{run['id']}/start", headers=kim, json=start))
     client.post("/v1/vehicles/TMS041/fix", headers=manager_headers,
                 json={"check_id": check["check_id"], "note": "New pads"})
-    # the same start, sent again now that the truck is fixed, goes
+    # fixed, but the check that grounded it is no pre-start: the fixed truck is checked afresh
+    r = client.post(f"/v1/runs/{run['id']}/start", headers=kim, json=start)
+    _refused(r, "prestart_needed", f"Do the pre-start check of TMS041 before starting "
+                                   f"{run['run_no']}.")
+    assert prestart(client, kim, run["id"], message_id=uuid.uuid4()).status_code == 200
+    # the same start, sent again now that the fixed truck is checked, goes
     r = client.post(f"/v1/runs/{run['id']}/start", headers=kim, json=start)
     assert r.status_code == 200 and r.json()["status"] == "departed"
 

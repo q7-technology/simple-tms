@@ -93,7 +93,7 @@ describe("the pre-start check", () => {
   });
 
   it("says plainly when a critical item grounds the truck, and offers no Start", async () => {
-    office({ prestart: { id: 2, at: "2026-10-14T19:52:00Z", result: "grounded" },
+    office({ prestart: null,
              vehicle: { ...TODAY.vehicle, blocked: { code: "vehicle_grounded", message: GROUNDED } } });
     renderApp("/");
     const user = userEvent.setup();
@@ -108,6 +108,41 @@ describe("the pre-start check", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(`${GROUNDED} Don't take it out: call the office.`);
     expect(screen.getByRole("radio", { name: /TMS041/ })).toHaveTextContent("Grounded · R-0007");
     expect(screen.queryByRole("button", { name: "Start run" })).not.toBeInTheDocument();
+  });
+
+  it("asks for a fresh check once the truck it grounded is marked fixed", async () => {
+    let state: "unchecked" | "grounded" | "fixed" = "unchecked";
+    const { calls } = stubApi((method, url) => {
+      if (url.startsWith("/v1/driver/runs?date=")) {
+        return json(200, [state === "grounded"
+          ? { ...UNCHECKED, vehicle: { ...TODAY.vehicle, blocked: { code: "vehicle_grounded", message: GROUNDED } } }
+          : UNCHECKED]);              // fixed: the check that grounded it is no pre-start
+      }
+      if (method === "PUT") return json(201, {});
+      if (url === "/v1/runs/7/prestart") {
+        state = "grounded";
+        return json(200, { check_id: 2, vehicle: "TMS041", result: "grounded", grounded: true, failed: ["Brakes"] });
+      }
+      return null;
+    });
+    renderApp("/");
+    const user = userEvent.setup();
+    await screen.findByRole("region", { name: "Checklist for a rigid" });
+    await user.type(screen.getByLabelText(/Odometer/), "61208");
+    await passAll(user, ["Brakes"]);
+    await user.click(within(screen.getByRole("radiogroup", { name: "Brakes" })).getByRole("radio", { name: "Fail" }));
+    await user.type(screen.getByLabelText("Brakes: note"), "Pedal goes to the floor.");
+    await user.upload(screen.getByLabelText(/Add a photo/), new File(["x"], "brakes.jpg", { type: "image/jpeg" }));
+    await user.click(screen.getByRole("button", { name: "Finish check" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(GROUNDED);
+    expect(screen.queryByRole("region", { name: "Checklist for a rigid" })).not.toBeInTheDocument();
+    // a fleet manager marks it fixed, and the driver looks again
+    state = "fixed";
+    await user.click(screen.getByRole("button", { name: "Look again" }));
+    expect(await screen.findByRole("region", { name: "Checklist for a rigid" })).toHaveTextContent("0 of 6 pass");
+    expect(screen.queryByText(/Your pre-start has reached the office/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start run" })).not.toBeInTheDocument();
+    expect(calls.filter((c) => c.url === "/v1/runs/7/prestart")).toHaveLength(1);
   });
 
   it("keeps a check made with no signal, and the run starts once it has gone", async () => {

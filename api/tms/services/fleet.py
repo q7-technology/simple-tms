@@ -18,7 +18,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from tms.api.errors import Conflict
-from tms.models import PrestartCheck, Vehicle, VehicleRecord
+from tms.models import PrestartCheck, Run, Vehicle, VehicleRecord
 
 DUE_DAYS = 30
 DUE_KM = 1_000
@@ -81,6 +81,24 @@ def grounding(db: Session, vehicle_id: int) -> PrestartCheck | None:
         PrestartCheck.vehicle_id == vehicle_id, PrestartCheck.result == "grounded",
         PrestartCheck.id > fixed_up_to).order_by(PrestartCheck.id.desc()).limit(1)
     ).scalar_one_or_none()
+
+
+def run_prestart(db: Session, run: Run) -> PrestartCheck | None:
+    """The run's pre-start, as Start asks for it: the latest check for the run
+    of the truck it has now that didn't ground it, made after that truck was
+    last grounded and after it was last marked fixed. The check that grounded
+    it never counts, nor one from before a fix: a fixed truck is checked
+    afresh."""
+    last_grounded = db.execute(select(func.max(PrestartCheck.id)).where(
+        PrestartCheck.vehicle_id == run.vehicle_id,
+        PrestartCheck.result == "grounded")).scalar() or 0
+    fixed = latest(db, run.vehicle_id, "fixed")
+    q = select(PrestartCheck).where(
+        PrestartCheck.run_id == run.id, PrestartCheck.vehicle_id == run.vehicle_id,
+        PrestartCheck.result != "grounded", PrestartCheck.id > last_grounded)
+    if fixed is not None:
+        q = q.where(PrestartCheck.recorded_at > fixed.recorded_at)
+    return db.execute(q.order_by(PrestartCheck.id.desc()).limit(1)).scalar_one_or_none()
 
 
 def last_check(db: Session, vehicle_id: int) -> PrestartCheck | None:

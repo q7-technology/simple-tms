@@ -51,6 +51,8 @@ export function Today() {
   const [, bump] = useState(0);
   useEffect(() => queue.subscribe(() => bump((n) => n + 1)), [queue]);
   const reloadedFor = useRef(new Set<string>());
+  // the pre-starts sent from here that the runs have been loaded again since
+  const [heard, setHeard] = useState<ReadonlySet<string>>(new Set());
 
   const load = useCallback(async () => {
     setError(null);
@@ -105,13 +107,17 @@ export function Today() {
   // the office has it now: load the run again to hear how it went
   useEffect(() => {
     if (made?.status === "sent" && !reloadedFor.current.has(made.id)) {
-      reloadedFor.current.add(made.id);
-      void load();
+      const id = made.id;
+      reloadedFor.current.add(id);
+      void load().then(() => setHeard((h) => new Set(h).add(id)));
     }
   }, [made?.status, made?.id, load]);
   // one the office took of another truck no longer counts: the run was given
-  // a new truck since, and that one needs its own check
-  const check = made && (made.status !== "sent" || (made.reply as PrestartOut | null)?.vehicle === run!.vehicle.rego
+  // a new truck since, and that one needs its own check. Nor does one that
+  // grounded the truck once it is marked fixed: the fixed truck is checked afresh
+  const reply = made?.reply as PrestartOut | null | undefined;
+  const fixedSince = reply?.result === "grounded" && heard.has(made!.id) && !blocked;
+  const check = made && (made.status !== "sent" || (reply?.vehicle === run!.vehicle.rego && !fixedSince)
                          || !!run!.prestart) ? made : undefined;
   const checkSent = check?.status === "sent" && !run?.prestart;
   const checking = run?.status === "planned" && !blocked && !run.prestart && !check;

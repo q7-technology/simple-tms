@@ -36,10 +36,8 @@ def add(db: Session, rego: str, kind: str, *, by: str, note: str, **fields) -> V
 
 
 def run_check(db: Session, run: Run) -> PrestartCheck | None:
-    """The latest pre-start for this run, of the truck it has now."""
-    return db.execute(select(PrestartCheck).where(
-        PrestartCheck.run_id == run.id, PrestartCheck.vehicle_id == run.vehicle_id)
-        .order_by(PrestartCheck.id.desc()).limit(1)).scalar_one_or_none()
+    """The run's pre-start of the truck it has now, as Start counts it."""
+    return fleet.run_prestart(db, run)
 
 
 def prestart(db: Session, who, run_id: int, *, message_id: uuid.UUID, at: datetime,
