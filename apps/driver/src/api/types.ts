@@ -15,16 +15,40 @@ export interface DriverSessionOut {
   driver: Me;
 }
 
+/** Why a truck can't take its run: grounded, or rego or service overdue. */
+export interface Blocked { code: string; message: string }
+
+/** One line of the truck's pre-start checklist. */
+export interface ChecklistLine { id: number; label: string; critical: boolean }
+
+export type CheckResult = "passed" | "failed" | "grounded";
+
 export interface DriverRun {
   id: number;
   run_no: string;
   date: string;
   status: "planned" | "departed" | "done" | "cancelled";
-  vehicle: { rego: string; type: string };
+  vehicle: { rego: string; type: string; odometer_km?: number | null; blocked?: Blocked | null };
   stops: number;
   packages: number;
   delivered: number;
   failed: number;
+  /** the latest pre-start of this truck for this run, if done */
+  prestart?: { id: number; at: string; result: CheckResult } | null;
+  checklist?: ChecklistLine[];
+}
+
+export interface PrestartOut {
+  message_id: string;
+  check_id: number;
+  run_id: number;
+  run_no: string;
+  vehicle: string;
+  result: CheckResult;
+  failed: string[];
+  grounded: boolean;
+  odometer_km: number;
+  at: string;
 }
 
 export interface ShipTo {

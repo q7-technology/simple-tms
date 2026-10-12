@@ -84,6 +84,20 @@ describe("the offline queue", () => {
     expect(files.size()).toBe(0);
   });
 
+  it("puts a picture's id inside a list when the body names it there, and leaves the caller's body alone", async () => {
+    const q = queue();
+    const items = [{ item_id: 1, result: "pass" }, { item_id: 2, result: "fail", note: "Out" }];
+    const a = await q.submit({
+      path: "/v1/runs/7/prestart", body: { odometer_km: 61208, items }, label: "Pre-start · TMS041",
+      run_id: 7, consignment_id: null, outcome: "prestart",
+      pictures: [{ kind: "photo", field: "items.1.photo_file", blob: PNG() }],
+    });
+    await q.drain();
+    expect(body(sent[1])).toEqual({ message_id: a.message_id, odometer_km: 61208, items: [
+      { item_id: 1, result: "pass" }, { item_id: 2, result: "fail", note: "Out", photo_file: a.files[0].id }] });
+    expect(items[1]).toEqual({ item_id: 2, result: "fail", note: "Out" });
+  });
+
   it("waits without signal, then sends everything in order, once each", async () => {
     online = false;
     const q = queue();

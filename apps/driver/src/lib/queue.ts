@@ -44,9 +44,9 @@ export interface QueueItem {
   files: QueuedFile[];
   label: string;
   run_id: number;
-  /** the stop it records, with what it says happened there */
+  /** the stop it records, with what it says happened there (a pre-start is the truck's) */
   consignment_id: number | null;
-  outcome: "delivered" | "failed" | "finished";
+  outcome: "delivered" | "failed" | "finished" | "prestart";
   created_at: string;
   status: "queued" | "sent" | "failed";
   attempts: number;
@@ -64,7 +64,8 @@ export interface NewItem {
   run_id: number;
   consignment_id: number | null;
   outcome: QueueItem["outcome"];
-  /** each picture, and the body field its id goes in (signature_file, photo_file) */
+  /** each picture, and the body field its id goes in (signature_file, photo_file; a
+   * dotted path into the body for one inside a list: items.4.photo_file) */
   pictures?: { kind: PictureKind; field: string; blob: Blob }[];
 }
 
@@ -102,6 +103,14 @@ function browserStorage(): Storage {
  * A 401 is not one (sign in again and it goes), nor 408 or 429. */
 function refused(status: number): boolean {
   return status >= 400 && status < 500 && status !== 401 && status !== 408 && status !== 429;
+}
+
+/** Put a picture's id where the body names it: photo_file, or items.4.photo_file. */
+function place(body: Record<string, unknown>, field: string, id: string) {
+  const keys = field.split(".");
+  let at = body as Record<string, unknown>;
+  for (const k of keys.slice(0, -1)) at = at[k] as Record<string, unknown>;
+  at[keys[keys.length - 1]] = id;
 }
 
 export function describe(body: unknown, status: number): string {
@@ -300,7 +309,8 @@ export class RetryQueue {
     const driver = this.driver;
     if (!driver) throw new Error("Sign in again to keep this on the phone.");
     const files: QueuedFile[] = [];
-    const body = { ...input.body };
+    // a copy of its own, lists and all: the ids go into it, not the caller's
+    const body = JSON.parse(JSON.stringify(input.body)) as Record<string, unknown>;
     for (const p of input.pictures ?? []) {
       const id = crypto.randomUUID();
       // on the phone before the confirmation that names it, so a reload never finds one without the other
@@ -311,7 +321,7 @@ export class RetryQueue {
         throw new Error(NOT_KEPT);
       }
       files.push({ id, kind: p.kind, sent: false });
-      body[p.field] = id;
+      place(body, p.field, id);
     }
     const item: QueueItem = {
       id: crypto.randomUUID(), message_id: crypto.randomUUID(), driver_id: driver.id, driver_name: driver.name,
