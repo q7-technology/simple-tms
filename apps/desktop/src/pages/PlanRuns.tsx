@@ -35,8 +35,13 @@ function Meter({ label, unit, g }: { label: string; unit: string; g: Gauge }) {
   );
 }
 
-/** A truck that can't take a run. Deactivated for now; grounded and overdue
- * arrive with fleet care (step 4) and use the same slot. */
+/** Why a truck can't go, in a word: grounded, overdue or deactivated. */
+function blockedWord(b: { code: string }): string {
+  return b.code === "vehicle_grounded" ? "Grounded" : "Overdue";
+}
+
+/** A truck that can't take a run: deactivated, grounded by a failed
+ * pre-start, or with its rego or service overdue on the day. */
 function Unavailable({ v, reason, detail }: { v: Vehicle; reason: string; detail: string }) {
   return (
     <section className="lane out" aria-label={`${v.rego}, unavailable`}>
@@ -142,7 +147,8 @@ export function PlanRuns() {
         api.get<Page<Run>>("/v1/runs", { date: day }),
         // packed, and any the driver couldn't deliver, back to be planned again
         api.get<Page<Consignment>>("/v1/consignments", { status: "packed,failed", limit: 2000 }),
-        api.get<Page<Vehicle>>("/v1/vehicles"),
+        // where each truck stands on the day being planned
+        api.get<Page<Vehicle>>("/v1/vehicles", { date: day }),
         api.get<Page<Driver>>("/v1/drivers", { active: true }),
       ]);
     } catch (e) {
@@ -179,7 +185,8 @@ export function PlanRuns() {
     }
   }
 
-  const planned = runs.filter((r) => r.status === "planned" && r.vehicle.active);
+  // the runs that can take stops: planned, on a truck that can go
+  const planned = runs.filter((r) => r.status === "planned" && r.vehicle.active && !r.vehicle.blocked);
   const assign = (runId: number, c: Card, position?: number) =>
     act(() => api.post(`/v1/runs/${runId}/assign`, { consignment_id: c.id, position }));
   const unassign = (runId: number, c: Card) =>
@@ -278,8 +285,13 @@ export function PlanRuns() {
 
   // ---- adding a run ---------------------------------------------------------
   const busyTrucks = new Set(runs.map((r) => r.vehicle.rego));
-  const free = vehicles.filter((v) => v.active && !busyTrucks.has(v.rego));
-  const unavailable = vehicles.filter((v) => !v.active);
+  const free = vehicles.filter((v) => v.active && !v.blocked && !busyTrucks.has(v.rego));
+  // a blocked truck with a run shows it on its lane instead
+  const unavailable = vehicles.filter((v) => !v.active || (v.blocked && !busyTrucks.has(v.rego)));
+
+  /** A run whose truck can't go, given one that can. */
+  const swap = (run: Run, rego: string) =>
+    act(() => api.patch(`/v1/runs/${run.id}`, { vehicle: rego }), `${run.run_no} goes on ${rego} now.`);
 
   function addRun(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -369,11 +381,15 @@ export function PlanRuns() {
         {runs.map((run, i) => {
           const colour = runColour(i);
           const open = run.status === "planned";
+          const blocked = run.vehicle.blocked ?? null;
+          // a planned run on a truck that can't go takes no more stops
+          const takes = open && run.vehicle.active && !blocked;
           const l = loadOf(run.stops.map((s) => s.consignment), run.vehicle.max_kg, run.vehicle.max_m3);
           const ids = run.stops.map((s) => s.consignment.id);
           const others = planned.filter((r) => r.id !== run.id);
           const sheet = sheetLine(run);
-          const pill = run.status === "done" ? <span className="pill p-grey">Done</span>
+          const pill = open && blocked ? <span className="pill p-red"><Icon name="ban" size={13} width={2.4} />{blockedWord(blocked)}</span>
+            : run.status === "done" ? <span className="pill p-grey">Done</span>
             : !open ? <span className="pill p-grey">Departed</span>
             : l.state === "over" ? <span className="pill p-red">Over</span>
             : l.state === "near" ? <span className="pill p-amber">Nearly full</span>
@@ -383,11 +399,19 @@ export function PlanRuns() {
           return (
             <section key={run.id} aria-label={`Run ${run.run_no}`}
                      className={`lane${l.state === "over" ? " over" : l.state === "near" ? " near" : ""}${hint ? " target" : ""}`}
-                     onDragOver={open && run.vehicle.active ? (e) => overRun(e, run) : undefined}
-                     onDrop={open && run.vehicle.active ? (e) => dropOnRun(e, run) : undefined}>
+                     onDragOver={takes ? (e) => overRun(e, run) : undefined}
+                     onDrop={takes ? (e) => dropOnRun(e, run) : undefined}>
               <div className="lhead"><span className="swatch" style={{ background: colour }} />
                 <div style={{ flex: 1, minWidth: 0 }}><div className="t">{run.run_no} · {run.driver.name}</div>
                   <div className="s">{run.vehicle.rego} · {run.vehicle.type}</div></div>{pill}</div>
+              {blocked && run.status !== "done" && (
+                <div className="msg r" role="status"><Icon name="ban" size={14} width={2.4} /><span><b>{blocked.message}</b>
+                  {open ? " Give the run another truck, or move its stops to another run." : " It is out on this run: call the driver."}</span></div>)}
+              {open && blocked && free.length > 0 && (
+                <ActionSelect label={`Give ${run.run_no} another truck`} placeholder="Another truck…" disabled={busy}
+                              onChoose={(rego) => void swap(run, rego)}>
+                  {free.map((v) => <option key={v.rego} value={v.rego}>{v.rego} · {v.type}</option>)}
+                </ActionSelect>)}
               <Meter label="Weight" unit="kg" g={l.weight} />
               <Meter label="Volume" unit="m³" g={l.volume} />
               {l.state === "over" && <div className="msg r"><Icon name="warn" size={14} width={2.4} /><span><b>{l.headline}</b> {l.message}</span></div>}
@@ -440,6 +464,10 @@ export function PlanRuns() {
               {(run.load.unknown_weight > 0 || run.load.unknown_volume > 0) && (
                 <div className="small">Some packages have no weight or size, so the bars may read low.</div>)}
               {sheet && <div className={`msg ${sheet.tone}`}>{sheet.text}</div>}
+              {open && !blocked && (
+                <div className="small">{run.prestart
+                  ? `Pre-start ${clock(new Date(run.prestart.at))}: ${run.prestart.result === "passed" ? "passed" : "an item failed"}.`
+                  : "No pre-start yet."}</div>)}
               {!open && <div className="small">{tripLine(run)}</div>}
               {!open && (
                 <div className="small">Marked shipped in Simple WMS: {run.shipping.done} of {run.shipping.done + run.shipping.pending + run.shipping.failed}.</div>)}
@@ -449,11 +477,11 @@ export function PlanRuns() {
                           onClick={() => void act(() => api.post(`/v1/runs/${run.id}/retry-ship`), "Trying Simple WMS again.")}>Try again</button></div>)}
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {run.stops.length > 0 && (
-                  <button type="button" className="btn sm" disabled={busy || l.state === "over"}
+                  <button type="button" className="btn sm" disabled={busy || l.state === "over" || (open && !!blocked)}
                           onClick={() => void act(() => api.post(`/v1/runs/${run.id}/print`), `${run.run_no} run sheet sent to Platen.`)}>
                     <Icon name="print" size={14} />Print</button>)}
                 {open && run.stops.length > 0 && (
-                  <button type="button" className="btn sm primary" disabled={busy || l.state === "over"} onClick={() => depart(run)}>
+                  <button type="button" className="btn sm primary" disabled={busy || l.state === "over" || !!blocked} onClick={() => depart(run)}>
                     Leaves now<Icon name="go" size={14} width={2.4} /></button>)}
                 {run.status === "departed" && can("runs:write") && run.stops.length > 0
                   && run.stops.every((s) => s.outcome) && (
@@ -470,8 +498,10 @@ export function PlanRuns() {
         {unavailable.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {unavailable.map((v) => (
-              <Unavailable key={v.rego} v={v} reason="Deactivated"
-                           detail="Can't take a run until a fleet manager reactivates it." />))}
+              v.active && v.blocked
+                ? <Unavailable key={v.rego} v={v} reason={blockedWord(v.blocked)} detail={v.blocked.message} />
+                : <Unavailable key={v.rego} v={v} reason="Deactivated"
+                               detail="Can't take a run until a fleet manager reactivates it." />))}
           </div>
         )}
       </div></div>

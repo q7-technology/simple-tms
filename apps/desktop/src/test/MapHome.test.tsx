@@ -28,6 +28,20 @@ describe("the map", () => {
     expect(screen.getByRole("dialog", { name: "Fleet" })).toBeInTheDocument();
   });
 
+  it("counts on the Fleet button the trucks that can't take a run today", async () => {
+    const { calls } = stubApi((_m, url) => {
+      if (path(url) === "/v1/vehicles") {
+        return json(200, { items: [{ rego: "TMS027", active: true, state: "grounded" }, { rego: "TMS018", active: true, state: "due" },
+                                   { rego: "TMS041", active: true, state: "overdue" }], total: 3 });
+      }
+      return json(200, { items: [], total: 0 });
+    });
+    renderApp("/");
+    const fleet = await screen.findByRole("link", { name: /Fleet/ });
+    await waitFor(() => expect(fleet).toHaveTextContent("Fleet2"));
+    expect(calls.find((c) => path(c.url) === "/v1/vehicles")!.url).toMatch(/active=true/);
+  });
+
   it("signs out from the account button", async () => {
     const { calls } = stubApi(() => json(200, { items: [], total: 0 }));
     renderApp("/");

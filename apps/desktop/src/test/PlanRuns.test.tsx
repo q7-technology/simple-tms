@@ -326,4 +326,53 @@ describe("Plan runs", () => {
     expect(await screen.findByText("R-0001 is finished.")).toBeInTheDocument();
     confirm.mockRestore();
   });
+
+  describe("a truck that can't go (rule 3)", () => {
+    const GROUNDED = { code: "vehicle_grounded",
+                       message: "TMS041 is grounded: Brakes failed the pre-start. A fleet manager has to mark it fixed first." };
+    const FLEET = [
+      { id: 1, rego: "TMS041", type: "rigid", max_kg: "4500", max_m3: "22", active: true, blocked: GROUNDED },
+      { id: 2, rego: "TMS052", type: "rigid", max_kg: "4500", max_m3: "22", active: true, blocked: null },
+      { id: 3, rego: "TMS063", type: "van", max_kg: "1200", max_m3: "9", active: true, blocked: null },
+      { id: 4, rego: "TMS018", type: "van", max_kg: "1200", max_m3: "9", active: true,
+        blocked: { code: "vehicle_overdue", message: "TMS018's rego runs out on 10 Oct 2026. Record the new expiry in Fleet first." } },
+    ];
+    // the check that grounded it is never the run's pre-start (the API gives null)
+    const grounded = { ...KIM, vehicle: { ...KIM.vehicle, blocked: GROUNDED }, prestart: null };
+    const checked = { ...MEL, prestart: { id: 9, at: "2026-10-13T19:52:00Z", result: "failed" as const } };
+
+    it("says so on its run's lane, takes nothing more on it, and gives the run another truck", async () => {
+      const { calls } = board({
+        "GET /v1/runs": () => json(200, { items: [grounded, checked], total: 2 }),
+        "GET /v1/vehicles": () => json(200, { items: FLEET, total: 4 }),
+      });
+      renderApp("/plan");
+      const kim = await lane("Run R-0001");
+      expect(within(kim).getByText("Grounded")).toBeInTheDocument();
+      expect(within(kim).getByText(GROUNDED.message)).toBeInTheDocument();
+      expect(within(kim).getByText(/Give the run another truck, or move its stops/)).toBeInTheDocument();
+      // its lane says why it can't go; it doesn't ask for a pre-start as well
+      expect(within(kim).queryByText(/pre-start yet|^Pre-start /)).not.toBeInTheDocument();
+      expect(within(await lane("Run R-0002")).getByText(/^Pre-start .*: an item failed\.$/)).toBeInTheDocument();
+      expect(within(kim).getByRole("button", { name: /Leaves now/ })).toBeDisabled();
+      expect(within(kim).getByRole("button", { name: /Print/ })).toBeDisabled();
+      // the tray offers only the runs that can take stops
+      const put = screen.getByRole("combobox", { name: "Put Paddock Produce on a run" });
+      expect(within(put).queryByRole("option", { name: /R-0001/ })).not.toBeInTheDocument();
+      // the overdue truck with no run waits with the ones that can't go; it isn't free
+      expect(within(await lane("TMS018, unavailable")).getByText("Overdue")).toBeInTheDocument();
+      expect(screen.getByText(/1 truck free: TMS063/)).toBeInTheDocument();
+      await userEvent.setup().selectOptions(within(kim).getByRole("combobox", { name: "Give R-0001 another truck" }), "TMS063");
+      await waitFor(() => expect(calls.find((c) => c.method === "PATCH")).toEqual(
+        { method: "PATCH", url: "/v1/runs/1", body: { vehicle: "TMS063" } }));
+    });
+
+    it("asks for the trucks as they stand on the day being planned", async () => {
+      const { calls } = board();
+      renderApp("/plan");
+      await lane("Run R-0001");
+      expect(calls.find((c) => path(c.url) === "/v1/vehicles")!.url).toMatch(/^\/v1\/vehicles\?date=\d{4}-\d{2}-\d{2}$/);
+      expect(within(await lane("Run R-0001")).getByText("No pre-start yet.")).toBeInTheDocument();
+    });
+  });
 });

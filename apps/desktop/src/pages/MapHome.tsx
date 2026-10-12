@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
-import type { Page, Run } from "../api/types";
+import type { Page, Run, Vehicle } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { clock, isoDay } from "../lib/days";
+import { cantGo } from "../lib/fleet";
 import { DrawerBoundary } from "../ui/DrawerBoundary";
 import { Icon, Logo } from "../ui/icons";
 
@@ -24,6 +25,8 @@ export function MapHome() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [counts, setCounts] = useState<Counts | null>(null);
+  // trucks grounded or overdue today: a person needs to look
+  const [stuck, setStuck] = useState(0);
   const [now, setNow] = useState(() => new Date());
   const [menu, setMenu] = useState(false);
   const [q, setQ] = useState("");
@@ -38,6 +41,9 @@ export function MapHome() {
         (n, run) => n + run.stops.filter((s) => s.outcome === "delivered").length, 0);
       setCounts({ toPlan, onRoad, delivered });
     } catch { /* the numbers wait for the next go */ }
+    try {
+      setStuck(cantGo((await api.get<Page<Vehicle>>("/v1/vehicles", { date: isoDay(new Date()), active: true })).items));
+    } catch { /* so does this one */ }
   }, []);
 
   useEffect(() => {
@@ -105,7 +111,8 @@ export function MapHome() {
           </NavLink>
           <NavLink to="/consignments" className={({ isActive }) => (isActive ? "on" : "")}><Icon name="box" />Consignments</NavLink>
           <NavLink to="/carriers" className={({ isActive }) => (isActive ? "on" : "")}><Icon name="hand" />Carriers</NavLink>
-          <NavLink to="/fleet" className={({ isActive }) => (isActive ? "on" : "")}><Icon name="truck" />Fleet</NavLink>
+          <NavLink to="/fleet" className={({ isActive }) => (isActive ? "on" : "")}><Icon name="truck" />Fleet
+            {stuck > 0 && <i className="r" title={`${stuck} can't take a run`}>{stuck}</i>}</NavLink>
         </nav>
       </main>
       <DrawerBoundary key={pathname}><Outlet context={{ reloadCounts: load }} /></DrawerBoundary>
