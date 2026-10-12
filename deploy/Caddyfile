@@ -50,7 +50,9 @@ http://{$TMS_DOMAIN} {
 	handle {
 		# Only the desktop: the API's /docs page loads its scripts from a CDN.
 		# The build has no inline scripts or styles, and its fonts are its own.
-		header Content-Security-Policy "default-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		# Pre-start photos are fetched with the session's token and shown
+		# from blob: URLs.
+		header Content-Security-Policy "default-src 'self'; img-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 		# the page names the build's files: asked after every time
 		@desktoppage not path /assets/* /favicon.svg /region.svg
 		header @desktoppage Cache-Control "no-cache"

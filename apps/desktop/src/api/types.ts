@@ -36,6 +36,13 @@ export interface Consignment {
   packages: Package[];
 }
 
+/** Why a truck can't take a run on a day: grounded, or rego or service overdue. */
+export interface Blocked { code: "vehicle_grounded" | "vehicle_overdue" | string; message: string }
+
+export type DueState = "ok" | "due" | "overdue" | "unknown";
+export type CheckResult = "passed" | "failed" | "grounded";
+
+/** A vehicle, and (from step 4) where it stands on the day asked about. */
 export interface Vehicle {
   id: number;
   rego: string;
@@ -43,6 +50,47 @@ export interface Vehicle {
   max_kg: string;
   max_m3: string;
   active: boolean;
+  service_every_months?: number | null;
+  service_every_km?: number | null;
+  odometer_km?: number | null;
+  rego_due?: { expires_on: string | null; days_left: number | null; state: DueState };
+  service_due?: { last_on: string | null; last_km: number | null; due_on: string | null; due_km: number | null;
+                  days_left: number | null; km_left: number | null; state: DueState };
+  grounded?: { check_id: number; at: string; failed: string[] } | null;
+  last_prestart?: { id: number; at: string; result: CheckResult; by: string } | null;
+  state?: "ok" | "due" | "overdue" | "grounded";
+  blocked?: Blocked | null;
+}
+
+/** One pre-start check as the driver sent it (GET /v1/prestarts/{id}). */
+export interface PrestartDetail {
+  id: number;
+  run_id: number;
+  run_no: string;
+  vehicle: string;
+  vehicle_type: string;
+  driver: { code: string; name: string } | null;
+  at: string;
+  recorded_at: string;
+  odometer_km: number;
+  result: CheckResult;
+  items: { label: string; critical: boolean; passed: boolean; note: string | null; photo_file: string | null }[];
+  fixed: { id: number; note: string; by: string; at: string } | null;
+}
+
+/** A line of a truck's history, newest first (GET /v1/vehicles/{rego}/history). */
+export interface HistoryItem {
+  kind: "prestart" | "fixed" | "service" | "rego" | "odometer";
+  id: number;
+  recorded_at: string;
+  by: string;
+  note: string | null;
+  result: CheckResult | null;
+  failed: string[];
+  odometer_km: number | null;
+  done_on: string | null;
+  expires_on: string | null;
+  check_id: number | null;
 }
 
 export interface Driver {
@@ -79,7 +127,7 @@ export interface Run {
   run_no: string;
   date: string;
   status: "planned" | "departed" | "done" | "cancelled";
-  vehicle: { rego: string; type: string; max_kg: string; max_m3: string; active: boolean };
+  vehicle: { rego: string; type: string; max_kg: string; max_m3: string; active: boolean; blocked?: Blocked | null };
   driver: { code: string; name: string };
   created_by: string;
   created_at: string;
@@ -94,4 +142,8 @@ export interface Run {
   };
   run_sheet: RunSheet | null;
   shipping: { pending: number; done: number; failed: number };
+  /** the run's pre-start as Start counts it: the latest check of its truck
+   * for it that didn't ground it, made since the truck was last grounded
+   * and last marked fixed; else null */
+  prestart?: { id: number; at: string; result: CheckResult } | null;
 }

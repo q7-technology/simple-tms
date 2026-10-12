@@ -55,6 +55,18 @@ describe("ApiClient", () => {
     expect(client.session?.refresh_token).toBe("r2");
   });
 
+  it("fetches a picture with the token, refreshing once on a 401", async () => {
+    client.setSession({ token: "old", refresh_token: "r1", expires_in: 900 });
+    answers.push(json(401, {}));
+    answers.push(json(200, { token: "new", refresh_token: "r2", expires_in: 900 }));
+    answers.push(new Response(new Uint8Array([0xff, 0xd8, 0xff]), { status: 200, headers: { "Content-Type": "image/jpeg" } }));
+    const picture = await client.blob("/v1/pod-files/3f2a");
+    expect(picture.type).toBe("image/jpeg");
+    expect(new Headers(calls[2].init.headers).get("Authorization")).toBe("Bearer new");
+    answers.push(json(404, { detail: "no file" }));
+    await expect(client.blob("/v1/pod-files/nope")).rejects.toThrow("That picture couldn't be loaded (404).");
+  });
+
   it("signs out when the refresh fails too", async () => {
     const signedOut = vi.fn();
     client.onSignedOut = signedOut;

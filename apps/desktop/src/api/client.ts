@@ -166,6 +166,24 @@ export class ApiClient {
     return parsed as T;
   }
 
+  /** A picture (a pre-start photo) as bytes, with the session's token: an
+   * <img> can't send one, so the page shows it from a blob: URL. */
+  async blob(path: string, retry = true): Promise<Blob> {
+    const headers: Record<string, string> = {};
+    if (this.session?.token) headers.Authorization = `Bearer ${this.session.token}`;
+    let res: Response;
+    try {
+      res = await this.fetcher(path, { method: "GET", headers });
+    } catch {
+      throw new Unreachable();
+    }
+    if (res.status === 401 && retry && this.session?.refresh_token) {
+      if (await this.refresh()) return this.blob(path, false);
+    }
+    if (!res.ok) throw new ApiError(res.status, { detail: `That picture couldn't be loaded (${res.status}).` });
+    return res.blob();
+  }
+
   get<T>(path: string, params?: Record<string, string | number | boolean | null | undefined>) {
     const qs = params
       ? Object.entries(params)
