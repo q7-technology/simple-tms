@@ -32,10 +32,21 @@ describe("the driver's API client", () => {
     const out = vi.fn();
     api.onSignedOut = out;
     await api.get("/v1/driver/runs").catch(() => undefined);
-    await api.send({ method: "POST", path: "/v1/runs/7/finish", body: "{}", contentType: "application/json" });
+    api.driverId = 3;
+    await api.send({ method: "POST", path: "/v1/runs/7/finish", body: "{}", contentType: "application/json", driver_id: 3 });
     expect(out).toHaveBeenCalledTimes(2);
     // a wrong PIN is not a session ending
     await api.post("/v1/auth/driver-login", { code: "kim", pin: "0000" }).catch(() => undefined);
     expect(out).toHaveBeenCalledTimes(2);
+  });
+
+  it("never sends one driver's confirmation with another's sign-in", async () => {
+    const seen: string[] = [];
+    const api = new DriverApi(async (url) => { seen.push(url); return json(200, {}); });
+    api.token = "tms_d.mel";
+    api.driverId = 4;
+    const req = { method: "POST" as const, path: "/v1/runs/7/finish", body: "{}", contentType: "application/json", driver_id: 3 };
+    await expect(api.send(req)).rejects.toThrow(/signed in/);
+    expect(seen).toEqual([]);
   });
 });

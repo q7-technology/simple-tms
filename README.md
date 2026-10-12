@@ -260,6 +260,12 @@ another). `npm test` runs its tests and `npm run typecheck` its type check.
 The service worker (the app opening with no signal) is only in the build,
 not in `npm run dev`.
 
+**A phone two drivers share.** What a driver confirms waits on the phone
+for that driver: it is sent only while they are signed in, with their own
+sign-in. If someone else signs in meanwhile, Today says whose confirmations
+are waiting, and they go when that driver signs in again. Each driver's copy
+of their run is kept apart, so nobody sees another driver's run.
+
 **Through Caddy on this computer.** At `https://localhost:8543/driver/` (with
 `TMS_HTTPS_PORT=8543`) the app works, but the browser won't register its
 service worker over a certificate it doesn't trust, and Caddy's local one

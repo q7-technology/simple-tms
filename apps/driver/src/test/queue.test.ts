@@ -14,8 +14,10 @@ describe("the offline queue", () => {
   let store: Map<string, string>;
   let files: ReturnType<typeof memoryFiles>;
 
-  function queue() {
-    return new RetryQueue({
+  const KIM = { id: 3, name: "Kim" };
+  const MEL = { id: 4, name: "Mel" };
+  function queue(driver: { id: number; name: string } | null = KIM) {
+    const q = new RetryQueue({
       send: async (req) => {
         sent.push(req);
         const a = answers.shift() ?? json(200, { ok: true });
@@ -26,6 +28,8 @@ describe("the offline queue", () => {
       storage: { get: (k) => store.get(k), set: (k, v) => store.set(k, v) },
       online: () => online,
     });
+    q.setDriver(driver);
+    return q;
   }
   const body = (r: Request) => JSON.parse(r.body as string);
   const item = (label: string, consignment_id = 1) => ({
@@ -54,9 +58,11 @@ describe("the offline queue", () => {
 
   it("keeps what waits in the browser's localStorage when given no other store", async () => {
     const q = new RetryQueue({ send: async () => json(200, {}), files, online: () => false });
+    q.setDriver(KIM);
     const a = await q.submit(item("Stop 1"));
     expect(JSON.parse(window.localStorage.getItem("tms.driver.queue")!)[0].message_id).toBe(a.message_id);
     const reloaded = new RetryQueue({ send: async () => json(200, {}), files, online: () => false });
+    reloaded.setDriver(KIM);
     expect(reloaded.pending().map((i) => i.message_id)).toEqual([a.message_id]);
   });
 
@@ -188,5 +194,62 @@ describe("the offline queue", () => {
     online = true;
     await Promise.all([q.drain(), q.drain(), q.drain()]);
     expect(sent).toHaveLength(2);
+  });
+
+  describe("belongs to the driver who made it, not the phone", () => {
+    it("keeps who made each confirmation, and sends it with their sign-in only", async () => {
+      online = false;
+      const kims = queue(KIM);
+      const a = await kims.submit({ ...item("Stop 1"), pictures: [{ kind: "photo", field: "photo_file", blob: PNG() }] });
+      expect(a.driver_id).toBe(3);
+      expect(sent).toHaveLength(0);
+
+      // Mel signs in on the same phone
+      online = true;
+      const mels = queue(MEL);
+      expect(await mels.drain()).toBe(0);
+      expect(sent).toHaveLength(0);
+      expect(mels.pending()).toEqual([]);
+      expect(mels.all()).toEqual([]);
+      expect(mels.othersWaiting()).toEqual([{ driver_id: 3, name: "Kim", count: 1 }]);
+
+      // and Kim again
+      mels.setDriver(KIM);
+      expect(await mels.drain()).toBe(1);
+      expect(sent.map((r) => r.driver_id)).toEqual([3, 3]);
+      expect(mels.othersWaiting()).toEqual([]);
+    });
+
+    it("sends nothing with nobody signed in", async () => {
+      online = false;
+      await queue(KIM).submit(item("Stop 1"));
+      online = true;
+      expect(await queue(null).drain()).toBe(0);
+      expect(sent).toHaveLength(0);
+    });
+
+    it("stops sending a driver's confirmations the moment they sign out", async () => {
+      online = false;
+      const q = queue(KIM);
+      await q.submit(item("Stop 1", 1));
+      await q.submit(item("Stop 2", 2));
+      online = true;
+      let first = true;
+      const signedOut = new RetryQueue({
+        send: async (req) => {
+          sent.push(req);
+          if (first) { first = false; signedOut.setDriver(MEL); }
+          return json(200, {});
+        },
+        files, storage: { get: (k) => store.get(k), set: (k, v) => store.set(k, v) }, online: () => true,
+      });
+      signedOut.setDriver(KIM);
+      expect(await signedOut.drain()).toBe(1);
+      expect(sent).toHaveLength(1);
+    });
+
+    it("can't be made with nobody signed in", async () => {
+      await expect(queue(null).submit(item("Stop 1"))).rejects.toThrow(/Sign in/);
+    });
   });
 });

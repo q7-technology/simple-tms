@@ -34,10 +34,13 @@ export function stubApi(answer: Handler = () => null) {
   return { calls };
 }
 
-export function signedIn() {
+export const KIM = { id: 3, code: "kim", name: "Kim" };
+export const MEL = { id: 4, code: "mel", name: "Mel" };
+
+export function signedIn(who: { id: number; code: string; name: string } = KIM) {
   window.localStorage.setItem("tms.driver.session", JSON.stringify({
-    token: "tms_d.test", expires_at: Date.now() + 3_600_000,
-    driver: { kind: "driver", id: 3, name: "kim", display_name: "Kim", role: "driver",
+    token: `tms_d.${who.code}`, expires_at: Date.now() + 3_600_000,
+    driver: { kind: "driver", id: who.id, name: who.code, display_name: who.name, role: "driver",
               scopes: ["fleet:read", "deliveries:read", "deliveries:write"] },
   }));
 }
@@ -46,9 +49,10 @@ function Where() {
   return <output data-testid="where">{useLocation().pathname}</output>;
 }
 
-export function renderApp(path: string, opts: { online?: () => boolean } = {}) {
+export function renderApp(path: string, opts: { online?: () => boolean; queue?: RetryQueue } = {}) {
   api.token = null;
-  const queue = new RetryQueue({ send: (r) => api.send(r), files: memoryFiles(), online: opts.online ?? (() => true) });
+  const queue = opts.queue
+    ?? new RetryQueue({ send: (r) => api.send(r), files: memoryFiles(), online: () => (opts.online ?? (() => true))() });
   render(
     <MemoryRouter initialEntries={[path]}>
       <SessionProvider queue={queue}>
@@ -60,7 +64,7 @@ export function renderApp(path: string, opts: { online?: () => boolean } = {}) {
   return { queue };
 }
 
-/** The run already on the phone, as starting it leaves it. */
-export function onThePhone(run: RunStops = RUN) {
-  saveRun(run);
+/** The run already on the phone, as starting it leaves it (Kim's unless said). */
+export function onThePhone(run: RunStops = RUN, driverId = KIM.id) {
+  saveRun(driverId, run);
 }

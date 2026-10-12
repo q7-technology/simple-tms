@@ -18,9 +18,10 @@ export function Proof() {
   const params = useParams();
   const runId = Number(params.runId);
   const consignmentId = Number(params.consignmentId);
-  const { queue } = useSession();
+  const { queue, driver } = useSession();
+  const me = driver!.id;
   const items = useQueueItems(runId);
-  const run = loadRun(runId);
+  const run = loadRun(me, runId);
   const stop = run ? stopOf(run, consignmentId) : null;
   const canvas = useRef<HTMLCanvasElement | null>(null);
   const [signed, setSigned] = useState(false);
@@ -30,7 +31,7 @@ export function Proof() {
   const [error, setError] = useState<string | null>(null);
   const [ding, setDing] = useState<Dinged | null>(null);
   // as the stop page left them: cleared on the phone once the delivery is kept
-  const [ticks] = useState(() => loadTicks(runId, consignmentId));
+  const [ticks] = useState(() => loadTicks(me, runId, consignmentId));
 
   if (!run || !stop) return <Navigate to="/" replace />;
   const back = `/run/${runId}/stop/${consignmentId}`;
@@ -59,7 +60,7 @@ export function Proof() {
         label: `Stop ${stop.sequence} · delivered · ${plural(stop.packages.length, "carton")}`,
         run_id: runId, consignment_id: consignmentId, outcome: "delivered", pictures,
       });
-      saveTicks(runId, consignmentId, {});
+      saveTicks(me, runId, consignmentId, {});
       const done = outcomes(run, queue.forRun(runId));
       setDing({ sequence: stop.sequence, doneCount: done.size, cartons: stop.packages.length,
                 by: withSignature ? `signed by ${name.trim()}` : "photo taken", at });

@@ -7,7 +7,11 @@
  * A confirmation may carry pictures (a signature, a photo). They go first,
  * each to PUT /v1/pod-files/{id} under an id chosen when it was taken, so
  * sending one twice is harmless too; then the confirmation that names them.
- * The pictures wait in a FileStore; the rest in localStorage. */
+ * The pictures wait in a FileStore; the rest in localStorage.
+ *
+ * The queue belongs to the driver, not the phone: each confirmation keeps who
+ * made it, and is sent only while that driver is signed in, with their own
+ * sign-in. Another driver on the same phone sees how many wait, and whose. */
 import type { FileStore } from "./files";
 
 export type PictureKind = "signature" | "photo";
@@ -18,9 +22,17 @@ export interface QueuedFile {
   sent: boolean;
 }
 
+export interface Driver {
+  id: number;
+  name: string;
+}
+
 export interface QueueItem {
   id: string;
   message_id: string;
+  /** who made it: only their sign-in sends it */
+  driver_id: number;
+  driver_name: string;
   path: string;
   body: Record<string, unknown>;
   files: QueuedFile[];
@@ -53,6 +65,8 @@ export interface Request {
   path: string;
   body: string | Blob;
   contentType: string;
+  /** the driver whose confirmation this is: sent with their sign-in or not at all */
+  driver_id?: number;
 }
 type Sender = (req: Request) => Promise<Response>;
 interface Storage {
@@ -95,6 +109,7 @@ export class RetryQueue {
   private storage: Storage;
   private online: () => boolean;
   private draining: Promise<number> | null = null;
+  private driver: Driver | null = null;
   private listeners = new Set<() => void>();
 
   constructor(opts: { send: Sender; files: FileStore; storage?: Storage; online?: () => boolean }) {
@@ -125,14 +140,41 @@ export class RetryQueue {
     return () => { this.listeners.delete(fn); };
   }
 
-  /** Newest first. */
-  all(): QueueItem[] { return this.items.slice().reverse(); }
-  pending(): QueueItem[] { return this.items.filter((i) => i.status === "queued"); }
-  failed(): QueueItem[] { return this.items.filter((i) => i.status === "failed"); }
+  /** Who is signed in: only their confirmations are shown, counted and sent. */
+  setDriver(driver: Driver | null) {
+    if (driver?.id === this.driver?.id && driver?.name === this.driver?.name) return;
+    this.driver = driver;
+    this.listeners.forEach((fn) => fn());
+  }
+
+  private mine(): QueueItem[] {
+    const id = this.driver?.id;
+    return id === undefined ? [] : this.items.filter((i) => i.driver_id === id);
+  }
+
+  /** The signed-in driver's, newest first. */
+  all(): QueueItem[] { return this.mine().reverse(); }
+  pending(): QueueItem[] { return this.mine().filter((i) => i.status === "queued"); }
+  failed(): QueueItem[] { return this.mine().filter((i) => i.status === "failed"); }
+
+  /** Confirmations other drivers made on this phone, still to send: they go
+   * when that driver signs in again. */
+  othersWaiting(): { driver_id: number; name: string; count: number }[] {
+    const out = new Map<number, { driver_id: number; name: string; count: number }>();
+    for (const i of this.items) {
+      if (i.status !== "queued" || i.driver_id === this.driver?.id) continue;
+      const row = out.get(i.driver_id) ?? { driver_id: i.driver_id, name: i.driver_name, count: 0 };
+      row.count += 1;
+      out.set(i.driver_id, row);
+    }
+    return [...out.values()];
+  }
   forRun(runId: number): QueueItem[] { return this.all().filter((i) => i.run_id === runId); }
 
   /** Keep it (pictures first), then send what is waiting if there is signal. */
   async submit(input: NewItem): Promise<QueueItem> {
+    const driver = this.driver;
+    if (!driver) throw new Error("Sign in again to keep this on the phone.");
     const files: QueuedFile[] = [];
     const body = { ...input.body };
     for (const p of input.pictures ?? []) {
@@ -143,7 +185,8 @@ export class RetryQueue {
       body[p.field] = id;
     }
     const item: QueueItem = {
-      id: crypto.randomUUID(), message_id: crypto.randomUUID(), path: input.path, body, files,
+      id: crypto.randomUUID(), message_id: crypto.randomUUID(), driver_id: driver.id, driver_name: driver.name,
+      path: input.path, body, files,
       label: input.label, run_id: input.run_id, consignment_id: input.consignment_id,
       outcome: input.outcome, created_at: new Date().toISOString(), status: "queued", attempts: 0,
     };
@@ -169,7 +212,8 @@ export class RetryQueue {
           return;
         }
         const res = await this.send({ method: "PUT", path: `/v1/pod-files/${f.id}?kind=${f.kind}`,
-                                      body: blob, contentType: blob.type || "application/octet-stream" });
+                                      body: blob, contentType: blob.type || "application/octet-stream",
+                                      driver_id: item.driver_id });
         if (res.ok) {
           f.sent = true;
           this.save();
@@ -181,7 +225,8 @@ export class RetryQueue {
         return;
       }
       const res = await this.send({ method: "POST", path: item.path, contentType: "application/json",
-                                    body: JSON.stringify({ message_id: item.message_id, ...item.body }) });
+                                    body: JSON.stringify({ message_id: item.message_id, ...item.body }),
+                                    driver_id: item.driver_id });
       const parsed = await readJson(res);
       if (res.ok) {
         item.status = "sent";
@@ -201,9 +246,10 @@ export class RetryQueue {
     }
   }
 
-  /** Send everything waiting, oldest first, stopping at the first that has to
-   * wait, so they arrive in the order they were made. One drain at a time;
-   * what is added meanwhile is picked up by the one running. */
+  /** Send the signed-in driver's confirmations, oldest first, stopping at the
+   * first that has to wait, so they arrive in the order they were made. One
+   * drain at a time; what is added meanwhile is picked up by the one running.
+   * A sign-out (or another driver signing in) stops it before the next. */
   drain(): Promise<number> {
     // cleared once it has settled, never before it is stored
     this.draining ??= this.drainNow().finally(() => { this.draining = null; });
@@ -212,8 +258,11 @@ export class RetryQueue {
 
   private async drainNow(): Promise<number> {
     let sent = 0;
+    const who = this.driver?.id;
+    if (who === undefined) return 0;
     for (;;) {
-      const next = this.items.find((i) => i.status === "queued");
+      if (this.driver?.id !== who) break;
+      const next = this.items.find((i) => i.status === "queued" && i.driver_id === who);
       if (!next || !this.online()) break;
       await this.attempt(next);
       if (next.status === "sent") sent += 1;

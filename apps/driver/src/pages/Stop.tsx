@@ -17,18 +17,19 @@ export function Stop() {
   const params = useParams();
   const runId = Number(params.runId);
   const consignmentId = Number(params.consignmentId);
-  const { online, waiting } = useSession();
+  const { online, waiting, driver } = useSession();
+  const me = driver!.id;
   const items = useQueueItems(runId);
-  const run = loadRun(runId);
+  const run = loadRun(me, runId);
   const stop = run ? stopOf(run, consignmentId) : null;
-  const [ticks, setTicks] = useState<Ticks>(() => loadTicks(runId, consignmentId));
+  const [ticks, setTicks] = useState<Ticks>(() => loadTicks(me, runId, consignmentId));
   const [said, setSaid] = useState<Said>(null);
 
   function mark(packageNo: number, how: How | null) {
     setTicks((t) => {
       const next = { ...t };
       if (how) next[packageNo] = how; else delete next[packageNo];
-      saveTicks(runId, consignmentId, next);
+      saveTicks(me, runId, consignmentId, next);
       return next;
     });
   }

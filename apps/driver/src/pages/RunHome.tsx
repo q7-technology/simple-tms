@@ -13,17 +13,18 @@ import { Goal, OfflineBanner, Phone, RunTop, WaitingList } from "../ui/kit";
  * it from the office when there is signal. */
 export function RunHome() {
   const runId = Number(useParams().runId);
-  const { online, waiting, queue } = useSession();
+  const { online, waiting, queue, driver } = useSession();
+  const me = driver!.id;
   const items = useQueueItems(runId);
   const note = (useLocation().state as { note?: string } | null)?.note;
-  const [run, setRun] = useState<RunStops | null>(() => loadRun(runId));
+  const [run, setRun] = useState<RunStops | null>(() => loadRun(me, runId));
 
   useEffect(() => {
     if (!online) return;
     api.get<RunStops>(`/v1/runs/${runId}/stops`)
-      .then((fresh) => { saveRun(fresh); setRun(fresh); })
+      .then((fresh) => { saveRun(me, fresh); setRun(fresh); })
       .catch(() => undefined);   // the phone's copy will do
-  }, [runId, online]);
+  }, [runId, online, me]);
 
   if (!run) return <Navigate to="/" replace />;
   const done = outcomes(run, items);

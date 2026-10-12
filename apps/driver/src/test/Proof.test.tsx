@@ -12,7 +12,7 @@ describe("proof of delivery", () => {
   beforeEach(() => {
     signedIn();
     onThePhone();
-    saveTicks(7, 31, { 1: "scan", 2: "tick" });
+    saveTicks(3, 7, 31, { 1: "scan", 2: "tick" });
     URL.createObjectURL = vi.fn(() => "blob:photo");
     URL.revokeObjectURL = vi.fn();
   });
@@ -49,7 +49,7 @@ describe("proof of delivery", () => {
   });
 
   it("goes back to the stop until every carton is ticked", async () => {
-    saveTicks(7, 31, { 1: "tick" });
+    saveTicks(3, 7, 31, { 1: "tick" });
     stubApi();
     renderApp("/run/7/stop/31/proof");
     await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent(/^\/run\/7\/stop\/31$/));

@@ -37,6 +37,8 @@ type Fetcher = (url: string, init: RequestInit) => Promise<Response>;
 
 export class DriverApi {
   token: string | null = null;
+  /** whose token it is: a queued confirmation goes only with its own driver's */
+  driverId: number | null = null;
   /** The API no longer takes the token: the shift ran out, or the PIN changed. */
   onSignedOut: (() => void) | null = null;
   private fetcher: Fetcher;
@@ -79,6 +81,9 @@ export class DriverApi {
 
   /** For the offline queue: one request as it stands, with today's token. */
   async send(req: Request): Promise<Response> {
+    if (req.driver_id !== undefined && req.driver_id !== this.driverId) {
+      throw new Error("Waiting for the driver who made it to be signed in.");
+    }
     const res = await this.fetcher(req.path, {
       method: req.method, headers: this.headers({ "Content-Type": req.contentType }), body: req.body,
     });

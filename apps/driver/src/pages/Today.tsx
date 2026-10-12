@@ -3,20 +3,11 @@ import { Link, useNavigate } from "react-router-dom";
 import { api, ApiError, Unreachable } from "../api/client";
 import type { DriverRun, RunStops, StartOut } from "../api/types";
 import { useSession } from "../auth/Session";
-import { loadRun, plural, saveRun } from "../lib/run";
+import { currentRun, loadRun, plural, rememberCurrent, saveRun } from "../lib/run";
 import { dayLabel, isoDay } from "../lib/time";
 import { getPosition } from "../lib/where";
 import { Icon } from "../ui/icons";
 import { Phone } from "../ui/kit";
-
-const CURRENT = "tms.driver.current";
-
-export function rememberCurrent(runId: number) {
-  try { window.localStorage.setItem(CURRENT, String(runId)); } catch { /* ignore */ }
-}
-function current(): number | null {
-  try { return Number(window.localStorage.getItem(CURRENT)) || null; } catch { return null; }
-}
 
 function said(e: unknown): string {
   if (e instanceof Unreachable) return "No signal. Starting a run needs a connection, to load the whole run onto this phone.";
@@ -34,7 +25,8 @@ function state(r: DriverRun): string {
  * The pre-start check that goes between picking and starting comes with
  * build step 4; until then the run starts from here. */
 export function Today() {
-  const { driver, queue, waiting, signOut } = useSession();
+  const { driver, queue, waiting, others, signOut } = useSession();
+  const me = driver!.id;
   const navigate = useNavigate();
   const [runs, setRuns] = useState<DriverRun[] | null>(null);
   const [chosen, setChosen] = useState<number | null>(null);
@@ -42,8 +34,8 @@ export function Today() {
   const [busy, setBusy] = useState(false);
   // one message_id per run for this visit: pressing Start again after a dropout is the same start
   const startIds = useRef<Record<number, string>>({});
-  const saved = current();
-  const savedRun = saved ? loadRun(saved) : null;
+  const saved = currentRun(me);
+  const savedRun = saved ? loadRun(me, saved) : null;
 
   const load = useCallback(async () => {
     setError(null);
@@ -63,15 +55,15 @@ export function Today() {
     setError(null);
     try {
       const whole = await api.get<RunStops>(`/v1/runs/${r.id}/stops`);
-      saveRun(whole);
+      saveRun(me, whole);
       if (whole.status === "planned") {
         // asked here, at the depot, rather than at the first drop
         void getPosition(8000);
         const id = (startIds.current[r.id] ??= crypto.randomUUID());
         const out = await api.post<StartOut>(`/v1/runs/${r.id}/start`, { message_id: id });
-        saveRun({ ...whole, status: out.status, departed_at: out.departed_at });
+        saveRun(me, { ...whole, status: out.status, departed_at: out.departed_at });
       }
-      rememberCurrent(r.id);
+      rememberCurrent(me, r.id);
       navigate(`/run/${r.id}`);
     } catch (e) {
       setError(said(e));
@@ -121,6 +113,11 @@ export function Today() {
           <section className="card"><b>No run for you today.</b>
             <div style={{ fontSize: 14, color: "var(--color-ink-2)", marginTop: 4 }}>Check with the office, then look again.</div></section>
         )}
+        {others.map((o) => (
+          <div key={o.driver_id} className="msg a" role="status">
+            {`${plural(o.count, "confirmation")} from ${o.name} ${o.count === 1 ? "is" : "are"} waiting on this phone. `
+              + `They go when ${o.name} signs in.`}</div>
+        ))}
         {error && <div className="msg r" role="alert">{error}</div>}
         {error && savedRun && savedRun.status !== "done" && (
           <Link to={`/run/${savedRun.id}`} className="big ghost">Carry on with {savedRun.run_no} from memory</Link>

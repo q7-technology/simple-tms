@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { api } from "../api/client";
 import type { DriverSessionOut, Me } from "../api/types";
 import { indexedDbFiles } from "../lib/files";
-import { RetryQueue, waitingCount } from "../lib/queue";
+import { RetryQueue, waitingCount, type Driver } from "../lib/queue";
 
 interface Stored { token: string; expires_at: number; driver: Me }
 
@@ -10,8 +10,10 @@ interface State {
   driver: Me | null;
   online: boolean;
   queue: RetryQueue;
-  /** confirmations still to send */
+  /** the signed-in driver's confirmations still to send */
   waiting: number;
+  /** other drivers' confirmations on this phone, waiting for them to sign in */
+  others: { driver_id: number; name: string; count: number }[];
   signIn: (code: string, pin: string) => Promise<void>;
   signOut: () => void;
 }
@@ -37,23 +39,35 @@ function writeSession(s: Stored | null) {
   } catch { /* private mode: signed in for this visit only */ }
 }
 
+function owner(s: Stored | null): Driver | null {
+  return s ? { id: s.driver.id, name: s.driver.display_name } : null;
+}
+
+/** The token and the queue follow whoever is signed in, together. */
+function signedInAs(queue: RetryQueue, s: Stored | null) {
+  api.token = s?.token ?? null;
+  api.driverId = s?.driver.id ?? null;
+  queue.setDriver(owner(s));
+}
+
 export const defaultQueue = new RetryQueue({ send: (r) => api.send(r), files: indexedDbFiles });
 
 export function SessionProvider({ children, queue = defaultQueue }: { children: ReactNode; queue?: RetryQueue }) {
   const [session, setSession] = useState<Stored | null>(() => {
     const s = readSession();
-    api.token = s?.token ?? null;
+    signedInAs(queue, s);
     return s;
   });
   const [online, setOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine);
   const [waiting, setWaiting] = useState(() => waitingCount(queue.all()));
+  const [others, setOthers] = useState(() => queue.othersWaiting());
 
   const signOut = useCallback(() => {
-    // what is waiting stays on the phone, and goes once a driver signs in again
-    api.token = null;
+    // what is waiting stays on the phone, and goes once that driver signs in again
+    signedInAs(queue, null);
     writeSession(null);
     setSession(null);
-  }, []);
+  }, [queue]);
 
   useEffect(() => {
     api.onSignedOut = signOut;
@@ -61,7 +75,10 @@ export function SessionProvider({ children, queue = defaultQueue }: { children: 
     const down = () => setOnline(false);
     window.addEventListener("online", up);
     window.addEventListener("offline", down);
-    const unsubscribe = queue.subscribe(() => setWaiting(waitingCount(queue.all())));
+    const unsubscribe = queue.subscribe(() => {
+      setWaiting(waitingCount(queue.all()));
+      setOthers(queue.othersWaiting());
+    });
     const tick = setInterval(() => { if (navigator.onLine && queue.pending().length) void queue.drain(); }, DRAIN_EVERY_MS);
     return () => {
       window.removeEventListener("online", up);
@@ -77,14 +94,14 @@ export function SessionProvider({ children, queue = defaultQueue }: { children: 
   const signIn = useCallback(async (code: string, pin: string) => {
     const out = await api.post<DriverSessionOut>("/v1/auth/driver-login", { code, pin });
     const s = { token: out.token, expires_at: Date.now() + out.expires_in * 1000, driver: out.driver };
-    api.token = s.token;
+    signedInAs(queue, s);
     writeSession(s);
     setSession(s);
-  }, []);
+  }, [queue]);
 
   const value = useMemo<State>(() => ({
-    driver: session?.driver ?? null, online, queue, waiting, signIn, signOut,
-  }), [session, online, queue, waiting, signIn, signOut]);
+    driver: session?.driver ?? null, online, queue, waiting, others, signIn, signOut,
+  }), [session, online, queue, waiting, others, signIn, signOut]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

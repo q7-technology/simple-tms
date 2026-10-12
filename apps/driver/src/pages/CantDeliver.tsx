@@ -20,9 +20,10 @@ export function CantDeliver() {
   const params = useParams();
   const runId = Number(params.runId);
   const consignmentId = Number(params.consignmentId);
-  const { queue, online } = useSession();
+  const { queue, online, driver } = useSession();
+  const me = driver!.id;
   const navigate = useNavigate();
-  const run = loadRun(runId);
+  const run = loadRun(me, runId);
   const stop = run ? stopOf(run, consignmentId) : null;
   const [reason, setReason] = useState<string | null>(null);
   const [photo, setPhoto] = useState<Blob | null>(null);
@@ -46,7 +47,7 @@ export function CantDeliver() {
         run_id: runId, consignment_id: consignmentId, outcome: "failed",
         pictures: photo ? [{ kind: "photo", field: "photo_file", blob: photo }] : [],
       });
-      saveTicks(runId, consignmentId, {});
+      saveTicks(me, runId, consignmentId, {});
       navigate(`/run/${runId}`, { state: { note: `Stop ${stop.sequence} is coming back to the depot.` } });
     } catch (e) {
       setError(e instanceof Error ? e.message : "That couldn't be kept on the phone. Try again.");
