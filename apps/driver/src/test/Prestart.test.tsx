@@ -65,7 +65,7 @@ describe("the pre-start check", () => {
     expect(await screen.findByRole("button", { name: "Start run" })).toBeInTheDocument();
     expect(screen.getByText(/Pre-start done .*: passed\./)).toBeInTheDocument();
     const sent = calls.find((c) => c.url === "/v1/runs/7/prestart")!.body as Record<string, unknown>;
-    expect(sent).toEqual({ message_id: expect.any(String), at: expect.any(String), odometer_km: 61208,
+    expect(sent).toEqual({ message_id: expect.any(String), at: expect.any(String), vehicle: "TMS041", odometer_km: 61208,
                            items: [7, 8, 9, 10, 11, 12].map((id) => ({ item_id: id, result: "pass" })) });
   });
 
@@ -183,6 +183,44 @@ describe("the pre-start check", () => {
     await user.click(screen.getByRole("button", { name: "Finish check" }));
     expect(await screen.findByRole("region", { name: "Checklist for a van" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Start run" })).not.toBeInTheDocument();
+  });
+
+  it("says plainly when the run moved to another truck mid-check, and asks for a check of that one", async () => {
+    let moved = false;
+    const { calls } = stubApi((method, url) => {
+      if (url.startsWith("/v1/driver/runs?date=")) {
+        return json(200, [moved ? { ...UNCHECKED, vehicle: { ...TODAY.vehicle, rego: "TMS052", type: "van" } } : UNCHECKED]);
+      }
+      if (method === "PUT") return json(201, {});
+      if (url === "/v1/runs/7/prestart") {
+        // the office gave R-0007 another truck while the driver checked TMS041
+        moved = true;
+        return json(409, {
+          code: "vehicle_changed", vehicle: "TMS052",
+          detail: "R-0007 has been given TMS052 since this check began. Your check of TMS041 is with the office. Do a fresh check of TMS052 before starting.",
+          check: { check_id: 3, vehicle: "TMS041", result: "grounded", grounded: true, failed: ["Brakes"] } });
+      }
+      return null;
+    });
+    renderApp("/");
+    const user = userEvent.setup();
+    await screen.findByRole("region", { name: "Checklist for a rigid" });
+    await user.type(screen.getByLabelText(/Odometer/), "61208");
+    await passAll(user, ["Brakes"]);
+    await user.click(within(screen.getByRole("radiogroup", { name: "Brakes" })).getByRole("radio", { name: "Fail" }));
+    await user.type(screen.getByLabelText("Brakes: note"), "Pedal goes to the floor.");
+    await user.upload(screen.getByLabelText(/Add a photo/), new File(["x"], "brakes.jpg", { type: "image/jpeg" }));
+    await user.click(screen.getByRole("button", { name: "Finish check" }));
+    const said = await screen.findByText(/Your run has moved to another truck/);
+    expect(said).toHaveTextContent("Your run has moved to another truck, TMS052. Your check of TMS041 has reached the office, "
+      + "and TMS041 is grounded by it. Do a fresh check of TMS052 before you start.");
+    expect(screen.queryByText(/wasn't taken/)).not.toBeInTheDocument();
+    expect(await screen.findByRole("radio", { name: /TMS052/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start run" })).not.toBeInTheDocument();
+    const sent = calls.find((c) => c.url === "/v1/runs/7/prestart")!.body as { vehicle: string };
+    expect(sent.vehicle).toBe("TMS041");
+    await user.click(screen.getByRole("button", { name: "Check TMS052" }));
+    expect(await screen.findByRole("region", { name: "Checklist for a van" })).toHaveTextContent("0 of 6 pass");
   });
 
   it("won't take a reading below the truck's last one", async () => {

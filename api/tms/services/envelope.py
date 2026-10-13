@@ -29,6 +29,18 @@ def lock_key(value: uuid.UUID) -> int:
     return int.from_bytes(value.bytes[:4], "big", signed=True)
 
 
+class Answered(Exception):
+    """The work was done and kept, but the answer is not a plain success: a
+    pre-start of a truck the run no longer has is recorded (it may ground
+    that truck) and answered 409. Stored like any reply, so a repeat gets the
+    same answer and nothing is recorded twice."""
+
+    def __init__(self, status_code: int, content: dict):
+        self.status_code = status_code
+        self.content = content
+        super().__init__(content.get("detail", ""))
+
+
 def handle(db: Session, who, message_id: uuid.UUID, path: str,
            work: Callable[[], BaseModel], status_code: int = 200) -> JSONResponse:
     """Run `work` once per message_id. Two copies of one message arriving at
@@ -54,7 +66,10 @@ def handle(db: Session, who, message_id: uuid.UUID, path: str,
         db.commit()
         return JSONResponse(status_code=seen.status_code, content=seen.response)
 
-    reply = work().model_dump(mode="json")
+    try:
+        reply = work().model_dump(mode="json")
+    except Answered as a:
+        status_code, reply = a.status_code, a.content
     db.add(InboundMessage(message_id=message_id, sender=sender_of(who), path=path,
                           status_code=status_code, response=reply, duplicates=0))
     db.commit()

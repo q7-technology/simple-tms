@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, ApiError, Unreachable } from "../api/client";
-import type { DriverRun, PrestartOut, RunStops, StartOut } from "../api/types";
+import type { DriverRun, PrestartOut, RunStops, StartOut, VehicleChanged } from "../api/types";
 import { useSession } from "../auth/Session";
 import { currentRun, loadRun, plural, rememberCurrent, saveRun } from "../lib/run";
 import { clock, dayLabel, isoDay } from "../lib/time";
@@ -112,6 +112,16 @@ export function Today() {
       void load().then(() => setHeard((h) => new Set(h).add(id)));
     }
   }, [made?.status, made?.id, load]);
+  // refused because the run moved to another truck mid-check: the check is
+  // kept against the truck inspected, and the run's new truck needs one of its own
+  const moved = made?.status === "failed" && (made.reply as VehicleChanged | null | undefined)?.code === "vehicle_changed"
+    ? made.reply as VehicleChanged : undefined;
+  useEffect(() => {
+    if (moved && made && !reloadedFor.current.has(made.id)) {
+      reloadedFor.current.add(made.id);
+      void load();
+    }
+  }, [moved, made, load]);
   // one the office took of another truck no longer counts: the run was given
   // a new truck since, and that one needs its own check. Nor does one that
   // grounded the truck once it is marked fixed: the fixed truck is checked afresh
@@ -168,7 +178,14 @@ export function Today() {
             and then you can start.</div>
         )}
         {run && checkSent && <div className="msg g" role="status">Your pre-start has reached the office.</div>}
-        {run && check?.status === "failed" && !run.prestart && (
+        {run && moved && check === made && !run.prestart && (
+          <div className="msg a" role="status">
+            {`Your run has moved to another truck, ${moved.vehicle}. Your check of ${moved.check.vehicle} has reached the office`}
+            {moved.check.grounded ? `, and ${moved.check.vehicle} is grounded by it.` : "."}
+            {` Do a fresh check of ${moved.vehicle} before you start.`}
+            <div style={{ marginTop: 8 }}><button type="button" className="chip" onClick={again}>Check {moved.vehicle}</button></div></div>
+        )}
+        {run && check?.status === "failed" && !moved && !run.prestart && (
           <div className="msg r" role="alert">Your pre-start wasn't taken: {check.error}
             <div style={{ marginTop: 8 }}><button type="button" className="chip" onClick={again}>Do the check again</button></div></div>
         )}

@@ -17,7 +17,7 @@ from tms.api.errors import NotFound
 from tms.api.routes.vehicles import VehicleType
 from tms.models import ChecklistItem, Driver, PrestartCheck, Run, Vehicle, VehicleRecord
 from tms.services import checklists, fleet, records
-from tms.services.envelope import handle
+from tms.services.envelope import Answered, handle
 
 router = APIRouter(tags=["fleet"])
 
@@ -90,6 +90,8 @@ class PrestartIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     message_id: uuid.UUID
     at: AwareDatetime
+    # the truck the driver inspected: the rego the phone showed them
+    vehicle: str = Field(min_length=1, max_length=20)
     odometer_km: int = Field(ge=0, le=9_999_999)
     items: list[Answer] = Field(min_length=1, max_length=30)
 
@@ -112,17 +114,31 @@ class PrestartOut(BaseModel):
 @router.post("/runs/{id}/prestart", response_model=PrestartOut)
 def send_prestart(id: int, body: PrestartIn, db: DB,
                   who: Principal = require("deliveries:write")):
-    """The driver's pre-start check of the run's truck, once per message_id."""
+    """The driver's pre-start check of the truck they were shown, once per
+    message_id. If the run has been given another truck since, the check is
+    kept against the truck inspected (and grounds it if a critical item
+    failed), and the answer is 409 vehicle_changed naming the run's truck,
+    which needs a fresh check. That answer is kept too: a repeat gets it
+    again and records nothing more."""
     def work():
-        check = records.prestart(db, who, id, message_id=body.message_id, at=body.at,
-                                 odometer_km=body.odometer_km,
+        check = records.prestart(db, who, id, rego=body.vehicle, message_id=body.message_id,
+                                 at=body.at, odometer_km=body.odometer_km,
                                  answers=[a.model_dump() for a in body.items])
         run = db.get(Run, check.run_id)
-        return PrestartOut(message_id=body.message_id, check_id=check.id, run_id=run.id,
-                           run_no=run.number, vehicle=run.vehicle.rego, result=check.result,
-                           failed=[i.label for i in check.items if not i.passed],
-                           grounded=fleet.grounding(db, check.vehicle_id) is not None,
-                           odometer_km=check.odometer_km, at=check.at)
+        checked = db.get(Vehicle, check.vehicle_id)
+        out = PrestartOut(message_id=body.message_id, check_id=check.id, run_id=run.id,
+                          run_no=run.number, vehicle=checked.rego, result=check.result,
+                          failed=[i.label for i in check.items if not i.passed],
+                          grounded=fleet.grounding(db, check.vehicle_id) is not None,
+                          odometer_km=check.odometer_km, at=check.at)
+        if check.vehicle_id != run.vehicle_id:
+            now = run.vehicle.rego
+            raise Answered(409, {
+                "code": "vehicle_changed", "vehicle": now, "check": out.model_dump(mode="json"),
+                "detail": f"{run.number} has been given {now} since this check began. "
+                          f"Your check of {checked.rego} is with the office. "
+                          f"Do a fresh check of {now} before starting."})
+        return out
     return handle(db, who, body.message_id, f"/v1/runs/{id}/prestart", work)
 
 

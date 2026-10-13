@@ -10,8 +10,8 @@ from conftest import all_at_once, fresh_client
 from deliveries_samples import (
     JPEG, VAN_ITEMS, delivered, driver_headers, on_the_road, planned_run, prestart, put_file,
 )
-from runs_samples import DAY, driver
-from tms.models import InboundMessage, PrestartCheck
+from runs_samples import DAY, driver, vehicle
+from tms.models import InboundMessage, PrestartCheck, Vehicle
 
 
 def _vehicle(client, headers):
@@ -58,7 +58,7 @@ def test_a_failed_item_needs_a_photo_and_a_note_and_the_truck_may_still_go(
     answers[4] = {"item_id": 5, "result": "fail", "note": "Rear strap frayed"}
     r = client.post(f"/v1/runs/{run['id']}/prestart", headers=kim, json={
         "message_id": str(uuid.uuid4()), "at": "2026-10-14T06:40:00+11:00",
-        "odometer_km": 61208, "items": answers})
+        "vehicle": "TMS041", "odometer_km": 61208, "items": answers})
     assert r.status_code == 422
     assert "a failed item needs a photo and a note" in r.text
     r = prestart(client, kim, run["id"], failed=("Load restraints",))
@@ -119,8 +119,8 @@ def test_a_photo_is_the_drivers_own_and_goes_with_one_thing(client, db, dispatch
     answers = [{"item_id": i, "result": "pass"} for i in range(1, 7)]
     answers[0] = {"item_id": 1, "result": "fail", "note": "Bald", "photo_file": str(photo)}
     r = client.post(f"/v1/runs/{run['id']}/prestart", headers=kim, json={
-        "message_id": str(uuid.uuid4()), "at": "2026-10-14T06:40:00Z", "odometer_km": 1,
-        "items": answers})
+        "message_id": str(uuid.uuid4()), "at": "2026-10-14T06:40:00Z", "vehicle": "TMS041",
+        "odometer_km": 1, "items": answers})
     assert r.status_code == 422 and r.json()["errors"][0]["field"] == "photo_file"
 
 
@@ -149,3 +149,75 @@ def test_two_copies_at_once_keep_one_check(client, db, dispatcher_headers):
 
     assert all_at_once(3, send) == [200, 200, 200]
     assert len(db.execute(select(PrestartCheck)).scalars().all()) == 1
+
+
+def _swap(client, headers, run, rego="TMS052", type="rigid"):
+    """The office gives the run another truck while the driver checks the first."""
+    r = client.patch(f"/v1/runs/{run['id']}", headers=headers, json={"vehicle": rego})
+    assert r.status_code == 200, r.text
+
+
+def test_a_check_is_of_the_truck_the_driver_was_shown_even_after_a_swap(
+        client, db, dispatcher_headers):
+    run, _ = planned_run(client, db, dispatcher_headers)
+    vehicle(db, rego="TMS052", type="rigid")
+    kim = driver_headers(client)
+    _swap(client, dispatcher_headers, run)
+    message_id = uuid.uuid4()
+    # the phone still showed TMS041 (a van: its list, not the rigid's) and its brakes failed
+    r = prestart(client, kim, run["id"], failed=("Brakes",), km=61300, message_id=message_id)
+    assert r.status_code == 409, r.text
+    out = r.json()
+    assert out["code"] == "vehicle_changed" and out["vehicle"] == "TMS052"
+    assert out["detail"] == (f"{run['run_no']} has been given TMS052 since this check began. "
+                             "Your check of TMS041 is with the office. "
+                             "Do a fresh check of TMS052 before starting.")
+    assert (out["check"]["vehicle"], out["check"]["result"], out["check"]["grounded"]) == (
+        "TMS041", "grounded", True)
+    # kept once, against the truck that was inspected: that one is grounded, the new one not
+    check = db.execute(select(PrestartCheck)).scalar_one()
+    assert db.get(Vehicle, check.vehicle_id).rego == "TMS041" and check.odometer_km == 61300
+    old = client.get("/v1/vehicles/TMS041", headers=dispatcher_headers).json()
+    new = client.get("/v1/vehicles/TMS052", headers=dispatcher_headers).json()
+    assert old["state"] == "grounded" and old["odometer_km"] == 61300
+    assert new["state"] != "grounded" and new["odometer_km"] is None
+    # the same message again: the same answer, nothing more kept
+    again = prestart(client, kim, run["id"], failed=("Brakes",), km=61300, message_id=message_id)
+    assert (again.status_code, again.json()) == (409, out)
+    assert len(db.execute(select(PrestartCheck)).scalars().all()) == 1
+    # the run's truck has had no check, so Start still asks for one
+    r = client.post(f"/v1/runs/{run['id']}/start", headers=kim,
+                    json={"message_id": str(uuid.uuid4())})
+    assert r.status_code == 409 and r.json()["code"] == "prestart_needed"
+    assert _my_run(client, kim, run["id"])["vehicle"]["rego"] == "TMS052"
+
+
+def test_a_passed_check_of_the_old_truck_does_not_count_for_the_new_one(
+        client, db, dispatcher_headers):
+    run, _ = planned_run(client, db, dispatcher_headers)
+    vehicle(db, rego="TMS052")
+    kim = driver_headers(client)
+    _swap(client, dispatcher_headers, run)
+    r = prestart(client, kim, run["id"])
+    assert r.status_code == 409 and r.json()["code"] == "vehicle_changed"
+    assert _my_run(client, kim, run["id"])["prestart"] is None
+    start = {"message_id": str(uuid.uuid4())}
+    r = client.post(f"/v1/runs/{run['id']}/start", headers=kim, json=start)
+    assert r.status_code == 409 and r.json()["code"] == "prestart_needed"
+    # a fresh check of the truck the run has now counts, and the run starts
+    r = prestart(client, kim, run["id"], vehicle="TMS052", km=12000)
+    assert r.status_code == 200 and r.json()["vehicle"] == "TMS052"
+    assert client.post(f"/v1/runs/{run['id']}/start", headers=kim, json=start).status_code == 200
+
+
+def test_a_check_names_a_truck_that_exists(client, db, dispatcher_headers):
+    run, _ = planned_run(client, db, dispatcher_headers)
+    kim = driver_headers(client)
+    r = prestart(client, kim, run["id"], vehicle="NOPE99")
+    assert r.status_code == 422 and r.json()["errors"] == [
+        {"field": "vehicle", "message": "no vehicle NOPE99"}]
+    body = {"message_id": str(uuid.uuid4()), "at": "2026-10-14T06:40:00Z", "odometer_km": 1,
+            "items": [{"item_id": i, "result": "pass"} for i in range(1, 7)]}
+    r = client.post(f"/v1/runs/{run['id']}/prestart", headers=kim, json=body)
+    assert r.status_code == 422 and r.json()["errors"][0]["field"] == "vehicle"
+    assert db.execute(select(PrestartCheck)).first() is None

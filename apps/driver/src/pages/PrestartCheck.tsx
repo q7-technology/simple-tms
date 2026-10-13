@@ -70,7 +70,8 @@ export function PrestartCheck({ run }: { run: DriverRun }) {
       const failed = lines.map((l, i) => ({ l, i })).filter(({ l }) => answer(l.id).result === "fail");
       await queue.submit({
         path: `/v1/runs/${run.id}/prestart`,
-        body: { at: new Date().toISOString(), odometer_km: reading,
+        // the truck the driver was shown, so the check is kept against it even if the office swaps the run's truck
+        body: { at: new Date().toISOString(), vehicle: run.vehicle.rego, odometer_km: reading,
                 items: lines.map((l) => answer(l.id).result === "pass"
                   ? { item_id: l.id, result: "pass" }
                   : { item_id: l.id, result: "fail", note: answer(l.id).note.trim() }) },

@@ -75,7 +75,10 @@ a fleet manager (the `manager` role, or an admin) opens **Fleet**, looks at
 the check with its photos and notes, and marks it fixed with what was done.
 The check that grounded the truck never counts as the run's pre-start: once
 it is marked fixed, the driver does a fresh check of the truck before
-starting. In **Fleet** a fleet manager also records each new rego expiry and
+starting. A check is kept against the truck the driver was shown: if the
+office gives the run another truck meanwhile, the check (and any grounding)
+stays with the truck inspected, and the phone asks for a fresh check of the
+run's new truck. In **Fleet** a fleet manager also records each new rego expiry and
 each service (with its odometer reading), and puts a wrong odometer reading
 right; set how often a truck is serviced with `service_every_months` and/or
 `service_every_km` on `PATCH /v1/vehicles/{rego}`. A truck with nothing

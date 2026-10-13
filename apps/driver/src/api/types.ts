@@ -51,6 +51,16 @@ export interface PrestartOut {
   at: string;
 }
 
+/** 409 vehicle_changed: the office gave the run another truck while the
+ * driver checked the one they were shown. The check is kept against that
+ * truck (and may ground it); the run's truck, `vehicle`, needs its own. */
+export interface VehicleChanged {
+  code: "vehicle_changed";
+  detail: string;
+  vehicle: string;
+  check: PrestartOut;
+}
+
 export interface ShipTo {
   name?: string | null;
   address?: string | null;

@@ -40,18 +40,24 @@ def run_check(db: Session, run: Run) -> PrestartCheck | None:
     return fleet.run_prestart(db, run)
 
 
-def prestart(db: Session, who, run_id: int, *, message_id: uuid.UUID, at: datetime,
+def prestart(db: Session, who, run_id: int, *, rego: str, message_id: uuid.UUID, at: datetime,
              odometer_km: int, answers: list[dict]) -> PrestartCheck:
-    """The driver's check of the run's truck, every item of its checklist
-    answered once. A failed critical item grounds the truck there and then; a
-    failed other item is kept and the truck may go. Kept as sent, for good."""
+    """The driver's check of the truck they were shown (`rego`), every item of
+    its checklist answered once. A failed critical item grounds that truck
+    there and then; a failed other item is kept and the truck may go. Kept as
+    sent, for good. If the office has given the run another truck since, the
+    check is still kept against the truck inspected (what failed grounds the
+    truck that failed); the caller says the run needs a fresh check."""
     lock_planning(db)
     run = deliveries.own_run(db, who, run_id)
     if run.status == "done":
         raise Conflict("run_done", f"{run.number} is finished")
     if run.status == "cancelled":
         raise Conflict("run_cancelled", f"{run.number} was cancelled")
-    v = run.vehicle
+    v = db.execute(select(Vehicle).where(
+        Vehicle.rego == "".join(rego.split()).upper())).scalar_one_or_none()
+    if v is None:
+        raise FieldError("vehicle", f"no vehicle {rego}")
     lines = checklists.live(db, v.type)
     given = {a["item_id"]: a for a in answers}
     if len(given) != len(answers) or set(given) != {line.id for line in lines}:

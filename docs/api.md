@@ -26,7 +26,9 @@ are at `/docs`.
   first time, the API does the work and keeps the reply; the same
   `message_id` again from the same sender gets that reply back (status and
   body) and changes nothing, however long after. A refusal is not kept, so the
-  same message can be sent again once whatever stopped it is put right. A
+  same message can be sent again once whatever stopped it is put right. (One
+  `409` is kept, because the work behind it was done: a pre-start's
+  `vehicle_changed`.) A
   `message_id` someone else has used is `409 message_id_taken`; one the same
   sender used for another confirmation (another action, or the same on
   another run or stop) is `409 message_id_reused`.
@@ -484,12 +486,15 @@ the truck's checklist as it is now.
 ### POST /v1/runs/{id}/prestart
 The pre-start check of the run's truck, before starting:
 ```json
-{ "message_id": "…", "at": "2026-10-14T06:40:00+11:00", "odometer_km": 61208,
+{ "message_id": "…", "at": "2026-10-14T06:40:00+11:00", "vehicle": "TMS041", "odometer_km": 61208,
   "items": [{ "item_id": 7, "result": "pass" },
             { "item_id": 11, "result": "fail", "note": "Rear strap frayed",
               "photo_file": "…" }] }
 ```
-Each item of the truck's checklist answered once (`409 checklist_changed` if
+`vehicle` is the rego of the truck the driver inspected: the one the phone
+showed them (`422` on `vehicle` if there is no such truck). The check, its
+odometer reading and any grounding are that truck's. Each item of that
+truck's checklist answered once (`409 checklist_changed` if
 the list has changed since: do the check again). A failed item needs a
 `note` and a `photo_file` (a photo sent first with `PUT /v1/pod-files`, by
 the same sender, not already a stop's or another item's); a passed one takes
@@ -508,6 +513,21 @@ kept on the phone in a black spot still counts); `409 run_done`,
 `run_cancelled` after. Kept as sent, for good, once per `message_id`. Another
 check may follow (each is kept); a passed one never clears a grounding: only
 a fleet manager does.
+
+If the office has given the run another truck since the phone showed the
+driver theirs, the check is still kept against the truck inspected (a failed
+critical item grounds the truck that failed), and the answer is
+`409 vehicle_changed`, naming the run's truck now, with the check as it was
+kept:
+```json
+{ "code": "vehicle_changed", "vehicle": "TMS052",
+  "detail": "R-0007 has been given TMS052 since this check began. Your check of TMS041 is with the office. Do a fresh check of TMS052 before starting.",
+  "check": { "message_id": "…", "check_id": 13, "vehicle": "TMS041", "result": "grounded", "…": "…" } }
+```
+Unlike other refusals this answer is kept with the `message_id`: the same
+message again gets it again and records nothing more. The run's truck has had
+no check, so Start is `409 prestart_needed` until a fresh check of it (a new
+`message_id`) is in.
 
 ### GET /v1/runs/{id}/stops
 The whole run as the phone keeps it for the day: the run's driver with
@@ -615,6 +635,7 @@ left as it is.
 | `file_id_taken` | that file id is already another picture |
 | `prestart_needed` | start before the truck's pre-start for the run is in |
 | `checklist_changed` | a pre-start that doesn't answer the checklist as it is now |
+| `vehicle_changed` | a pre-start of a truck the run no longer has: kept against that truck, and the run's truck needs its own |
 
 A consignment that is not on the run is `404`.
 

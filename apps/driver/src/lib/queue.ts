@@ -53,6 +53,7 @@ export interface QueueItem {
   /** goes up with each change, so the newer copy wins when two tabs' meet */
   rev?: number;
   sent_at?: string;
+  /** the API's answer: a sent item's reply, or a refused one's body */
   reply?: unknown;
   error?: string;
 }
@@ -411,6 +412,8 @@ export class RetryQueue {
         for (const f of item.files) await this.files.delete(f.id).catch(() => undefined);
       } else if (refused(res.status)) {
         this.fail(item, describe(parsed, res.status));
+        // kept, for a refusal that says more than why (a pre-start's vehicle_changed)
+        item.reply = parsed;
       } else {
         item.error = describe(parsed, res.status);
       }

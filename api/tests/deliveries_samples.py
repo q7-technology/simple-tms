@@ -69,9 +69,11 @@ VAN_ITEMS = [(1, "Tyres"), (2, "Lights"), (3, "Brakes"), (4, "Mirrors"), (5, "Lo
              (6, "Damage")]
 
 
-def prestart(client, headers, run_id, km=61208, failed=(), message_id=None, items=VAN_ITEMS):
-    """Kim's pre-start of the run's van: every item passed but those named,
-    each failed one with its own photo (sent first) and a note."""
+def prestart(client, headers, run_id, km=61208, failed=(), message_id=None, items=VAN_ITEMS,
+             vehicle="TMS041"):
+    """Kim's pre-start of the van she was shown (TMS041 unless told): every
+    item passed but those named, each failed one with its own photo (sent
+    first) and a note."""
     answers = []
     for item_id, label in items:
         if label in failed:
@@ -82,6 +84,6 @@ def prestart(client, headers, run_id, km=61208, failed=(), message_id=None, item
                             "photo_file": str(photo)})
         else:
             answers.append({"item_id": item_id, "result": "pass"})
-    body = {"message_id": str(message_id or uuid.uuid4()), "at": now(), "odometer_km": km,
-            "items": answers}
+    body = {"message_id": str(message_id or uuid.uuid4()), "at": now(), "vehicle": vehicle,
+            "odometer_km": km, "items": answers}
     return client.post(f"/v1/runs/{run_id}/prestart", headers=headers, json=body)
