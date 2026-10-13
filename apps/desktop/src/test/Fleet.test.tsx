@@ -105,6 +105,51 @@ describe("Fleet", () => {
     expect(screen.queryByRole("button", { name: "Mark fixed" })).not.toBeInTheDocument();
   });
 
+  it("shows who marked it fixed, and the new history line, straight after Mark fixed", async () => {
+    let fixed = false;
+    const FIX = { id: 30, note: "Replaced left brake globe, tested", by: "fleet.mgr", at: "2026-10-13T21:00:00Z" };
+    const PRESTART_LINE = { kind: "prestart", id: 12, recorded_at: "2026-10-13T19:40:05Z", by: "tom", note: null,
+                            result: "grounded", failed: ["Lights"], odometer_km: 84312, done_on: null, expires_on: null, check_id: null };
+    // once fixed, the truck is no longer grounded, but its last pre-start is still check 12
+    const FIXED = { ...GROUNDED, state: "ok" as const, grounded: null, blocked: null };
+    depot({
+      "POST /v1/vehicles/TMS027/fix": () => { fixed = true; return json(201, { kind: "fixed" }); },
+      "GET /v1/vehicles": () => json(200, { items: fixed ? [FLEET[0], FLEET[1], FIXED] : FLEET, total: 3 }),
+      "GET /v1/prestarts/12": () => json(200, fixed ? { ...CHECK, fixed: FIX } : CHECK),
+      "GET /v1/vehicles/TMS027/history": () => json(200, fixed
+        ? [{ ...PRESTART_LINE, kind: "fixed", id: 30, recorded_at: FIX.at, by: "fleet.mgr", note: FIX.note, result: null, failed: [],
+             odometer_km: null, check_id: 12 }, PRESTART_LINE]
+        : [PRESTART_LINE]),
+    }, MANAGER);
+    renderApp("/fleet");
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText("What was done"), FIX.note);
+    await user.click(screen.getByRole("button", { name: "Mark fixed" }));
+    const record = screen.getByRole("complementary", { name: "Pre-start check record" });
+    expect(await within(record).findByText("Marked fixed by fleet.mgr: Replaced left brake globe, tested")).toBeInTheDocument();
+    expect(within(record).getByText("Marked fixed · Replaced left brake globe, tested")).toBeInTheDocument();
+  });
+
+  it("shows a rego recorded in the history straight away, even when the expiry is the same", async () => {
+    let recorded = false;
+    const REGO = { kind: "rego", id: 31, recorded_at: "2026-10-13T21:00:00Z", by: "fleet.mgr", note: "Paid online",
+                   result: null, failed: [], odometer_km: null, done_on: null, expires_on: "2027-03-03", check_id: null };
+    depot({
+      "POST /v1/vehicles/TMS041/rego": () => { recorded = true; return json(201, { kind: "rego" }); },
+      "GET /v1/vehicles/TMS041/history": () => json(200, recorded ? [REGO] : []),
+    }, MANAGER);
+    renderApp("/fleet");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Show TMS041" }));
+    const record = screen.getByRole("complementary", { name: "Pre-start check record" });
+    await user.click(within(record).getByText("A new rego expiry"));
+    const form = within(record).getByRole("form", { name: "A new rego expiry" });
+    await user.type(within(form).getByLabelText("Runs out on"), "2027-03-03");
+    await user.type(within(form).getByLabelText("Note"), "Paid online");
+    await user.click(within(form).getByRole("button", { name: "Record the rego" }));
+    expect(await within(record).findByText("Rego · runs out 3 Mar 2027 · Paid online")).toBeInTheDocument();
+  });
+
   it("says so when another failed check came in meanwhile", async () => {
     depot({ "POST /v1/vehicles/TMS027/fix": () => json(409, { code: "stale",
       detail: "Another failed check of TMS027 has come in; it has been reloaded, so look at it and mark it fixed again" }) }, MANAGER);

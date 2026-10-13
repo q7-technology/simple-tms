@@ -80,6 +80,9 @@ function VehicleAside({ v, driverName, onChanged }: { v: Vehicle; driverName: st
   const [fixNote, setFixNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // bumped after each record: Mark fixed leaves the check id it shows the
+  // same, and a record can leave the truck's dates as they were
+  const [recorded, setRecorded] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -90,7 +93,7 @@ function VehicleAside({ v, driverName, onChanged }: { v: Vehicle; driverName: st
     }
     api.get<HistoryItem[]>(`/v1/vehicles/${v.rego}/history`, { limit: 8 }).then((h) => live && setHistory(h)).catch(() => undefined);
     return () => { live = false; };
-  }, [v.rego, checkId, v.last_prestart?.id, v.odometer_km, v.rego_due?.expires_on, v.service_due?.last_on]);
+  }, [v.rego, checkId, v.last_prestart?.id, v.odometer_km, v.rego_due?.expires_on, v.service_due?.last_on, recorded]);
 
   async function record(path: string, body: Record<string, unknown>, done: string) {
     setError(null);
@@ -98,6 +101,7 @@ function VehicleAside({ v, driverName, onChanged }: { v: Vehicle; driverName: st
       await api.post(`/v1/vehicles/${v.rego}/${path}`, body);
       setFixNote("");
       await onChanged({ tone: "g", text: done });
+      setRecorded((n) => n + 1);
     } catch (e) {
       setError(said(e));
       // a failed check that came in meanwhile: show it
@@ -288,7 +292,9 @@ export function Fleet() {
             </tbody>
           </table>
         </div>
-        {selected && <VehicleAside key={selected.rego} v={selected} driverName={runOf(selected.rego)?.driver.name ?? null} onChanged={changed} />}
+        {/* stay on the truck it changed: once fixed, it's no longer the grounded one shown by default */}
+        {selected && <VehicleAside key={selected.rego} v={selected} driverName={runOf(selected.rego)?.driver.name ?? null}
+                                   onChanged={(n) => { setChosen(selected.rego); return changed(n); }} />}
       </div>
       <div className="small">Amber 30 days or 1,000 km before it's due, red once it's overdue. A grounded or overdue truck can't take a run.
         Due dates show here only.</div>
