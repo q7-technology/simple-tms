@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { PrestartDetail, Vehicle } from "../api/types";
 import { json, MANAGER, path, renderApp, stubApi, type Call } from "./harness";
@@ -59,6 +59,28 @@ describe("Fleet", () => {
     URL.revokeObjectURL = vi.fn();
   });
   afterEach(() => vi.unstubAllGlobals());
+
+  it("asks about the new day once midnight has passed, with the drawer left open", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.setSystemTime(new Date(2026, 9, 13, 23, 59, 50));
+      const { calls } = depot();
+      renderApp("/fleet");
+      await screen.findByRole("button", { name: "Show TMS041" });
+      // the drawer's own loads (the header's counts ask with active=true or a status)
+      const days = (p: string) => calls.map((c) => new URL(c.url, "http://x"))
+        .filter((u) => u.pathname === p && !u.searchParams.has("active") && !u.searchParams.has("status"))
+        .map((u) => u.searchParams.get("date"));
+      const asked = () => days("/v1/vehicles");
+      expect(new Set(asked())).toEqual(new Set(["2026-10-13"]));
+      // the drawer stays open past midnight: the next poll asks about the new day
+      await act(async () => { vi.advanceTimersByTime(30_000); });
+      await waitFor(() => expect(asked().at(-1)).toBe("2026-10-14"));
+      expect(days("/v1/runs").at(-1)).toBe("2026-10-14");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it("lists each truck with when its rego and service fall due, and opens on the grounded one", async () => {
     const { calls } = depot();

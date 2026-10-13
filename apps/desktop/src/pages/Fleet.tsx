@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useOutletContext } from "react-router-dom";
 import { api, ApiError, Unreachable } from "../api/client";
 import type { HistoryItem, Page, PrestartDetail, Run, Vehicle } from "../api/types";
@@ -200,7 +200,9 @@ function VehicleAside({ v, driverName, onChanged }: { v: Vehicle; driverName: st
  * grounded one, and what a fleet manager records. */
 export function Fleet() {
   const { reloadCounts } = useOutletContext<{ reloadCounts: () => void }>();
-  const today = useMemo(() => isoDay(new Date()), []);
+  // the day asked about, worked out again on each load: a drawer left open
+  // past midnight asks about the new day
+  const [today, setToday] = useState(() => isoDay(new Date()));
   const [vehicles, setVehicles] = useState<Vehicle[] | null>(null);
   const [runs, setRuns] = useState<Run[]>([]);
   const [q, setQ] = useState("");
@@ -208,13 +210,15 @@ export function Fleet() {
   const [note, setNote] = useState<Note>(null);
 
   const load = useCallback(async () => {
+    const day = isoDay(new Date());
     const [v, r] = await Promise.all([
-      api.get<Page<Vehicle>>("/v1/vehicles", { date: today }),
-      api.get<Page<Run>>("/v1/runs", { date: today }),
+      api.get<Page<Vehicle>>("/v1/vehicles", { date: day }),
+      api.get<Page<Run>>("/v1/runs", { date: day }),
     ]);
+    setToday(day);
     setVehicles(v.items);
     setRuns(r.items);
-  }, [today]);
+  }, []);
 
   useEffect(() => {
     load().catch((e) => setNote({ tone: "r", text: said(e) }));
