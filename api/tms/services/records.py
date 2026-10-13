@@ -6,7 +6,7 @@ before."""
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -54,6 +54,11 @@ def prestart(db: Session, who, run_id: int, *, rego: str, message_id: uuid.UUID,
         raise Conflict("run_done", f"{run.number} is finished")
     if run.status == "cancelled":
         raise Conflict("run_cancelled", f"{run.number} was cancelled")
+    if run.status == "planned" and run.day > fleet.today() + timedelta(days=1):
+        # a day's grace: the server's clock is UTC, and an Australian morning is
+        # still yesterday there
+        raise Conflict("too_early", f"{run.number} is for {fleet.long_date(run.day)}. "
+                                    "Do the pre-start on the day.")
     v = db.execute(select(Vehicle).where(
         Vehicle.rego == "".join(rego.split()).upper())).scalar_one_or_none()
     if v is None:

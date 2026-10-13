@@ -516,7 +516,10 @@ A failed critical item grounds the truck there and then (`"result":
 (`"failed"`). `grounded` says whether the truck is grounded now, by this
 check or an earlier one. Taken on a planned run or one on the road (a check
 kept on the phone in a black spot still counts); `409 run_done`,
-`run_cancelled` after. Kept as sent, for good, once per `message_id`. Another
+`run_cancelled` after. A planned run more than a day ahead of today in UTC
+is `409 too_early` ("R-0009 is for 16 Oct 2026. Do the pre-start on the
+day."); the day's grace is because an Australian morning is still yesterday
+in UTC. Kept as sent, for good, once per `message_id`. Another
 check may follow (each is kept); a passed one never clears a grounding: only
 a fleet manager does.
 
@@ -641,6 +644,7 @@ left as it is.
 | `file_id_taken` | that file id is already another picture |
 | `prestart_needed` | start before the truck's pre-start for the run is in |
 | `checklist_changed` | a pre-start that doesn't answer the checklist as it is now |
+| `too_early` | a pre-start on a planned run more than a day ahead (UTC) |
 | `vehicle_changed` | a pre-start of a truck the run no longer has: kept against that truck, and the run's truck needs its own |
 
 A consignment that is not on the run is `404`.

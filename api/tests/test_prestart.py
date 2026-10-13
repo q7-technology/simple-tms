@@ -278,3 +278,26 @@ def test_a_check_and_a_delivery_racing_for_one_photo_take_turns(client, db, engi
     r = delivering.result(timeout=10)
     assert r.status_code == 422, r.text
     assert r.json()["errors"][0]["field"] == "photo_file"
+
+
+def test_a_check_waits_for_the_runs_day(client, db, dispatcher_headers):
+    """A check is of the truck as it is on the day: one for a run days off is
+    refused. The day before (in UTC) is taken, since an Australian morning is
+    still yesterday on the server's clock."""
+    from datetime import timedelta
+
+    from runs_samples import new_run
+    from tms.services import fleet
+    vehicle(db)
+    driver(db)
+    later = new_run(client, dispatcher_headers, day=fleet.today() + timedelta(days=2))
+    kim = driver_headers(client)
+    r = prestart(client, kim, later["id"])
+    assert r.status_code == 409 and r.json() == {
+        "code": "too_early",
+        "detail": f"{later['run_no']} is for {fleet.long_date(fleet.today() + timedelta(days=2))}. "
+                  "Do the pre-start on the day."}
+    assert db.execute(select(PrestartCheck)).first() is None
+    vehicle(db, rego="TMS052")
+    soon = new_run(client, dispatcher_headers, rego="TMS052", day=fleet.today() + timedelta(days=1))
+    assert prestart(client, kim, soon["id"], vehicle="TMS052").status_code == 200
