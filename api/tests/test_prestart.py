@@ -122,7 +122,28 @@ def test_a_photo_is_the_drivers_own_and_goes_with_one_thing(client, db, dispatch
     r = client.post(f"/v1/runs/{run['id']}/prestart", headers=kim, json={
         "message_id": str(uuid.uuid4()), "at": "2026-10-14T06:40:00Z", "vehicle": "TMS041",
         "odometer_km": 1, "items": answers})
-    assert r.status_code == 422 and r.json()["errors"][0]["field"] == "photo_file"
+    assert r.status_code == 422 and r.json()["errors"] == [{
+        "field": "items.0.photo_file", "message": f"photo {photo} already belongs to another stop"}]
+
+
+def test_a_photo_error_names_the_item_it_is_on(client, db, dispatcher_headers):
+    run, _ = planned_run(client, db, dispatcher_headers)
+    kim = driver_headers(client)
+    photo, _ = put_file(client, kim, kind="photo", data=JPEG, content_type="image/jpeg")
+    answers = [{"item_id": i, "result": "pass"} for i in range(1, 7)]
+    answers[3] = {"item_id": 4, "result": "fail", "note": "Cracked", "photo_file": str(photo)}
+    answers[5] = {"item_id": 6, "result": "fail", "note": "Dented", "photo_file": str(photo)}
+    body = {"message_id": str(uuid.uuid4()), "at": "2026-10-14T06:40:00Z", "vehicle": "TMS041",
+            "odometer_km": 1, "items": answers}
+    r = client.post(f"/v1/runs/{run['id']}/prestart", headers=kim, json=body)
+    assert r.status_code == 422 and r.json()["errors"] == [{
+        "field": "items.5.photo_file", "message": "each failed item needs a photo of its own"}]
+    never_sent = uuid.uuid4()
+    answers[5] = {"item_id": 6, "result": "fail", "note": "Dented", "photo_file": str(never_sent)}
+    r = client.post(f"/v1/runs/{run['id']}/prestart", headers=kim,
+                    json={**body, "message_id": str(uuid.uuid4())})
+    assert r.status_code == 422 and r.json()["errors"] == [{
+        "field": "items.5.photo_file", "message": f"no photo {never_sent} has been sent"}]
 
 
 def test_only_the_runs_driver_and_only_until_it_is_finished(client, db, dispatcher_headers):

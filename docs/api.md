@@ -507,7 +507,8 @@ truck's checklist answered once (`409 checklist_changed` if
 the list has changed since: do the check again). A failed item needs a
 `note` and a `photo_file` (a photo sent first with `PUT /v1/pod-files`, by
 the same sender, not already a stop's or another item's); a passed one takes
-neither (`422`). `odometer_km` is whole kilometres and may not be lower than
+neither (`422`). A photo's problem is a `422` on the item it is on, as sent:
+`items.4.photo_file`. `odometer_km` is whole kilometres and may not be lower than
 the truck's last reading (`422` on `odometer_km`). →
 ```json
 { "message_id": "…", "check_id": 12, "run_id": 7, "run_no": "R-0007", "vehicle": "TMS041",

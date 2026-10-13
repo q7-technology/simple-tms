@@ -74,11 +74,19 @@ def prestart(db: Session, who, run_id: int, *, rego: str, message_id: uuid.UUID,
         raise FieldError("odometer_km",
                          f"{odometer_km:,} km is less than {v.rego}'s last reading, "
                          f"{reading:,} km. Check the odometer and try again.")
-    photos = [a["photo_file"] for a in answers if a["photo_file"]]
-    if len(photos) != len(set(photos)):
-        raise FieldError("photo_file", "each failed item needs a photo of its own")
-    for photo in photos:
-        deliveries.own_file(db, who, photo, "photo")
+    # a photo's problem is named by the item it is on, as sent: items.4.photo_file
+    seen = set()
+    for n, a in enumerate(answers):
+        if not a["photo_file"]:
+            continue
+        field = f"items.{n}.photo_file"
+        if a["photo_file"] in seen:
+            raise FieldError(field, "each failed item needs a photo of its own")
+        seen.add(a["photo_file"])
+        try:
+            deliveries.own_file(db, who, a["photo_file"], "photo")
+        except FieldError as e:
+            raise FieldError(field, e.message) from None
     failed = [line for line in lines if given[line.id]["result"] == "fail"]
     now = datetime.now(UTC)
     check = PrestartCheck(
