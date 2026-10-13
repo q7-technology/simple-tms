@@ -13,10 +13,11 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from tms.api.deps import DB, Principal, require
-from tms.api.errors import FieldError, NotFound, violated_constraint
+from tms.api.errors import Conflict, FieldError, NotFound, violated_constraint
 from tms.api.schemas import Dec, Page
 from tms.models import Vehicle
 from tms.services import fleet
+from tms.services.runs import lock_planning
 
 router = APIRouter(tags=["vehicles"])
 
@@ -187,11 +188,39 @@ def get_vehicle(rego: str, db: DB, day: dt.date | None = Query(default=None, ali
     return vehicle_out(db, _get(db, rego), day)
 
 
+def _eases(body: VehiclePatch, v: Vehicle, field: str) -> bool:
+    """The interval cleared or made longer: a service now overdue could stop being so."""
+    if field not in body.model_fields_set:
+        return False
+    new, old = getattr(body, field), getattr(v, field)
+    return old is not None and (new is None or new > old)
+
+
+def _refuse_if_overdue(db, v: Vehicle, body: VehiclePatch) -> None:
+    """Rule 3: overdue is cleared by a record with a note, never by easing the
+    schedule or changing the type while it is overdue."""
+    s = fleet.standing(db, v, fleet.today())
+    retyped = "type" in body.model_fields_set and body.type is not None and body.type != v.type
+    if s.service_state == "overdue" and (retyped or _eases(body, v, "service_every_months")
+                                         or _eases(body, v, "service_every_km")):
+        raise Conflict("vehicle_overdue",
+                       f"{v.rego}'s service is overdue. Record the service first: its schedule "
+                       "can't be eased or its type changed while it is overdue.")
+    if s.rego_state == "overdue" and retyped:
+        raise Conflict("vehicle_overdue",
+                       f"{v.rego}'s rego has run out. Record the new expiry first.")
+
+
 @router.patch("/vehicles/{rego}", response_model=VehicleOut)
 def update_vehicle(rego: str, body: VehiclePatch, db: DB, who: Principal = require("fleet:write")):
     """Only what is given changes. A service interval given as null is
-    cleared (never due that way); a field left out is kept."""
+    cleared (never due that way); a field left out is kept. While the truck
+    is overdue its schedule can't be eased, nor its type changed (409
+    vehicle_overdue): a record clears it. Under the planning lock, as every
+    write about a truck is."""
+    lock_planning(db)
     v = _get(db, rego)
+    _refuse_if_overdue(db, v, body)
     for field in body.model_fields_set:
         value = getattr(body, field)
         if value is not None or field in CLEARABLE:

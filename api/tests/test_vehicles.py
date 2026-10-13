@@ -93,3 +93,57 @@ def test_a_plate_taken_by_another_request_meanwhile_is_refused_not_a_crash(
         r = client.post("/v1/vehicles", headers=manager_headers, json=VAN)
     assert r.status_code == 422
     assert r.json()["errors"] == [{"field": "rego", "message": "vehicle 1AB2CD already exists"}]
+
+
+def test_an_overdue_truck_is_cleared_by_a_record_not_by_easing_its_schedule(
+        client, manager_headers):
+    from datetime import timedelta
+
+    from tms.services import fleet
+
+    make_vehicle(client, manager_headers, {**VAN, "service_every_months": 6,
+                                           "service_every_km": 15000})
+    eight_months_ago = (fleet.today() - timedelta(days=245)).isoformat()
+    r = client.post("/v1/vehicles/1AB2CD/service", headers=manager_headers,
+                    json={"done_on": eight_months_ago, "odometer_km": 40000, "note": "Serviced"})
+    assert r.status_code == 201
+    assert client.get("/v1/vehicles/1AB2CD", headers=manager_headers).json()["state"] == "overdue"
+    service = ("1AB2CD's service is overdue. Record the service first: its schedule "
+               "can't be eased or its type changed while it is overdue.")
+    for change in ({"service_every_months": 12}, {"service_every_months": None},
+                   {"service_every_km": 20000}, {"service_every_km": None}, {"type": "rigid"}):
+        r = client.patch("/v1/vehicles/1AB2CD", headers=manager_headers, json=change)
+        assert r.status_code == 409, (change, r.text)
+        assert r.json() == {"code": "vehicle_overdue", "detail": service}
+    # what can't hide it still goes: a shorter interval, the same one, the limits
+    r = client.patch("/v1/vehicles/1AB2CD", headers=manager_headers,
+                     json={"service_every_months": 3, "service_every_km": 15000, "max_kg": "1300"})
+    assert r.status_code == 200, r.text
+    assert r.json()["state"] == "overdue"
+    # the service recorded, with a note: now the schedule may change
+    r = client.post("/v1/vehicles/1AB2CD/service", headers=manager_headers,
+                    json={"done_on": fleet.today().isoformat(), "odometer_km": 52000,
+                          "note": "Caught up"})
+    r = client.patch("/v1/vehicles/1AB2CD", headers=manager_headers,
+                     json={"service_every_months": 12, "type": "rigid"})
+    assert r.status_code == 200 and r.json()["state"] == "ok"
+
+
+def test_a_truck_whose_rego_has_run_out_keeps_its_type_until_the_new_expiry(
+        client, manager_headers):
+    from datetime import timedelta
+
+    from tms.services import fleet
+
+    make_vehicle(client, manager_headers)
+    client.post("/v1/vehicles/1AB2CD/rego", headers=manager_headers,
+                json={"expires_on": (fleet.today() - timedelta(days=2)).isoformat(),
+                      "note": "Lapsed"})
+    r = client.patch("/v1/vehicles/1AB2CD", headers=manager_headers, json={"type": "ute"})
+    assert r.status_code == 409 and r.json() == {
+        "code": "vehicle_overdue",
+        "detail": "1AB2CD's rego has run out. Record the new expiry first."}
+    # its service schedule isn't what is overdue, so it may change
+    r = client.patch("/v1/vehicles/1AB2CD", headers=manager_headers,
+                     json={"service_every_months": 6})
+    assert r.status_code == 200

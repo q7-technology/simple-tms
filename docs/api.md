@@ -122,7 +122,11 @@ password, at least 12 characters, is asked for, or given with `--password`).
 
 `POST` and `PATCH` also take `service_every_months` (1 to 120) and
 `service_every_km` (1 to 1,000,000): how often it is serviced, whichever
-comes first. Leave both out and its service is never due. `GET` takes
+comes first. Leave both out and its service is never due. While a truck's
+service is overdue, a `PATCH` that clears or lengthens either interval, or
+changes its `type`, is `409 vehicle_overdue` ("Record the service first"); so
+is a new `type` while its rego has run out. Overdue is cleared by a record
+with a note (rule 3), not by easing the schedule. `GET` takes
 `date=YYYY-MM-DD`, the day due and overdue are judged for: the caller's
 today, as the driver app sends its own date. Left out, it is today in UTC
 (in Australia, still yesterday until 10 or 11 am), so send it.
