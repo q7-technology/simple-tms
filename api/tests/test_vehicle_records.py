@@ -76,3 +76,22 @@ def test_a_service_is_recorded_once_it_is_done(client, db, manager_headers):
                     json={"done_on": (fleet.today() + timedelta(days=1)).isoformat(),
                           "note": "Done this morning"})
     assert r.status_code == 201
+
+
+def test_only_a_fleet_manager_records_rego_service_or_odometer(client, db, dispatcher_headers):
+    from deliveries_samples import driver_headers
+    from runs_samples import driver
+    v = vehicle(db)
+    driver(db)
+    kim = driver_headers(client)
+    bodies = {"rego": {"expires_on": "2027-03-03", "note": "Renewed"},
+              "service": {"done_on": "2026-10-01", "odometer_km": 61000, "note": "Serviced"},
+              "odometer": {"odometer_km": 61250, "note": "Off the dash"}}
+    for who in (dispatcher_headers, kim):
+        for kind, body in bodies.items():
+            r = client.post(f"/v1/vehicles/TMS041/{kind}", headers=who, json=body)
+            assert r.status_code == 403, (kind, r.text)
+    from sqlalchemy import select
+
+    from tms.models import VehicleRecord
+    assert db.execute(select(VehicleRecord).where(VehicleRecord.vehicle_id == v.id)).first() is None
