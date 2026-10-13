@@ -185,9 +185,16 @@ def test_a_message_id_used_for_another_action_is_refused(client, db, dispatcher_
 
 def test_a_picture_taken_by_another_stop_meanwhile_is_refused_not_a_crash(
         client, db, dispatcher_headers, engine):
-    from conftest import beaten_to_it
+    """Two stops naming one signature at once take turns on the picture's row:
+    the second waits, then finds it taken."""
+    from types import SimpleNamespace
+
+    from sqlalchemy.orm import Session
+
+    from conftest import blocked_on_a_lock, in_background
     from runs_samples import assign, consignment, new_run, vehicle
-    from tms.models import Stop
+    from tms.models import Driver
+    from tms.services import deliveries
 
     run, (a, _), kim = on_the_road(client, db, dispatcher_headers)
     # another run of Kim's, whose stop takes the same signature in a race
@@ -195,17 +202,26 @@ def test_a_picture_taken_by_another_stop_meanwhile_is_refused_not_a_crash(
     other = new_run(client, dispatcher_headers, rego="TMS042")
     c = consignment(db, ref="0080034599", customer="Elsewhere")
     assert assign(client, dispatcher_headers, other["id"], c.id).status_code == 200
-    stop = db.execute(select(Stop).where(Stop.run_id == other["id"])).scalar_one()
+    assert client.post(f"/v1/runs/{other['id']}/depart",
+                       headers=dispatcher_headers).status_code == 200
     sig, _ = put_file(client, kim)
+    d = db.execute(select(Driver).where(Driver.code == "kim")).scalar_one()
+    who = SimpleNamespace(kind="driver", id=d.id, name="kim")
+    with Session(engine) as rival:
+        deliveries.deliver(rival, who, other["id"], c.id, message_id=uuid.uuid4(),
+                           at=datetime.now(UTC), packages=[{"package_no": 1, "how": "tick"}],
+                           signed_name="Priya", signature_file=sig, photo_file=None, note=None,
+                           where=None)                          # not committed yet
 
-    def rival(obj):
-        if isinstance(obj, Pod):
-            return Pod(message_id=uuid.uuid4(), run_id=other["id"], stop_id=stop.id,
-                       consignment_id=c.id, outcome="delivered", at=datetime.now(UTC),
-                       packages=[], recorded_by="kim", signature_file_id=sig)
+        def deliver_now():
+            with fresh_client() as c2:
+                return delivered(c2, kim, run["id"], a, signature_file=str(sig),
+                                 signed_name="Priya")
 
-    with beaten_to_it(engine, rival):
-        r = delivered(client, kim, run["id"], a, signature_file=str(sig), signed_name="Priya")
+        delivering = in_background(deliver_now)
+        assert blocked_on_a_lock(engine, delivering), "the delivery did not wait for the picture"
+        rival.commit()
+    r = delivering.result(timeout=10)
     assert r.status_code == 422, r.text
     assert r.json()["errors"] == [{"field": "signature_file",
                                    "message": f"signature {sig} already belongs to another stop"}]

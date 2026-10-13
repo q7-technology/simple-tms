@@ -3,6 +3,7 @@ checklist passed or failed, a failed one with a photo and a note, and the
 odometer. A failed critical item grounds the truck at once. Kept as sent,
 once per message_id."""
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 
@@ -221,3 +222,59 @@ def test_a_check_names_a_truck_that_exists(client, db, dispatcher_headers):
     r = client.post(f"/v1/runs/{run['id']}/prestart", headers=kim, json=body)
     assert r.status_code == 422 and r.json()["errors"][0]["field"] == "vehicle"
     assert db.execute(select(PrestartCheck)).first() is None
+
+
+def _failed_tyres(photo) -> list[dict]:
+    answers = [{"item_id": i, "result": "pass"} for i in range(1, 7)]
+    answers[0] = {"item_id": 1, "result": "fail", "note": "Bald", "photo_file": str(photo)}
+    return answers
+
+
+def test_a_photo_a_check_has_taken_cannot_go_with_a_delivery(client, db, dispatcher_headers):
+    run, (a, _), kim = on_the_road(client, db, dispatcher_headers)
+    photo, _ = put_file(client, kim, kind="photo", data=JPEG, content_type="image/jpeg")
+    r = client.post(f"/v1/runs/{run['id']}/prestart", headers=kim, json={
+        "message_id": str(uuid.uuid4()), "at": "2026-10-14T06:40:00Z", "vehicle": "TMS041",
+        "odometer_km": 1, "items": _failed_tyres(photo)})
+    assert r.status_code == 200, r.text
+    r = delivered(client, kim, run["id"], a, photo_file=str(photo))
+    assert r.status_code == 422 and r.json()["errors"] == [{
+        "field": "photo_file", "message": f"photo {photo} already belongs to a pre-start check"}]
+
+
+def test_a_check_and_a_delivery_racing_for_one_photo_take_turns(client, db, engine,
+                                                                dispatcher_headers):
+    """The pre-start holds the photo's row until it is kept; the delivery waits,
+    then finds the photo taken, rather than both claiming it."""
+    from types import SimpleNamespace
+
+    from sqlalchemy.orm import Session
+
+    from conftest import blocked_on_a_lock, in_background
+    from tms.models import Driver
+    from tms.services import records
+    from runs_samples import new_run
+    run, (a, _), kim = on_the_road(client, db, dispatcher_headers)
+    # Kim's second run of the day, on another truck: the check is of that one
+    vehicle(db, rego="TMS052")
+    second = new_run(client, dispatcher_headers, rego="TMS052")
+    photo, _ = put_file(client, kim, kind="photo", data=JPEG, content_type="image/jpeg")
+    d = db.execute(select(Driver).where(Driver.code == "kim")).scalar_one()
+    who = SimpleNamespace(kind="driver", id=d.id, name="kim")
+    with Session(engine) as other:
+        records.prestart(other, who, second["id"], rego="TMS052", message_id=uuid.uuid4(),
+                         at=datetime.now(UTC), odometer_km=1,
+                         answers=[{"note": None, "photo_file": None, **x, "photo_file": photo}
+                                  if x["result"] == "fail" else {"note": None, "photo_file": None, **x}
+                                  for x in _failed_tyres(photo)])     # not committed yet
+
+        def deliver_now():
+            with fresh_client() as c:
+                return delivered(c, kim, run["id"], a, photo_file=str(photo))
+
+        delivering = in_background(deliver_now)
+        assert blocked_on_a_lock(engine, delivering), "the delivery did not wait for the photo"
+        other.commit()
+    r = delivering.result(timeout=10)
+    assert r.status_code == 422, r.text
+    assert r.json()["errors"][0]["field"] == "photo_file"

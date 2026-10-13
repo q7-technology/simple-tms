@@ -96,10 +96,12 @@ def _open_stop(db: Session, run: Run, consignment_id: int) -> Stop:
 
 
 def own_file(db: Session, who, file_id: uuid.UUID | None, kind: str) -> PodFile | None:
-    """A picture this sender sent, not yet named by a stop or a pre-start item."""
+    """A picture this sender sent, not yet named by a stop or a pre-start item.
+    Its row is locked until the transaction ends, so a delivery and a
+    pre-start naming one picture take turns, and the second finds it taken."""
     if file_id is None:
         return None
-    row = db.get(PodFile, file_id)
+    row = db.get(PodFile, file_id, with_for_update=True, populate_existing=True)
     if row is None or row.uploaded_by != sender_of(who) or row.kind != kind:
         raise FieldError(f"{kind}_file", f"no {kind} {file_id} has been sent")
     used = db.execute(select(Pod.id).where(
