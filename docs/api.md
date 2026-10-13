@@ -185,7 +185,10 @@ service by date or kilometres).
 - `POST /v1/vehicles/{rego}/rego` — `{ "expires_on", "note" }`. The newest
   rego record is the expiry.
 - `POST /v1/vehicles/{rego}/service` — `{ "done_on", "odometer_km"?, "note" }`.
-  The next service falls due from the newest one.
+  The next service falls due from the newest one. A `done_on` more than a
+  day after today in UTC is `422` on `done_on`: record a service once it is
+  done. (A rego's `expires_on` is in the future by nature, so it isn't
+  limited.)
 - `POST /v1/vehicles/{rego}/odometer` — `{ "odometer_km", "note" }`: the reading
   put right (a slip of the finger, a new odometer). Readings from before it
   no longer count; it may be lower than them.

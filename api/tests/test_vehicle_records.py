@@ -57,3 +57,22 @@ def test_a_service_and_an_odometer_put_right_are_kept_with_the_checks(client, db
         "expires_on": None, "check_id": None}
     assert _vehicle(client, manager_headers)["rego_due"]["expires_on"] == "2027-12-01"
     assert date.fromisoformat(history[3]["done_on"]) == date(2026, 10, 13)
+
+
+def test_a_service_is_recorded_once_it_is_done(client, db, manager_headers):
+    """Not before: a date days ahead is a slip that would put the next service
+    off. Tomorrow is taken, as the server's day (UTC) is behind Australia's."""
+    from datetime import timedelta
+
+    from tms.services import fleet
+    vehicle(db)
+    ahead = fleet.today() + timedelta(days=2)
+    r = client.post("/v1/vehicles/TMS041/service", headers=manager_headers,
+                    json={"done_on": ahead.isoformat(), "note": "Booked in"})
+    assert r.status_code == 422 and r.json()["errors"] == [{
+        "field": "done_on",
+        "message": f"{fleet.long_date(ahead)} hasn't come yet: record a service once it is done"}]
+    r = client.post("/v1/vehicles/TMS041/service", headers=manager_headers,
+                    json={"done_on": (fleet.today() + timedelta(days=1)).isoformat(),
+                          "note": "Done this morning"})
+    assert r.status_code == 201

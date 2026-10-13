@@ -13,7 +13,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validato
 from sqlalchemy import select
 
 from tms.api.deps import DB, Principal, require
-from tms.api.errors import NotFound
+from tms.api.errors import FieldError, NotFound
 from tms.api.routes.vehicles import VehicleType
 from tms.models import ChecklistItem, Driver, PrestartCheck, Run, Vehicle, VehicleRecord
 from tms.services import checklists, fleet, records
@@ -197,7 +197,12 @@ def record_rego(rego: str, body: RegoIn, db: DB, who: Principal = require("fleet
 
 @router.post("/vehicles/{rego}/service", status_code=201, response_model=RecordOut)
 def record_service(rego: str, body: ServiceIn, db: DB, who: Principal = require("fleet:write")):
-    """A service done: the next one falls due from it, by date and by km."""
+    """A service done: the next one falls due from it, by date and by km. Not
+    one days ahead: a day's grace, as the server's day (UTC) is behind
+    Australia's."""
+    if body.done_on > fleet.today() + dt.timedelta(days=1):
+        raise FieldError("done_on", f"{fleet.long_date(body.done_on)} hasn't come yet: "
+                                    "record a service once it is done")
     row = records.add(db, rego, "service", by=who.name, note=body.note, done_on=body.done_on,
                       odometer_km=body.odometer_km)
     return _created(db, row, rego)
