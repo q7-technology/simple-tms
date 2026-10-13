@@ -337,6 +337,12 @@ docker compose up -d db
 cd api && .venv/bin/pytest
 ```
 
+The suite signs in with tokens that last 15 minutes and takes a few minutes
+to run. On a Mac on battery, maintenance sleep can pause it long enough for
+those tokens to expire mid-run, and tests fail with `401`s that have nothing
+to do with the code. Keep the Mac awake while it runs:
+`caffeinate -i .venv/bin/pytest -q`.
+
 The desktop's tests are Vitest, in jsdom, with the API stubbed:
 
 ```

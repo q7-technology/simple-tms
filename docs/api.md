@@ -218,6 +218,15 @@ service by date or kilometres).
 may go) or `grounded`. `fixed` is the record that cleared a check that
 grounded the truck, else `null`. The photos are at `GET /v1/pod-files/{id}`.
 
+Who can read what: checks (`GET /v1/prestarts/{id}`) and a truck's history
+(`GET /v1/vehicles/{rego}/history`) need `fleet:read`, which every role and
+every driver has, so a driver can read any truck's checks, not only their
+own. The photos are another matter: `GET /v1/pod-files/{id}` needs
+`consignments:read` (not a driver's) or to be the one who sent the photo. So a
+driver can fetch the photos they took and no one else's, and a key with
+`fleet:read` but not `consignments:read` sees each photo's id in a check but
+gets `404` fetching it.
+
 Simple TMS doesn't send `vehicle.due` yet: due dates show on the desktop
 only. It comes with the first system that subscribes.
 
