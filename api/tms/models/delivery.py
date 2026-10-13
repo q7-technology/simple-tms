@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Uuid
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, Numeric, String, Uuid, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -57,6 +57,9 @@ class Pod(Base):
     reason). One per stop; the API never changes one."""
 
     __tablename__ = "pod"
+    # the worker clears a position older than the retention period: this finds them
+    __table_args__ = (Index("ix_pod_at_located", "at",
+                            postgresql_where=text("latitude is not null")),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     message_id: Mapped[uuid.UUID] = mapped_column(Uuid, unique=True)
@@ -76,7 +79,8 @@ class Pod(Base):
     packages: Mapped[list] = mapped_column(JSONB, default=list)
     # when it happened, by the phone's clock (never later than it arrived)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    # where the phone was, if the driver let it say
+    # where the phone was, if the driver let it say; cleared after the
+    # retention period, as positions are (the only change ever made to a pod)
     latitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
     accuracy_m: Mapped[Decimal | None] = mapped_column(Numeric(8, 1))
