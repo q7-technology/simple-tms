@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from tms.api.errors import Conflict, FieldError, NotFound, violated_constraint
 from tms.models import ConsignmentEvent, Pod, PodFile, PrestartItem, Run, Stop
-from tms.services import fleet, runs
+from tms.services import runs
 from tms.services.envelope import sender_of
 
 MICRO = Decimal("0.000001")
@@ -62,13 +62,9 @@ def start(db: Session, who, run_id: int) -> Run:
         raise Conflict("run_done", f"{run.number} is finished")
     if run.status == "cancelled":
         raise Conflict("run_cancelled", f"{run.number} was cancelled")
-    if run.status == "planned":
-        # a grounded or overdue truck says so, rather than asking for a check
-        fleet.refuse_if_blocked(db, run.vehicle, run.day)
-    if run.status == "planned" and fleet.run_prestart(db, run) is None:
-        raise Conflict("prestart_needed",
-                       f"Do the pre-start check of {run.vehicle.rego} before starting {run.number}.")
-    return runs.depart(db, run_id, by=who.name)
+    # the truck and its check are judged under the planning lock, so a change
+    # of truck a moment before is seen
+    return runs.depart(db, run_id, by=who.name, need_prestart=True)
 
 
 def _locked(db: Session, who, run_id: int) -> Run:

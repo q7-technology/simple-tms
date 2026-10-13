@@ -250,11 +250,12 @@ def reorder(db: Session, run_id: int, consignment_ids: list[int], seen: list[int
 OWN_FLEET = "Own fleet"
 
 
-def depart(db: Session, run_id: int, by: str) -> Run:
+def depart(db: Session, run_id: int, by: str, need_prestart: bool = False) -> Run:
     """The truck has left: each consignment is departed, and a ship call to
     Simple WMS waits in the queue for each, in the same transaction, so none
     is lost and none is made twice. A run that has already left is left as
-    it is."""
+    it is. The driver's Start (`need_prestart`) also wants the pre-start of
+    the truck the run has, judged after the lock, like the truck itself."""
     lock_planning(db)
     run = get_run(db, run_id)
     if run.status == "departed":
@@ -264,7 +265,11 @@ def depart(db: Session, run_id: int, by: str) -> Run:
         raise Conflict("run_empty", f"{run.number} has no stops")
     if not run.vehicle.active:
         raise Conflict("vehicle_unavailable", f"{run.vehicle.rego} is deactivated")
+    # a grounded or overdue truck says so, rather than asking for a check
     fleet.refuse_if_blocked(db, run.vehicle, run.day)
+    if need_prestart and fleet.run_prestart(db, run) is None:
+        raise Conflict("prestart_needed",
+                       f"Do the pre-start check of {run.vehicle.rego} before starting {run.number}.")
     over = run_load(run)
     if over.state == "over":
         raise Conflict("over_capacity", f"{run.number}: {over.message}")

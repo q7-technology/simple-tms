@@ -95,3 +95,33 @@ def test_an_over_full_run_is_not_started_from_the_phone(client, db, dispatcher_h
     assert r.status_code == 409 and r.json()["code"] == "over_capacity"
     assert db.execute(select(InboundMessage).where(
         InboundMessage.path.endswith("/start"))).first() is None
+
+
+def test_a_truck_swapped_while_starting_needs_its_own_check(client, db, engine,
+                                                            dispatcher_headers):
+    """Start waits for a change of truck under way, then sees it: the new truck
+    has had no pre-start, so the run doesn't leave on the old one's check."""
+    from sqlalchemy.orm import Session
+
+    from conftest import blocked_on_a_lock, in_background
+    from runs_samples import vehicle
+    from tms.services import runs as planning
+    run, _ = planned_run(client, db, dispatcher_headers)
+    vehicle(db, rego="TMS052")
+    kim = driver_headers(client)
+    assert prestart(client, kim, run["id"]).status_code == 200
+    with Session(engine) as other:
+        planning.change(other, run["id"], rego="TMS052", driver_code=None)   # not committed yet
+
+        def start_now():
+            with fresh_client() as c:
+                return _start(c, kim, run["id"])
+
+        starting = in_background(start_now)
+        assert blocked_on_a_lock(engine, starting), "start did not wait for planning"
+        other.commit()
+    r = starting.result(timeout=10)
+    assert r.status_code == 409, r.text
+    assert r.json() == {"code": "prestart_needed", "detail": f"Do the pre-start check of TMS052 "
+                                                             f"before starting {run['run_no']}."}
+    assert db.execute(select(OutboundCall)).first() is None
