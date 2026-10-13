@@ -121,3 +121,26 @@ def test_a_truck_grounded_on_the_road_finishes_its_run(client, db, dispatcher_he
     assert lane["vehicle"]["blocked"]["code"] == "vehicle_grounded"
     assert delivered(client, kim, run["id"], a).status_code == 200
     assert date.fromisoformat(lane["date"]) == DAY
+
+
+def test_a_run_from_an_earlier_day_is_judged_for_today_when_it_leaves(
+        client, db, dispatcher_headers):
+    """Planning judges the run's own day; leaving judges today, if later: a run
+    planned for last week can't leave on a rego that ran out since."""
+    from tms.services import fleet
+    today = fleet.today()
+    v = vehicle(db)
+    from runs_samples import driver
+    driver(db)
+    record(db, v, "rego", expires_on=today - timedelta(days=1))
+    run = new_run(client, dispatcher_headers, day=today - timedelta(days=3))
+    assert run["vehicle"]["blocked"] is None          # good on its own day
+    c = consignment(db)
+    assert assign(client, dispatcher_headers, run["id"], c.id).status_code == 200
+    detail = (f"TMS041's rego runs out on {fleet.long_date(today - timedelta(days=1))}. "
+              "Record the new expiry in Fleet first.")
+    _refused(client.post(f"/v1/runs/{run['id']}/depart", headers=dispatcher_headers),
+             "vehicle_overdue", detail)
+    kim = driver_headers(client)
+    _refused(client.post(f"/v1/runs/{run['id']}/start", headers=kim,
+                         json={"message_id": str(uuid.uuid4())}), "vehicle_overdue", detail)

@@ -399,8 +399,10 @@ queues nothing more. Refused with `409`: `run_empty`, `vehicle_unavailable`,
 `over_capacity` (the detail is the run number and the load's message:
 "R-0007: 280 kg too heavy. Move a stop to another run before printing the run
 sheet."), `vehicle_grounded`, `vehicle_overdue`, `run_not_planned` for a
-cancelled run. It doesn't need a pre-start: the office sends a driver
-without a phone. The driver's
+cancelled run. Grounded and overdue are judged for the day it leaves: the
+run's own day, or today (UTC) if that is later, so a run planned for an
+earlier day can't leave on a rego that has run out since. It doesn't need a
+pre-start: the office sends a driver without a phone. The driver's
 `POST /v1/runs/{id}/start` does the same.
 
 The worker then makes, for each consignment:
