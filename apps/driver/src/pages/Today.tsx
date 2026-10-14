@@ -212,7 +212,8 @@ export function Today() {
         {canStart && (
           <div style={{ display: "flex", gap: 8, fontSize: 12, color: "var(--color-muted)" }}>
             <Icon name="pin" size={16} width={2.2} />
-            <span>Starting asks to use this phone's location. It is kept with each drop, and only while you're on a run.</span>
+            <span>Starting shares this phone's location with the office about every 30 seconds until you finish the run,
+              and keeps it with each drop. Never outside a run.</span>
           </div>
         )}
       </div>}

@@ -6,7 +6,7 @@ import { useQueueItems, useSession } from "../auth/Session";
 import { addressLine, mapsLink } from "../lib/maps";
 import { finished, loadRun, nextStop, outcomes, plural, saveRun } from "../lib/run";
 import { Icon } from "../ui/icons";
-import { Goal, OfflineBanner, Phone, RunTop, WaitingList } from "../ui/kit";
+import { Goal, OfflineBanner, Phone, RunTop, SharingNote, WaitingList } from "../ui/kit";
 
 /** Between stops (DriverOffline.html): the next stop, what is waiting to
  * send, and the run's end. Works from the phone's copy of the run; reloads
@@ -78,6 +78,7 @@ export function RunHome() {
           </section>
         )}
         <WaitingList items={items} onRetry={(id) => void queue.retry(id)} onDismiss={dismiss} />
+        <SharingNote over={over} />
         <div style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12, color: "var(--color-muted)" }}>
           <Icon name="info" size={16} width={2.2} />
           <span>Your whole run is saved on this phone, so keep going. Each confirmation has its own number, so sending it twice never records it twice.</span>

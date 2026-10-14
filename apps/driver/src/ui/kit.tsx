@@ -6,7 +6,7 @@ import type { Outcome, RunStops } from "../api/types";
 import { waitingRows, type QueueItem } from "../lib/queue";
 import { plural } from "../lib/run";
 import { clock } from "../lib/time";
-import { locationAllowed } from "../lib/where";
+import { useSharingState } from "../pages/OnTheRun";
 import { Icon } from "./icons";
 
 export function Phone({ label, children }: { label: string; children: ReactNode }) {
@@ -22,18 +22,17 @@ export function BackTop({ to, label, title, sub }: { to: string; label: string; 
   );
 }
 
-/** The run, the truck, the driver and the time, and whether this phone
- * records where each drop happened. Only during a run, and it says so: a
- * finished run records nothing. */
+/** The run, the truck, the driver and the time, and whether this phone is
+ * sharing where it is. Only during a run, and it says so: a finished run
+ * shares nothing. */
 export function RunTop({ run, over = false }: { run: RunStops; over?: boolean }) {
   const [now, setNow] = useState(() => new Date());
-  const [where, setWhere] = useState<string>("unknown");
+  const sharing = useSharingState();
   useEffect(() => {
-    void locationAllowed().then(setWhere);
     const t = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(t);
   }, []);
-  const on = where === "granted" && !over && run.status !== "done";
+  const on = (sharing === "on" || sharing === "waiting") && !over && run.status !== "done";
   return (
     <div className="top">
       <span className="tile"><Icon name="truck" size={22} /></span>
@@ -42,7 +41,24 @@ export function RunTop({ run, over = false }: { run: RunStops; over?: boolean })
         <div className="st">{run.vehicle.rego} · {run.driver.name} · {clock(now)}</div>
       </div>
       <span className={`chip${on ? " on" : ""}`}><Icon name="pin" size={13} width={2.4} />
-        {on ? "Location at drops" : "Location off"}</span>
+        {on ? "Sharing location" : "Location off"}</span>
+    </div>
+  );
+}
+
+/** What the phone does with where it is, said plainly under the run. */
+export function SharingNote({ over }: { over: boolean }) {
+  const sharing = useSharingState();
+  if (over) return null;
+  const text = sharing === "denied"
+    ? "Location is off for this app, so the office can't see where you are. Each drop is still recorded."
+    : sharing === "off"
+      ? "This phone isn't sharing where it is."
+      : "While this run is on the road, this phone shares where it is with the office about every 30 seconds, "
+        + "with the app open. It stops when you finish the run or sign out.";
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12, color: "var(--color-muted)" }}>
+      <Icon name="pin" size={16} width={2.2} /><span>{text}</span>
     </div>
   );
 }
