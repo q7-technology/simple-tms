@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from tms.api.errors import Conflict, Refused
@@ -17,6 +17,9 @@ from tms.services.deliveries import MICRO, TENTH
 
 # the phone sends one about every 30 s; more often than this is a fault
 MIN_GAP = timedelta(seconds=10)
+# the two-number form of an advisory lock, (POSITION_LOCK, run id): one
+# position for a run at a time, so two at once can't both pass the 10 s check
+POSITION_LOCK = 7304
 # a fix rougher than this would put the truck in the wrong suburb
 MAX_ACCURACY_M = Decimal(1000)
 
@@ -46,6 +49,9 @@ def record(db: Session, who, run_id: int, *, at: datetime, latitude: Decimal,
     if stale(run):
         raise Conflict("run_stale", f"{run.number} was for {fleet.long_date(run.day)} and was "
                                     "left open, so where it is isn't shared. Finish it.")
+    # one at a time for the run, until this transaction ends: a second sent
+    # at the same moment waits, then sees the first
+    db.execute(text("select pg_advisory_xact_lock(:a, :b)"), {"a": POSITION_LOCK, "b": run.id})
     now = datetime.now(UTC)
     last = db.execute(select(func.max(Position.received_at))
                       .where(Position.run_id == run.id)).scalar()

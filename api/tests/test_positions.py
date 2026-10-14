@@ -137,3 +137,47 @@ def test_a_run_of_today_by_the_server_still_shares(client, db, dispatcher_header
     # an Australian morning is still the day before by the server's clock
     run, _, kim = on_the_road(client, db, dispatcher_headers, day=DAY)
     assert send(client, kim, run["id"]).status_code == 204
+
+
+
+def test_a_position_waits_its_turn_behind_another_for_the_run(client, db, engine,
+                                                               dispatcher_headers):
+    """Two at once can't both get past the 10-second check: the second waits
+    for the first, then sees it."""
+    from sqlalchemy import text
+
+    from conftest import blocked_on_a_lock, fresh_client, in_background
+    from tms.services import location
+
+    run, _, kim = on_the_road(client, db, dispatcher_headers)
+    with engine.connect() as other:
+        # the first, part way through: holding the run's turn, its row not yet in
+        other.execute(text("select pg_advisory_xact_lock(:a, :b)"),
+                      {"a": location.POSITION_LOCK, "b": run["id"]})
+
+        def post():
+            with fresh_client() as c:
+                return send(c, kim, run["id"]).status_code
+
+        second = in_background(post)
+        assert blocked_on_a_lock(engine, second), "the second didn't wait its turn"
+        other.execute(text(
+            "insert into position (run_id, driver_id, vehicle_id, latitude, longitude, "
+            "accuracy_m, recorded_at, received_at) values (:r, 1, 1, -37.5, 143.8, 9, now(), now())"),
+            {"r": run["id"]})
+        other.commit()
+    assert second.result(timeout=10) == 429
+
+
+def test_positions_sent_all_at_once_still_keep_only_one(client, db, dispatcher_headers):
+    from conftest import all_at_once, fresh_client
+
+    run, _, kim = on_the_road(client, db, dispatcher_headers)
+
+    def post():
+        with fresh_client() as c:
+            return send(c, kim, run["id"]).status_code
+
+    codes = all_at_once(8, post)
+    assert sorted(codes) == [204] + [429] * 7
+    assert len(db.execute(select(Position)).all()) == 1
