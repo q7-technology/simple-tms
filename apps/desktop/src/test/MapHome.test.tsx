@@ -22,7 +22,8 @@ describe("the map", () => {
     expect(screen.getByText("21")).toBeInTheDocument();
     // delivered today: the stops the drivers have delivered on today's runs
     expect(screen.getByText("Delivered").nextSibling).toHaveTextContent("3");
-    expect(calls.find((c) => path(c.url) === "/v1/runs")?.url).toMatch(/status=departed%2Cdone/);
+    // every run of the day: on the road, loading, and back
+    expect(calls.find((c) => path(c.url) === "/v1/runs")?.url).not.toMatch(/status=/);
     await userEvent.setup().click(screen.getByRole("link", { name: /Fleet/ }));
     expect(screen.getByTestId("where")).toHaveTextContent("/fleet");
     expect(screen.getByRole("dialog", { name: "Fleet" })).toBeInTheDocument();

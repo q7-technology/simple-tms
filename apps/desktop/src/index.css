@@ -71,7 +71,19 @@
   .live { display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border-radius: 999px; background: #E3F3EA; color: #146B45; font-size: 13px; font-weight: 700; }
   .avatar { width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--color-green); color: #fff; font-weight: 800; font-size: 14px; cursor: pointer; }
   .stage { position: relative; flex: 1; overflow: hidden; }
-  .stage > img { display: block; width: 100%; max-width: 1540px; height: auto; margin: 0 auto; }
+  /* the drawn region, and what is drawn on it, at the picture's own scale */
+  .world { position: relative; width: 100%; max-width: 1540px; margin: 0 auto; }
+  .world > img { display: block; width: 100%; height: auto; }
+  .truck { position: absolute; transform: translate(-50%, -100%); display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 0; border: 0; background: none; cursor: pointer; text-decoration: none; color: var(--color-ink); }
+  .truck .tag { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 14px; background: #fff; border: 2px solid #fff; box-shadow: 0 3px 8px rgba(23, 37, 31, 0.18); font-size: 12.5px; font-weight: 800; white-space: nowrap; }
+  .truck[aria-pressed="true"] .tag { border-color: var(--color-green); }
+  .truck.bad .tag { color: var(--color-red-ink); }
+  .truck:hover .tag { border-color: var(--color-line-2); }
+  .truckcard { top: 20px; right: 24px; width: 330px; padding: 18px; border-radius: 18px; box-shadow: var(--shadow-lift); gap: 14px; }
+  .panel { padding: 16px; border-radius: 16px; background: #fff; box-shadow: var(--shadow-soft); display: flex; flex-direction: column; gap: 10px; }
+  dl.kv { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; font-size: 13px; }
+  dl.kv dt { color: var(--color-muted); }
+  dl.kv dd { margin: 2px 0 0; font-weight: 700; }
   .ov { position: absolute; }
   .hud { padding: 10px 12px; border-radius: 14px; background: #fff; box-shadow: var(--shadow-soft); text-decoration: none; color: inherit; }
   .hud .eyebrow { font-size: 11px; }

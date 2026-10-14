@@ -12,9 +12,9 @@ export interface Call { method: string; url: string; body: unknown }
 type Handler = (method: string, url: string, body: unknown) => Response | null | Promise<Response | null>;
 
 export const DISPATCHER = { kind: "user", id: 1, name: "dee", display_name: "Dee Dispatch", role: "dispatcher",
-                            scopes: ["fleet:read", "consignments:read", "runs:read", "runs:write"] };
+                            scopes: ["fleet:read", "consignments:read", "runs:read", "runs:write", "location:read"] };
 export const MANAGER = { kind: "user", id: 2, name: "fleet.mgr", display_name: "Fran Fleet", role: "manager",
-                         scopes: ["fleet:read", "fleet:write", "consignments:read", "runs:read", "runs:write"] };
+                         scopes: ["fleet:read", "fleet:write", "consignments:read", "runs:read", "runs:write", "location:read"] };
 
 /** Signed in as a dispatcher (or `who`); `more` answers everything else, or it is a 404. */
 export function stubApi(more: Handler = () => null, who: object = DISPATCHER) {
