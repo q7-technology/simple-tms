@@ -27,9 +27,9 @@ def planned_run(client, db, headers, n=2, day=DAY):
     return run, cons
 
 
-def on_the_road(client, db, headers, n=2):
+def on_the_road(client, db, headers, n=2, day=DAY):
     """As planned_run, departed by the dispatcher; and Kim's phone signed in."""
-    run, cons = planned_run(client, db, headers, n)
+    run, cons = planned_run(client, db, headers, n, day=day)
     assert client.post(f"/v1/runs/{run['id']}/depart", headers=headers).status_code == 200
     return run, cons, driver_headers(client)
 

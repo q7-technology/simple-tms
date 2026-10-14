@@ -3,13 +3,17 @@ Start until the run is finished, and never outside a run."""
 import uuid
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy import select, update
 
 from conftest import bearer
 from deliveries_samples import delivered, driver_headers, on_the_road, planned_run
-from runs_samples import driver
+from runs_samples import DAY, driver
 from test_api_keys import _key
 from tms.models import ConsignmentEvent, Position
+
+# a run of an earlier day takes no positions: the samples' DAY is today
+pytestmark = pytest.mark.usefixtures("today_is_day")
 
 
 def where(**over) -> dict:
@@ -115,3 +119,21 @@ def test_one_position_every_ten_seconds_is_plenty(client, db, dispatcher_headers
     db.commit()
     assert send(client, kim, run["id"]).status_code == 204
     assert len(db.execute(select(Position)).all()) == 2
+
+
+def test_a_run_left_open_from_an_earlier_day_shares_nothing(client, db, dispatcher_headers):
+    # the server's day is UTC, behind Australia's: yesterday's run (by the
+    # server) is refused, which in Australia is from 10 or 11 am the day after
+    run, _, kim = on_the_road(client, db, dispatcher_headers, day=DAY - timedelta(days=1))
+    r = send(client, kim, run["id"])
+    assert r.status_code == 409 and r.json() == {
+        "code": "run_stale",
+        "detail": f"{run['run_no']} was for 13 Oct 2026 and was left open, "
+                  "so where it is isn't shared. Finish it."}
+    assert db.execute(select(Position)).first() is None
+
+
+def test_a_run_of_today_by_the_server_still_shares(client, db, dispatcher_headers):
+    # an Australian morning is still the day before by the server's clock
+    run, _, kim = on_the_road(client, db, dispatcher_headers, day=DAY)
+    assert send(client, kim, run["id"]).status_code == 204

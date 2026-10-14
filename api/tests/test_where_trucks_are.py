@@ -4,6 +4,7 @@ before Start or after the run is finished."""
 import uuid
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy import update
 
 from conftest import bearer
@@ -12,6 +13,9 @@ from runs_samples import DAY, assign, consignment, driver, new_run, vehicle
 from test_api_keys import _key
 from test_positions import send
 from tms.models import Position
+
+# a run of an earlier day takes no positions: the samples' DAY is today
+pytestmark = pytest.mark.usefixtures("today_is_day")
 
 
 def latest(client, headers, day=DAY):

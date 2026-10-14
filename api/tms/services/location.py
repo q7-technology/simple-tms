@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from tms.api.errors import Conflict, Refused
 from tms.models import Position, Run
-from tms.services import deliveries
+from tms.services import deliveries, fleet
 from tms.services.deliveries import MICRO, TENTH
 
 # the phone sends one about every 30 s; more often than this is a fault
@@ -25,6 +25,15 @@ NOT_SHARED = {"planned": ("run_not_started", "hasn't left yet"),
               "cancelled": ("run_cancelled", "was cancelled")}
 
 
+def stale(run: Run) -> bool:
+    """A run left on the road from an earlier day: its day is before the
+    server's (UTC). UTC is behind Australia, which is the grace: a run that
+    goes past midnight still shares until 10 or 11 am the day after by the
+    Australian clock, and a forgotten one stops then rather than sharing all
+    of the next working day."""
+    return run.day < fleet.today()
+
+
 def record(db: Session, who, run_id: int, *, at: datetime, latitude: Decimal,
            longitude: Decimal, accuracy_m: Decimal) -> Position:
     """Where the run's phone is now. Only for a run on the road: before Start
@@ -34,6 +43,9 @@ def record(db: Session, who, run_id: int, *, at: datetime, latitude: Decimal,
     if run.status in NOT_SHARED:
         code, said = NOT_SHARED[run.status]
         raise Conflict(code, f"{run.number} {said}, so where it is isn't shared")
+    if stale(run):
+        raise Conflict("run_stale", f"{run.number} was for {fleet.long_date(run.day)} and was "
+                                    "left open, so where it is isn't shared. Finish it.")
     now = datetime.now(UTC)
     last = db.execute(select(func.max(Position.received_at))
                       .where(Position.run_id == run.id)).scalar()

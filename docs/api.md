@@ -720,6 +720,7 @@ its latest once it is back.
 | --- | --- |
 | `409 run_not_started` | the run hasn't left: nothing is shared before Start |
 | `409 run_done`, `409 run_cancelled` | the run is finished or was cancelled: the phone stops |
+| `409 run_stale` | the run is still on the road from an earlier day (its `date` is before the server's day, in UTC: in Australia, from 10 or 11 am the day after) and was left open: the phone stops; finish it |
 | `422` | `accuracy_m` missing, or rougher than 1,000 m |
 | `429 too_often` | another position for the run arrived less than 10 seconds ago |
 

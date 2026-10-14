@@ -105,6 +105,17 @@ def pod_dir(tmp_path, monkeypatch):
     return folder
 
 
+@pytest.fixture
+def today_is_day(monkeypatch):
+    """The server's today is the samples' DAY, whatever the clock says, for
+    tests where a run's day must not be in the past."""
+    from runs_samples import DAY
+    from tms.services import fleet
+
+    monkeypatch.setattr(fleet, "today", lambda: DAY)
+    return DAY
+
+
 # --- people -----------------------------------------------------------------
 
 PASSWORD = "correct horse battery"
