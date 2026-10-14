@@ -31,6 +31,8 @@ services:
       TMS_RUN_SHEET_PRINTER: ${TMS_RUN_SHEET_PRINTER:-dispatch}
       TMS_MAP_TILE_URL: ${TMS_MAP_TILE_URL:-}
       TMS_MAP_ATTRIBUTION: ${TMS_MAP_ATTRIBUTION:-}
+      # checked against TMS_MAP_TILE_URL; Caddy puts it in the desktop's CSP
+      TMS_MAP_TILE_ORIGIN: ${TMS_MAP_TILE_ORIGIN:-}
       TMS_ETA_MINUTES_PER_STOP: ${TMS_ETA_MINUTES_PER_STOP:-20}
     volumes:
       # signatures and photos for proof of delivery (TMS_POD_DIR)

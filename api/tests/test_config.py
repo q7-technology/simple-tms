@@ -43,18 +43,23 @@ def test_positions_are_kept_90_days_and_no_map_tiles_are_set_up():
     assert s.eta_minutes_per_stop == 20
 
 
-@pytest.mark.parametrize("url", [
-    "https://api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key=abc",
-    "/tiles/{z}/{x}/{y}.png"])
-def test_a_tile_url_from_a_provider_or_this_server(url):
-    assert Settings(secret_key=KEY, map_tile_url=url).map_tile_url == url
+@pytest.mark.parametrize("url, origin", [
+    ("https://api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key=abc",
+     "https://api.maptiler.com"),
+    ("https://tiles.example.com:8443/{z}/{x}/{y}.png", "https://tiles.example.com:8443"),
+    ("/tiles/{z}/{x}/{y}.png", "")])
+def test_a_tile_url_from_a_provider_or_this_server(url, origin):
+    s = Settings(secret_key=KEY, map_tile_url=url, map_tile_origin=origin)
+    assert (s.map_tile_url, s.map_tile_origin) == (url, origin)
 
 
 @pytest.mark.parametrize("url", [
     "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
     "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
     "http://tiles.example.com/{z}/{x}/{y}.png",
-    "https://tiles.example.com/{z}/{x}.png"])
+    "https://tiles.example.com/{z}/{x}.png",
+    # Leaflet's subdomains: one origin for the CSP can't cover them
+    "https://{s}.tiles.example.com/{z}/{x}/{y}.png"])
 def test_a_tile_url_that_cant_be_used_refuses_to_start(url):
     with pytest.raises(ValidationError, match="TMS_MAP_TILE_URL"):
         Settings(secret_key=KEY, map_tile_url=url)
@@ -63,3 +68,20 @@ def test_a_tile_url_that_cant_be_used_refuses_to_start(url):
 def test_a_retention_period_of_no_days_refuses_to_start():
     with pytest.raises(ValidationError):
         Settings(secret_key=KEY, position_retention_days=0)
+
+
+@pytest.mark.parametrize("url, origin", [
+    # it goes into the desktop's Content-Security-Policy as it is
+    ("https://tiles.example.com/{z}/{x}/{y}.png", "https://tiles.example.com; script-src *"),
+    ("https://tiles.example.com/{z}/{x}/{y}.png", "https://tiles.example.com 'unsafe-inline'"),
+    ("https://tiles.example.com/{z}/{x}/{y}.png", "'self'"),
+    ("https://tiles.example.com/{z}/{x}/{y}.png", "https://tiles.example.com/"),
+    ("https://tiles.example.com/{z}/{x}/{y}.png", "http://tiles.example.com"),
+    # it must be where the tiles come from
+    ("https://tiles.example.com/{z}/{x}/{y}.png", ""),
+    ("https://tiles.example.com/{z}/{x}/{y}.png", "https://other.example.com"),
+    ("/tiles/{z}/{x}/{y}.png", "https://tiles.example.com"),
+    ("", "https://tiles.example.com")])
+def test_a_tile_origin_that_isnt_the_tiles_own_refuses_to_start(url, origin):
+    with pytest.raises(ValidationError, match="TMS_MAP_TILE_ORIGIN"):
+        Settings(secret_key=KEY, map_tile_url=url, map_tile_origin=origin)

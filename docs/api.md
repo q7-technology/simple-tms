@@ -748,7 +748,9 @@ set up (the desktop then lists each truck's position without a map). The
 tile address is a provider's (with its key, which the browser sees: restrict
 it to your domain at the provider) or a tile server of your own, an `https`
 address or a path on this server; OpenStreetMap's own tile servers are
-refused at start-up, as their policy asks.
+refused at start-up, as their policy asks, and so are `{s}` subdomains and a
+`TMS_MAP_TILE_ORIGIN` that isn't the tile address's own origin. `attribution`
+is HTML, as the map shows it.
 
 ## What just happened
 

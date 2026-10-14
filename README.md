@@ -125,8 +125,10 @@ coordinates. Two ways:
 - **A tile provider** (MapTiler, Stadia Maps, Thunderforest and others have
   free tiers for small use; each needs an account). Set
   `TMS_MAP_TILE_URL` to its raster address with `{z}`, `{x}` and `{y}` and
-  your key, `TMS_MAP_ATTRIBUTION` to the credit it asks for, and
-  `TMS_MAP_TILE_ORIGIN` to its `https://host` so the desktop's
+  your key (one host: not `{s}` subdomains), `TMS_MAP_ATTRIBUTION` to the
+  credit it asks for (HTML: the map shows it as it is, so a provider's credit
+  with a link in it works), and `TMS_MAP_TILE_ORIGIN` to its `https://host`
+  (with `:port` if it has one, and nothing more) so the desktop's
   Content-Security-Policy lets the tiles in. For example:
 
   ```
@@ -144,7 +146,9 @@ coordinates. Two ways:
 
 Then `docker compose up -d api` and `docker compose up -d --force-recreate
 caddy`. A tile address the API can't use (no `{z}`, `{x}` and `{y}`, not
-`https`, or OpenStreetMap's own) stops it starting, with the reason in
+`https`, `{s}` in it, or OpenStreetMap's own), or a `TMS_MAP_TILE_ORIGIN`
+that isn't exactly the tile address's own origin (or empty, for a path on
+this server), stops it starting, with the reason in
 `docker compose logs api`. If the tiles don't load, **Where is it** says so.
 
 ## Production on a real domain
