@@ -127,9 +127,9 @@ export function TruckCard({ run, heardFrom, canLocate, now, onClose }: {
       </div>
       <dl className="kv">
         <div><dt>Next stop</dt><dd>{next ? `${next.sequence} · ${next.consignment.customer}` : "Back to the depot"}</dd></div>
-        {nextAt && <div><dt>Arrives</dt><dd>{about(nextAt)}</dd></div>}
+        {nextAt && <div><dt>Arrives</dt><dd>{about(nextAt, now)}</dd></div>}
         <div><dt>Load left</dt><dd>{loadLeft(run)}</dd></div>
-        {e && <div><dt>Back at depot</dt><dd>{about(e.back_at_depot)}</dd></div>}
+        {e && <div><dt>Back at depot</dt><dd>{about(e.back_at_depot, now)}</dd></div>}
       </dl>
       {e && (
         <div className="small" style={{ marginTop: -4 }}>

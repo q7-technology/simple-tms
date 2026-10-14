@@ -5,9 +5,19 @@ const local = (h: number, m: number, s = 0) => new Date(2026, 9, 14, h, m, s);
 
 describe("how the map says where and when", () => {
   it("rounds an estimate to five minutes and says it is one", () => {
-    expect(about(local(11, 38).toISOString())).toBe("about 11:40 am");
-    expect(about(local(14, 12, 40).toISOString())).toBe("about 2:15 pm");
-    expect(about(local(9, 2).toISOString())).toBe("about 9:00 am");
+    const early = local(8, 0);
+    expect(about(local(11, 38).toISOString(), early)).toBe("about 11:40 am");
+    expect(about(local(14, 12, 40).toISOString(), early)).toBe("about 2:15 pm");
+    expect(about(local(9, 2).toISOString(), early)).toBe("about 9:00 am");
+  });
+
+  it("never gives a time before now", () => {
+    // due now: rounding down would say a time already gone
+    expect(about(local(11, 37).toISOString(), local(11, 37))).toBe("about 11:40 am");
+    expect(about(local(11, 36).toISOString(), local(11, 35, 30))).toBe("about 11:40 am");
+    // the desktop's clock a little ahead of the server's
+    expect(about(local(11, 30).toISOString(), local(11, 33))).toBe("about 11:35 am");
+    expect(about(local(11, 35).toISOString(), local(11, 35))).toBe("about 11:35 am");
   });
 
   it("says when a truck was last heard from, and when that is a while", () => {

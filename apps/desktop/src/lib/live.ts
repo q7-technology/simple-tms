@@ -9,9 +9,14 @@ import { plain, sum } from "./decimal";
 
 const FIVE_MIN = 5 * 60_000;
 
-/** An estimate to the nearest five minutes: "about 11:40 am". */
-export function about(iso: string): string {
-  return `about ${clock(new Date(Math.round(new Date(iso).getTime() / FIVE_MIN) * FIVE_MIN))}`;
+/** An estimate to the nearest five minutes: "about 11:40 am". Never before
+ * now: a time due now (or, by this computer's clock, just gone) is rounded
+ * up to the next five minutes instead. */
+export function about(iso: string, now = new Date()): string {
+  const at = Math.max(new Date(iso).getTime(), now.getTime());
+  let shown = Math.round(at / FIVE_MIN) * FIVE_MIN;
+  if (shown < now.getTime()) shown = Math.ceil(now.getTime() / FIVE_MIN) * FIVE_MIN;
+  return `about ${clock(new Date(shown))}`;
 }
 
 /** A run left on the road from an earlier day (by this computer's
