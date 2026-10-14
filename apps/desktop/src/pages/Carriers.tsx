@@ -77,14 +77,16 @@ export function Carriers() {
   // the one picked, as last seen on the bay (kept once it has gone)
   if (chosen && (picked === null || chosenId === picked)) lastChosen.current = chosen;
 
-  // the box starts empty, with the consignment's carrier, each time it moves
-  // to another one. A con note it has already is shown beside it, not put in
-  // the box: the next scan always replaces what is there, never adds to it.
+  // the box takes the consignment's carrier each time it moves to another
+  // one. A con note it has already is shown beside it, not put in the box:
+  // the next scan always replaces what is there, never adds to it. The text
+  // is cleared where the box is moved (a row picked, a save, one leaving the
+  // bay), never by an effect after the move: that could land after the first
+  // keys of a scan and wipe them.
   const chosenKey = chosen ? `${chosen.manifest.id}:${chosenId}` : "";
   useEffect(() => {
     setCarrierId(chosen ? String(chosen.manifest.carrier.id) : "");
   }, [chosenKey]);
-  useEffect(() => { setConNote(""); }, [chosenId]);
 
   // the one being typed for has left the bay (another desk put it on a run,
   // or in the tray): say so, rather than move the half-typed number to another
@@ -255,7 +257,7 @@ export function Carriers() {
                     return (
                       <tr key={c.id} className={`${l.con_note ? "" : "wait"}${c.id === chosenId ? " sel" : ""}`}>
                         <td><button type="button" className="rowbtn" aria-pressed={c.id === chosenId} aria-label={`Con note for ${c.customer}`}
-                                    onClick={() => { setPicked(c.id); setTimeout(() => input.current?.focus(), 0); }}>{c.wms_ref}</button></td>
+                                    onClick={() => { if (c.id !== chosenId) setConNote(""); setPicked(c.id); setTimeout(() => input.current?.focus(), 0); }}>{c.wms_ref}</button></td>
                         <td style={{ whiteSpace: "nowrap" }}><b>{c.customer}</b><div className="small">{c.suburb}</div></td>
                         <td className="num">{c.cartons}</td>
                         <td className="num">{plain(toMicro(c.weight_kg))}</td>
