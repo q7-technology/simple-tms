@@ -91,6 +91,19 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Refused while a manifest's ship call is still to be made (pending, or
+    failed and waiting for Try again): it is a delivery Simple WMS hasn't
+    heard has shipped, and going back would lose it. Let the worker make them
+    (or settle them by hand) first. Ship calls already made, and a
+    manifest's print jobs, go with the manifests."""
+    waiting = op.get_bind().execute(sa.text(
+        "select count(*) from outbound_call "
+        "where manifest_id is not null and status in ('pending', 'failed')")).scalar()
+    if waiting:
+        raise RuntimeError(
+            f"{waiting} ship call{'' if waiting == 1 else 's'} of a carrier's manifest still to "
+            "be made (pending or failed): Simple WMS hasn't heard those deliveries shipped. "
+            "Let the worker make them, or Try again on Carriers, then downgrade again.")
     for table in QUEUES:
         # a manifest's calls and prints can't be a run's: they go with the manifests
         op.execute(f"delete from {table} where manifest_id is not null")

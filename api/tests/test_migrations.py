@@ -151,3 +151,33 @@ def test_carrier_names_that_differ_only_by_case_stop_the_upgrade_and_say_which(b
         command.upgrade(cfg, "head")
     assert "Valley Freight (sample)" in str(refused.value)
     engine.dispose()
+
+
+def test_going_back_before_carriers_waits_for_their_ship_calls(blank_database):
+    """A manifest's ship call still to be made is a delivery Simple WMS hasn't
+    heard has shipped: going back below 0008 is refused while one waits."""
+    cfg = alembic_config(blank_database)
+    command.upgrade(cfg, "head")
+    engine = create_engine(blank_database)
+    with engine.begin() as conn:
+        _carrier_row(conn, "Ridgeline Express (sample)")
+        conn.execute(text(
+            "insert into consignment (wms_ref, warehouse, owner, customer, ship_to, status) "
+            "values ('0080034519', 'MEL', 'DEFAULT', 'Hilltop Joinery', '{}', 'collected')"))
+        conn.execute(text(
+            "insert into manifest (carrier_id, day, created_by) "
+            "select id, date '2026-10-15', 'dee' from carrier"))
+        conn.execute(text(
+            "insert into outbound_call (message_id, kind, path, body, manifest_id, consignment_id, "
+            "status, attempts, next_attempt_at) select gen_random_uuid(), 'ship', '/x', '{}', "
+            "m.id, c.id, 'pending', 0, now() from manifest m, consignment c"))
+    with pytest.raises(RuntimeError, match="1 ship call of a carrier's manifest still to be made"):
+        command.downgrade(cfg, "0007")
+    with engine.connect() as conn:
+        assert conn.execute(text("select count(*) from outbound_call")).scalar() == 1
+    with engine.begin() as conn:
+        conn.execute(text("update outbound_call set status = 'done'"))
+    command.downgrade(cfg, "0007")
+    with engine.connect() as conn:
+        assert conn.execute(text("select count(*) from outbound_call")).scalar() == 0
+    engine.dispose()
