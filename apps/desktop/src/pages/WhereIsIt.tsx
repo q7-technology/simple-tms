@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import type { MapTiles, Page, TruckAt } from "../api/types";
 import { isoDay } from "../lib/days";
 import { heard } from "../lib/live";
+import { usePoll } from "../lib/poll";
 import type { SlippyMap } from "../lib/slippy";
 import { Drawer } from "../ui/Drawer";
 
@@ -35,9 +36,9 @@ export function WhereIsIt() {
   useEffect(() => {
     api.get<MapTiles>("/v1/map").then(setTiles).catch(() => setTiles({ tile_url: null, attribution: null }));
     void load();
-    const t = setInterval(() => void load(), 30_000);
-    return () => clearInterval(t);
   }, [load]);
+  // every 30 s while the drawer is seen
+  usePoll(() => void load(), 30_000);
 
   // the map is loaded only if there are tiles to draw it with
   useEffect(() => {

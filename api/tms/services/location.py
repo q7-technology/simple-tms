@@ -8,7 +8,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func, select, text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from tms.api.errors import Conflict, FieldError, Refused
 from tms.models import Position, Run
@@ -85,5 +85,6 @@ def latest(db: Session, day: date) -> list[tuple[Run, Position]]:
     rows = db.execute(select(Position).where(Position.id.in_(newest))
                       .order_by(Position.run_id)).scalars().all()
     runs = {r.id: r for r in db.execute(select(Run).where(
-        Run.id.in_([p.run_id for p in rows]))).scalars()}
+        Run.id.in_([p.run_id for p in rows])).options(
+        selectinload(Run.vehicle), selectinload(Run.driver))).scalars()}
     return [(runs[p.run_id], p) for p in rows]

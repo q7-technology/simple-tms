@@ -76,7 +76,7 @@ def _trips(db: Session, limit: int) -> list[Happened]:
 
 def _checks(db: Session, limit: int) -> list[Happened]:
     checks = db.execute(select(PrestartCheck).order_by(PrestartCheck.id.desc())
-                        .limit(limit)).scalars().all()
+                        .limit(limit).options(selectinload(PrestartCheck.items))).scalars().all()
     trucks = {v.id: v.rego for v in db.execute(select(Vehicle).where(
         Vehicle.id.in_({c.vehicle_id for c in checks}))).scalars()}
     drivers = {d.id: d.name for d in db.execute(select(Driver).where(

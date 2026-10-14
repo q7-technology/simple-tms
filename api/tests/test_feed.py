@@ -71,3 +71,18 @@ def test_pre_starts_and_fixes_only_for_those_who_see_the_fleet(client, db, dispa
     assert {i["kind"] for i in feed(client, erp)} == {"packed"}
     office = bearer(_key(capsys, "office", "runs:read,fleet:read"))
     assert {i["kind"] for i in feed(client, office)} == {"packed", "prestart", "fixed"}
+
+
+def test_more_pre_starts_dont_mean_more_queries(client, db, dispatcher_headers):
+    from conftest import queries
+
+    run, _ = planned_run(client, db, dispatcher_headers)
+    kim = driver_headers(client)
+    assert prestart(client, kim, run["id"]).status_code == 200
+    with queries() as one:
+        feed(client, dispatcher_headers)
+    for _ in range(3):
+        assert prestart(client, kim, run["id"], failed=("Tyres",)).status_code == 200
+    with queries() as four:
+        assert len([i for i in feed(client, dispatcher_headers) if i["kind"] == "prestart"]) == 4
+    assert four[0] == one[0]

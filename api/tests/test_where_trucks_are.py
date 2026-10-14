@@ -93,3 +93,22 @@ def test_the_map_tiles_as_set_up(client, db, dispatcher_headers, monkeypatch):
     monkeypatch.setattr(get_settings(), "map_attribution", "© OpenStreetMap contributors")
     assert client.get("/v1/map", headers=dispatcher_headers).json() == {
         "tile_url": "/tiles/{z}/{x}/{y}.png", "attribution": "© OpenStreetMap contributors"}
+
+
+def test_more_trucks_dont_mean_more_queries(client, db, dispatcher_headers):
+    from conftest import queries
+
+    run, _, kim = on_the_road(client, db, dispatcher_headers)
+    send(client, kim, run["id"])
+    with queries() as one:
+        assert len(latest(client, dispatcher_headers).json()["items"]) == 1
+    for n, (rego, code) in enumerate((("TMS052", "mel"), ("TMS053", "tom"))):
+        vehicle(db, rego=rego)
+        driver(db, code=code, name=code.title())
+        other = new_run(client, dispatcher_headers, rego=rego, code=code)
+        assign(client, dispatcher_headers, other["id"], consignment(db, ref=f"008009999{n}").id)
+        client.post(f"/v1/runs/{other['id']}/depart", headers=dispatcher_headers)
+        send(client, driver_headers(client, code=code), other["id"])
+    with queries() as three:
+        assert len(latest(client, dispatcher_headers).json()["items"]) == 3
+    assert three[0] == one[0]

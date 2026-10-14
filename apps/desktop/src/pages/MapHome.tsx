@@ -5,6 +5,7 @@ import type { FeedItem, Page, Run, TruckAt, Vehicle } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { clock, isoDay } from "../lib/days";
 import { cantGo } from "../lib/fleet";
+import { usePoll } from "../lib/poll";
 import { leftOpen } from "../lib/live";
 import { DrawerBoundary } from "../ui/DrawerBoundary";
 import { Feed } from "../ui/Feed";
@@ -73,11 +74,9 @@ export function MapHome() {
     }
   }, [canLocate]);
 
-  useEffect(() => {
-    void load();
-    const t = setInterval(() => { setNow(new Date()); void load(); }, 30_000);
-    return () => clearInterval(t);
-  }, [load]);
+  useEffect(() => { void load(); }, [load]);
+  // every 30 s while the map is seen
+  usePoll(() => { setNow(new Date()); void load(); }, 30_000);
 
   function search(e: FormEvent) {
     e.preventDefault();

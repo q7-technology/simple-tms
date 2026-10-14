@@ -225,6 +225,24 @@ def blocked_on_a_lock(engine, future, timeout: float = 5) -> bool:
 
 
 @contextlib.contextmanager
+def queries():
+    """Counts the SQL statements sent while inside: [n]."""
+    from sqlalchemy import event
+    from sqlalchemy.engine import Engine
+
+    n = [0]
+
+    def count(*args):
+        n[0] += 1
+
+    event.listen(Engine, "before_cursor_execute", count)
+    try:
+        yield n
+    finally:
+        event.remove(Engine, "before_cursor_execute", count)
+
+
+@contextlib.contextmanager
 def beaten_to_it(engine, rival_for):
     """Just before the API writes a new row, another connection commits the row
     rival_for(new_object) returns: two requests racing for the same key."""
