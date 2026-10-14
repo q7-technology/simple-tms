@@ -70,7 +70,9 @@ copy and states. Do not edit anything under `design/` unless asked.
   history, and the worker deletes them, and clears the position on each proof
   of delivery, after the retention period (`TMS_POSITION_RETENTION_DAYS`, 90
   days by default). That is the one deletion allowed: rule 1 keeps business
-  records, and a position is not one.
+  records, and a position is not one. A proof of delivery (`pod`) is kept
+  as it was: a trigger refuses any UPDATE or DELETE but clearing its
+  latitude, longitude and accuracy_m.
 - Build order is in the design under "Build order". Finish a step so it is
   usable before starting the next.
 - Tests: pytest for the API against a real PostgreSQL, Vitest for the apps.

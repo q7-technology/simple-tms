@@ -4,7 +4,7 @@ otherwise) the worker deletes them, and clears the position on a proof of
 delivery. Nothing else about a delivery changes."""
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 
 from deliveries_samples import delivered, on_the_road
 from tms.models import ConsignmentEvent, Pod, Position
@@ -20,6 +20,15 @@ def _position(db, run_id, days_ago: float):
     db.commit()
 
 
+def _backdate(db, pod_id, days):
+    """A delivery made this long ago. A proof of delivery is kept as it was
+    (the database refuses any other change), so the test steps round that."""
+    db.execute(text("alter table pod disable trigger pod_kept"))
+    db.execute(update(Pod).where(Pod.id == pod_id).values(at=Pod.at - timedelta(days=days)))
+    db.execute(text("alter table pod enable trigger pod_kept"))
+    db.commit()
+
+
 def test_what_is_older_than_90_days_is_forgotten(client, db, dispatcher_headers):
     run, (a, b), kim = on_the_road(client, db, dispatcher_headers)
     _position(db, run["id"], 91)
@@ -27,8 +36,7 @@ def test_what_is_older_than_90_days_is_forgotten(client, db, dispatcher_headers)
     delivered(client, kim, run["id"], a, position=HERE)
     delivered(client, kim, run["id"], b, position=HERE)
     old, recent = db.execute(select(Pod).order_by(Pod.id)).scalars().all()
-    db.execute(update(Pod).where(Pod.id == old.id).values(at=Pod.at - timedelta(days=91)))
-    db.commit()
+    _backdate(db, old.id, days=91)
     history = db.execute(select(ConsignmentEvent.id, ConsignmentEvent.detail)).all()
 
     assert forget_positions(db) == (1, 1)
@@ -72,3 +80,29 @@ def test_each_go_says_what_it_forgot_even_nothing(db, caplog):
     with caplog.at_level(logging.INFO, logger="tms.worker"):
         assert forget_positions(db) == (0, 0)
     assert "forgot 0 positions, and where 0 deliveries were, older than 90 days" in caplog.text
+
+
+def test_a_proof_of_delivery_is_kept_as_it_was_but_where_it_was_can_be_cleared(
+        client, db, dispatcher_headers):
+    import pytest
+    from sqlalchemy import delete
+    from sqlalchemy.exc import DBAPIError
+
+    run, (a, _), kim = on_the_road(client, db, dispatcher_headers)
+    delivered(client, kim, run["id"], a, position=HERE)
+    pod = db.execute(select(Pod)).scalar_one()
+    for change in ({"signed_name": "Someone else"}, {"latitude": -37.1},
+                   {"latitude": None, "signed_name": "Someone else"}, {"at": Pod.at - timedelta(days=1)}):
+        with pytest.raises(DBAPIError, match="kept as it was"):
+            db.execute(update(Pod).where(Pod.id == pod.id).values(**change))
+        db.rollback()
+    with pytest.raises(DBAPIError, match="kept as it was"):
+        db.execute(delete(Pod).where(Pod.id == pod.id))
+    db.rollback()
+    # the retention period's clearing is the one change allowed
+    db.execute(update(Pod).where(Pod.id == pod.id)
+               .values(latitude=None, longitude=None, accuracy_m=None))
+    db.commit()
+    db.expire_all()
+    pod = db.get(Pod, pod.id)
+    assert (pod.latitude, pod.longitude, pod.accuracy_m, pod.signed_name) == (None, None, None, "Priya")
