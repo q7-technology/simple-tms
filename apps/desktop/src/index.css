@@ -208,6 +208,26 @@
   .grp tr.wait td { background: #FFFBEF; }
   .grp tr.sel td { background: #F1F8F4; }
   .grp tr.sel .rowbtn { border-color: var(--color-green); background: var(--color-tint); }
+
+  /* the Consignments drawer (Consignments.html) */
+  .p-blue { background: #E4EEF9; color: #235596; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tab { height: 40px; padding: 0 14px; border-radius: 999px; cursor: pointer; font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; border: 1px solid var(--color-line); background: #fff; color: var(--color-ink); }
+  .tab i { font-style: normal; min-width: 20px; padding: 1px 6px; border-radius: 999px; font-size: 12px; font-weight: 800; background: var(--color-tint); color: var(--color-green-dark); text-align: center; }
+  .tab[aria-selected="true"] { background: var(--color-green); border-color: var(--color-green); color: #fff; }
+  .tab[aria-selected="true"] i { background: rgba(255, 255, 255, 0.22); color: #fff; }
+  .tab i.r { background: var(--color-red-bg); color: var(--color-red-ink); }
+  .tab i.a { background: var(--color-amber-bg); color: var(--color-amber-ink); }
+  .tl { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .tl li { display: flex; gap: 12px; position: relative; padding-bottom: 10px; }
+  .tl li:last-child { padding-bottom: 0; }
+  .tl li::before { content: ""; position: absolute; left: 11px; top: 24px; bottom: 0; width: 2px; background: #CFE3D6; }
+  .tl li:last-child::before { display: none; }
+  .tl .m { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--color-green); color: #fff; }
+  .tl .m.wms { background: #B4844A; }
+  .tl b { display: block; font-size: 14px; }
+  .tl .w { display: block; font-size: 12px; color: var(--color-muted); }
+  .pod { padding: 12px; border-radius: 14px; background: #fff; border: 1px solid var(--color-card-line); display: flex; flex-direction: column; gap: 10px; }
 }
 
 @media (max-width: 960px) {
