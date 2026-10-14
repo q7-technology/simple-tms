@@ -86,3 +86,22 @@ def test_more_pre_starts_dont_mean_more_queries(client, db, dispatcher_headers):
     with queries() as four:
         assert len([i for i in feed(client, dispatcher_headers) if i["kind"] == "prestart"]) == 4
     assert four[0] == one[0]
+
+
+def test_a_con_note_in_and_the_carrier_collecting(client, db, manager_headers, dispatcher_headers):
+    from carriers_samples import RIDGELINE, book, new_carrier
+    from runs_samples import consignment
+    rx = new_carrier(client, manager_headers)
+    a = consignment(db, ref="0080034519", customer="Hilltop Joinery")
+    b = consignment(db, ref="0080034520", customer="Old Mill Books")
+    book(client, dispatcher_headers, rx["id"], a.id, con_note="RX-77310042")
+    m = book(client, dispatcher_headers, rx["id"], b.id, con_note="RX-77310043").json()
+    client.post(f"/v1/manifests/{m['id']}/collect", headers=dispatcher_headers,
+                json={"message_id": str(uuid.uuid4()), "consignment_ids": [a.id, b.id]})
+    items = feed(client, dispatcher_headers)
+    assert [i["kind"] for i in items] == ["collected", "con_note", "con_note", "packed", "packed"]
+    went, note = items[0], items[2]
+    assert (went["carrier"], went["manifest_no"], went["count"], went["by"]) == (
+        RIDGELINE, m["manifest_no"], 2, "dee")
+    assert (note["carrier"], note["con_note"], note["customer"], note["wms_ref"], note["by"]) == (
+        RIDGELINE, "RX-77310042", "Hilltop Joinery", "0080034519", "dee")

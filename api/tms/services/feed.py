@@ -1,23 +1,25 @@
 """What just happened: the latest of what the office hears, newest first,
 read from the records already kept: consignments packed in Simple WMS,
-delivered or not, runs leaving and finishing, pre-starts, and trucks marked
-fixed. Nothing is written for it, and no position is in it."""
+delivered or not, runs leaving and finishing, con notes in and carriers
+collecting, pre-starts, and trucks marked fixed. Nothing is written for it,
+and no position is in it."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from tms.models import (
-    Consignment, ConsignmentEvent, Driver, Pod, PrestartCheck, Run, Stop, Vehicle, VehicleRecord,
+    Booking, Consignment, ConsignmentEvent, Driver, Manifest, Pod, PrestartCheck, Run, Stop,
+    Vehicle, VehicleRecord,
 )
 
 
 @dataclass
 class Happened:
-    # packed, delivered, failed, left, finished, prestart, fixed
+    # packed, delivered, failed, left, finished, con_note, collected, prestart, fixed
     kind: str
     at: datetime
     run: Run | None = None
@@ -32,6 +34,11 @@ class Happened:
     failed: list[str] = field(default_factory=list)
     by: str | None = None
     note: str | None = None
+    # a con note in, or a carrier collecting its manifest (and how many on it)
+    carrier: str | None = None
+    con_note: str | None = None
+    manifest_no: str | None = None
+    count: int | None = None
 
 
 def _runs(db: Session, ids: set[int]) -> dict[int, Run]:
@@ -74,6 +81,26 @@ def _trips(db: Session, limit: int) -> list[Happened]:
     return out
 
 
+def _carriers(db: Session, limit: int) -> list[Happened]:
+    notes = db.execute(
+        select(ConsignmentEvent, Consignment).join(Consignment)
+        .where(ConsignmentEvent.kind == "con_note")
+        .order_by(ConsignmentEvent.id.desc()).limit(limit)).all()
+    out = [Happened(kind="con_note", at=e.at, customer=c.customer, wms_ref=c.wms_ref,
+                    carrier=e.detail.get("carrier"), con_note=e.detail.get("con_note"),
+                    by=e.detail.get("by")) for e, c in notes]
+    on_it = (select(func.count()).where(Booking.manifest_id == Manifest.id,
+                                        Booking.removed_at.is_(None))
+             .correlate(Manifest).scalar_subquery())
+    went = db.execute(
+        select(Manifest, on_it).where(Manifest.collected_at.is_not(None))
+        .order_by(Manifest.collected_at.desc()).limit(limit)
+        .options(selectinload(Manifest.carrier))).all()
+    out += [Happened(kind="collected", at=m.collected_at, carrier=m.carrier.name,
+                     manifest_no=m.number, count=n, by=m.collected_by) for m, n in went]
+    return out
+
+
 def _checks(db: Session, limit: int) -> list[Happened]:
     checks = db.execute(select(PrestartCheck).order_by(PrestartCheck.id.desc())
                         .limit(limit).options(selectinload(PrestartCheck.items))).scalars().all()
@@ -100,7 +127,7 @@ def recent(db: Session, who, limit: int) -> list[Happened]:
     """The newest `limit` of each kind, merged and cut to `limit`. Pre-starts
     and trucks marked fixed are the fleet's records: only for a caller who
     may see the fleet (fleet:read)."""
-    items = _consignments(db, limit) + _trips(db, limit)
+    items = _consignments(db, limit) + _trips(db, limit) + _carriers(db, limit)
     if who.has_scope("fleet:read"):
         items += _checks(db, limit) + _fixes(db, limit)
     return sorted(items, key=lambda h: h.at, reverse=True)[:limit]
