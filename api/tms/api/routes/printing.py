@@ -1,4 +1,4 @@
-"""Run sheets, and Platen telling us how each one went."""
+"""Run sheets and carrier manifests, and Platen telling us how each one went."""
 from __future__ import annotations
 
 import uuid
@@ -19,7 +19,9 @@ router = APIRouter(tags=["printing"])
 
 class PrintJobOut(BaseModel):
     job_id: uuid.UUID
-    run_id: int
+    # a run's run sheet, or a carrier's manifest
+    run_id: int | None
+    manifest_id: int | None
     template: str
     printer: str
     status: str
@@ -40,8 +42,9 @@ class JobStatusIn(BaseModel):
 
 
 def job_out(job: PrintJob) -> PrintJobOut:
-    return PrintJobOut(job_id=job.job_id, run_id=job.run_id, template=job.template,
-                       printer=job.printer, status=job.status, attempts=job.attempts,
+    return PrintJobOut(job_id=job.job_id, run_id=job.run_id, manifest_id=job.manifest_id,
+                       template=job.template, printer=job.printer, status=job.status,
+                       attempts=job.attempts,
                        last_error=job.last_error, created_at=job.created_at,
                        sent_at=job.sent_at, printed_at=job.printed_at)
 
@@ -50,6 +53,14 @@ def job_out(job: PrintJob) -> PrintJobOut:
 def print_run_sheet(id: int, db: DB, who: Principal = require("runs:write")):
     """Queue the run sheet for Platen. Each call is a new print."""
     job = printing.queue_run_sheet(db, id, by=who.name)
+    db.commit()
+    return job_out(job)
+
+
+@router.post("/manifests/{id}/print", status_code=202, response_model=PrintJobOut)
+def print_manifest(id: int, db: DB, who: Principal = require("runs:write")):
+    """Queue the carrier's manifest for Platen. Each call prints again."""
+    job = printing.queue_manifest(db, id, by=who.name)
     db.commit()
     return job_out(job)
 

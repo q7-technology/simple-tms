@@ -190,6 +190,16 @@ def set_con_note(db: Session, manifest_id: int, consignment_id: int, con_note: s
     return m
 
 
+def refuse_missing_con_notes(m: Manifest) -> None:
+    """The carrier's driver signs for each consignment by its con note."""
+    missing = [b.consignment for b in m.lines if b.con_note is None]
+    if missing:
+        c = missing[0]
+        raise Conflict("con_note_missing",
+                       f"Add the con note of {c.customer} ({c.wms_ref}) first: each consignment "
+                       "needs one before the carrier takes it")
+
+
 def collect(db: Session, manifest_id: int, consignment_ids: list[int], by: str) -> Manifest:
     """The carrier has called and taken what is on the manifest: each
     consignment is collected, and a ship call to Simple WMS waits in the
@@ -210,12 +220,7 @@ def collect(db: Session, manifest_id: int, consignment_ids: list[int], by: str) 
     if len(consignment_ids) != len(set(consignment_ids)) or set(consignment_ids) != on_it:
         raise Conflict("stale", f"{m.number} changed while you were looking; it has been "
                                 "reloaded, so check it and try again")
-    missing = [b.consignment for b in m.lines if b.con_note is None]
-    if missing:
-        c = missing[0]
-        raise Conflict("con_note_missing",
-                       f"Add the con note of {c.customer} ({c.wms_ref}) first: each consignment "
-                       "needs one before the carrier takes it")
+    refuse_missing_con_notes(m)
     now = _now()
     for b in m.lines:
         c = b.consignment
