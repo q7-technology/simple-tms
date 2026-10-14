@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Uuid
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Uuid
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -25,12 +25,15 @@ class InboundEvent(Base):
 
 
 class OutboundCall(Base):
-    """A call to Simple WMS, waiting or made: today the ship call when a run
-    departs. The worker makes it, retrying after 1 min, 5, 30 and 2 h; the
-    same message_id goes with every try, so Simple WMS acts on it once."""
+    """A call to Simple WMS, waiting or made: the ship call when a run
+    departs, or when a carrier collects. The worker makes it, retrying after
+    1 min, 5, 30 and 2 h; the same message_id goes with every try, so Simple
+    WMS acts on it once. It belongs to a run or to a manifest, never both."""
 
     __tablename__ = "outbound_call"
-    __table_args__ = (Index("ix_outbound_call_due", "status", "next_attempt_at"),)
+    __table_args__ = (Index("ix_outbound_call_due", "status", "next_attempt_at"),
+                      CheckConstraint("num_nonnulls(run_id, manifest_id) = 1",
+                                      name="run_or_manifest"))
 
     id: Mapped[int] = mapped_column(primary_key=True)
     message_id: Mapped[uuid.UUID] = mapped_column(Uuid, unique=True)
@@ -39,7 +42,8 @@ class OutboundCall(Base):
     # the Simple WMS path, e.g. /v1/deliveries/0080012345/ship, and the body
     path: Mapped[str] = mapped_column(String(200))
     body: Mapped[dict] = mapped_column(JSONB)
-    run_id: Mapped[int] = mapped_column(ForeignKey("run.id"), index=True)
+    run_id: Mapped[int | None] = mapped_column(ForeignKey("run.id"), index=True)
+    manifest_id: Mapped[int | None] = mapped_column(ForeignKey("manifest.id"), index=True)
     consignment_id: Mapped[int] = mapped_column(ForeignKey("consignment.id"), index=True)
     # pending, done, failed
     status: Mapped[str] = mapped_column(String(16), default="pending")
@@ -53,14 +57,18 @@ class OutboundCall(Base):
 class PrintJob(Base):
     """A document for Platen: a template name and JSON, never a rendered
     page. The worker sends it with the same backoff as the ship calls;
-    Platen says printed or failed on POST /v1/print-jobs/{job_id}/status."""
+    Platen says printed or failed on POST /v1/print-jobs/{job_id}/status. A
+    run's run sheet, or a carrier's manifest."""
 
     __tablename__ = "print_job"
-    __table_args__ = (Index("ix_print_job_due", "status", "next_attempt_at"),)
+    __table_args__ = (Index("ix_print_job_due", "status", "next_attempt_at"),
+                      CheckConstraint("num_nonnulls(run_id, manifest_id) = 1",
+                                      name="run_or_manifest"))
 
     id: Mapped[int] = mapped_column(primary_key=True)
     job_id: Mapped[uuid.UUID] = mapped_column(Uuid, unique=True)
-    run_id: Mapped[int] = mapped_column(ForeignKey("run.id"), index=True)
+    run_id: Mapped[int | None] = mapped_column(ForeignKey("run.id"), index=True)
+    manifest_id: Mapped[int | None] = mapped_column(ForeignKey("manifest.id"), index=True)
     template: Mapped[str] = mapped_column(String(64))
     version: Mapped[str] = mapped_column(String(16))
     printer: Mapped[str] = mapped_column(String(64))

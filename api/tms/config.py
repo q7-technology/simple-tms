@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     platen_url: str = ""
     platen_key: str = ""
     run_sheet_printer: str = "dispatch"
+    # The Platen printer carrier manifests go to; empty, the run sheets' one.
+    manifest_printer: str = ""
 
     # Proof of delivery: where signatures and photos are kept on disk (a
     # volume in Compose). Only the API reads and writes them.
@@ -66,6 +68,10 @@ class Settings(BaseSettings):
     # The worker that sends the ship calls and print jobs.
     worker_poll_seconds: float = 5.0
     worker_http_timeout_seconds: float = 10.0
+
+    @property
+    def manifest_printer_or_default(self) -> str:
+        return self.manifest_printer.strip() or self.run_sheet_printer
 
     @field_validator("secret_key")
     @classmethod

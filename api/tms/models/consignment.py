@@ -24,7 +24,9 @@ class Consignment(Base):
     customer: Mapped[str] = mapped_column(String(200))
     ship_to: Mapped[dict] = mapped_column(JSONB, default=dict)
     required_by: Mapped[date | None] = mapped_column(Date)
-    # packed for now; assigned, departed, delivered, failed arrive with runs
+    # packed (in the tray), assigned (on a planned run), departed, delivered,
+    # failed (came back: in the tray again), booked (on the carrier bay),
+    # collected (the carrier has it)
     status: Mapped[str] = mapped_column(String(16), default="packed", index=True)
     created_at: Mapped[datetime] = created_at_column()
 
@@ -61,7 +63,8 @@ class ConsignmentEvent(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     consignment_id: Mapped[int] = mapped_column(ForeignKey("consignment.id"), index=True)
-    # packed, then assigned, departed, delivered, failed with later steps
+    # packed, assigned, unassigned, departed, delivered, failed, booked,
+    # unbooked, con_note, collected
     kind: Mapped[str] = mapped_column(String(16))
     at: Mapped[datetime] = created_at_column()
     detail: Mapped[dict] = mapped_column(JSONB, default=dict)

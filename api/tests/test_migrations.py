@@ -14,7 +14,7 @@ TABLES = {"user", "user_session", "driver", "vehicle", "consignment", "package",
           "consignment_event", "inbound_event", "run", "stop", "outbound_call", "print_job",
           "api_key", "inbound_message", "pod_file", "pod",
           "checklist_item", "prestart_check", "prestart_item", "vehicle_record",
-          "position", "alembic_version"}
+          "position", "carrier", "manifest", "booking", "alembic_version"}
 
 
 @pytest.fixture

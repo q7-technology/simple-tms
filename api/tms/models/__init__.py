@@ -6,10 +6,11 @@ from tms.models.integration import InboundEvent, OutboundCall, PrintJob
 from tms.models.runs import Run, Stop
 from tms.models.delivery import InboundMessage, Pod, PodFile
 from tms.models.location import Position
+from tms.models.carriers import Booking, Carrier, Manifest
 
 __all__ = [
     "Base", "User", "UserSession", "Driver", "Vehicle", "Consignment", "Package",
     "ConsignmentEvent", "InboundEvent", "Run", "Stop", "OutboundCall", "PrintJob", "ApiKey",
     "InboundMessage", "Pod", "PodFile", "ChecklistItem", "PrestartCheck", "PrestartItem",
-    "VehicleRecord", "Position",
+    "VehicleRecord", "Position", "Carrier", "Manifest", "Booking",
 ]

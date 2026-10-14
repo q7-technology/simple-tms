@@ -85,3 +85,10 @@ def test_a_retention_period_of_no_days_refuses_to_start():
 def test_a_tile_origin_that_isnt_the_tiles_own_refuses_to_start(url, origin):
     with pytest.raises(ValidationError, match="TMS_MAP_TILE_ORIGIN"):
         Settings(secret_key=KEY, map_tile_url=url, map_tile_origin=origin)
+
+
+def test_manifests_go_to_the_run_sheet_printer_unless_told():
+    s = Settings(secret_key=KEY, run_sheet_printer="office")
+    assert s.manifest_printer == "" and s.manifest_printer_or_default == "office"
+    s = Settings(secret_key=KEY, run_sheet_printer="office", manifest_printer="bay")
+    assert s.manifest_printer_or_default == "bay"
