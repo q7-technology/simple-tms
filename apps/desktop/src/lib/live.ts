@@ -137,6 +137,10 @@ export function feedLine(i: FeedItem): { text: string; tone: FeedTone } {
     case "left": return { text: `${who} left on ${i.run_no} in ${i.rego}`, tone: "blue" };
     case "finished": return { text: `${who} finished ${i.run_no}`, tone: "blue" };
     case "fixed": return { text: `${i.rego} marked fixed by ${i.by}`, tone: "green" };
+    case "con_note": return { text: `Con note ${i.con_note} for ${i.customer} · ${i.carrier}`, tone: "amber" };
+    case "collected":
+      return { text: `${i.carrier} collected ${i.count} ${i.count === 1 ? "consignment" : "consignments"} · ${i.manifest_no}`,
+               tone: "green" };
     case "prestart":
       if (i.result === "grounded") return { text: `${i.rego} grounded · ${and(i.failed)} failed`, tone: "red" };
       if (i.result === "failed") return { text: `${who}'s pre-start on ${i.rego}: ${and(i.failed)} failed`, tone: "amber" };

@@ -34,7 +34,16 @@ export interface Consignment {
   weight_kg: string;
   volume_m3: string;
   packages: Package[];
+  /** where it is now: the run it is on (or was last on), or the carrier it is booked with */
+  run?: { id: number; run_no: string; driver: string; sequence: number } | null;
+  carrier?: { id: number; name: string; con_note: string | null; manifest_id: number; manifest_no: string;
+              collected_at: string | null } | null;
 }
+
+/** A line of a consignment's history, oldest first (GET /v1/consignments/{id}). */
+export interface HistoryRow { kind: string; at: string; detail: Record<string, unknown> }
+
+export interface ConsignmentDetail extends Consignment { history: HistoryRow[] }
 
 /** Why a truck can't take a run on a day: grounded, or rego or service overdue. */
 export interface Blocked { code: "vehicle_grounded" | "vehicle_overdue" | string; message: string }
@@ -175,9 +184,41 @@ export interface TruckAt {
 /** Where the map tiles come from (GET /v1/map); null: no map, a list only. */
 export interface MapTiles { tile_url: string | null; attribution: string | null }
 
+/** An outside carrier (GET /v1/carriers). */
+export interface Carrier {
+  id: number;
+  name: string;
+  account: string | null;
+  /** when it usually calls, by the depot's clock: "15:30" */
+  pickup_time: string | null;
+  adapter: string;
+  active: boolean;
+  created_at: string;
+}
+
+export interface ManifestLine { consignment: Card; con_note: string | null; added_at: string }
+
+/** One carrier's pickup on the carrier bay (GET /v1/manifests). */
+export interface Manifest {
+  id: number;
+  manifest_no: string;
+  date: string;
+  status: "open" | "collected";
+  carrier: Carrier;
+  created_by: string;
+  created_at: string;
+  collected_at: string | null;
+  collected_by: string | null;
+  lines: ManifestLine[];
+  totals: { consignments: number; packages: number; cartons: number; weight_kg: string };
+  needs_con_note: number;
+  print_job: RunSheet | null;
+  shipping: { pending: number; done: number; failed: number };
+}
+
 /** A line of what just happened (GET /v1/feed). */
 export interface FeedItem {
-  kind: "packed" | "delivered" | "failed" | "left" | "finished" | "prestart" | "fixed";
+  kind: "packed" | "delivered" | "failed" | "left" | "finished" | "prestart" | "fixed" | "con_note" | "collected";
   at: string;
   run_id: number | null;
   run_no: string | null;
@@ -191,4 +232,9 @@ export interface FeedItem {
   failed: string[];
   by: string | null;
   note: string | null;
+  /** con_note and collected: the carrier, the con note, the manifest and how many went */
+  carrier?: string | null;
+  con_note?: string | null;
+  manifest_no?: string | null;
+  count?: number | null;
 }
