@@ -1,5 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { line, manifest, RIDGELINE, VALLEY } from "./bay";
 import { json, path, renderApp, stubApi } from "./harness";
 
 describe("the map", () => {
@@ -41,6 +42,31 @@ describe("the map", () => {
     const fleet = await screen.findByRole("link", { name: /Fleet/ });
     await waitFor(() => expect(fleet).toHaveTextContent("Fleet2"));
     expect(calls.find((c) => path(c.url) === "/v1/vehicles")!.url).toMatch(/active=true/);
+  });
+
+  it("shows how many wait on the carrier bay, and on Carriers how many need a con note", async () => {
+    const bay = [manifest(1, RIDGELINE, [line(26, "Mill Lane Florist", null), line(33, "Hilltop Joinery", "RX-1")]),
+                 manifest(2, VALLEY, [line(24, "Paddock Produce", "VF-1"), line(28, "Old Mill Books", null)]),
+                 manifest(3, VALLEY, [line(20, "Corner Hardware", "VF-0")], { status: "collected", collected_at: "2026-10-15T00:00:00Z" })];
+    const { calls } = stubApi((_m, url) => {
+      if (path(url) === "/v1/manifests") return json(200, { items: bay, total: 3 });
+      return json(200, { items: [], total: 0 });
+    });
+    renderApp("/");
+    const pin = await screen.findByRole("link", { name: "4 consignments wait on the carrier bay" });
+    expect(pin).toHaveTextContent("4 for carriers");
+    const carriers = screen.getByRole("link", { name: /^Carriers/ });
+    await waitFor(() => expect(carriers).toHaveTextContent("Carriers2"));
+    expect(calls.find((c) => path(c.url) === "/v1/manifests")!.url).toMatch(/left_open=true/);
+    await userEvent.setup().click(pin);
+    expect(screen.getByTestId("where")).toHaveTextContent("/carriers");
+  });
+
+  it("draws no carrier bay count when nothing waits", async () => {
+    stubApi(() => json(200, { items: [], total: 0 }));
+    renderApp("/");
+    await screen.findByRole("navigation", { name: "Main drawers" });
+    expect(screen.queryByText(/for carriers/)).toBeNull();
   });
 
   it("signs out from the account button", async () => {

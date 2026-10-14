@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
-import type { FeedItem, Page, Run, TruckAt, Vehicle } from "../api/types";
+import type { FeedItem, Manifest, Page, Run, TruckAt, Vehicle } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { clock, isoDay } from "../lib/days";
 import { cantGo } from "../lib/fleet";
@@ -10,7 +10,8 @@ import { leftOpen } from "../lib/live";
 import { DrawerBoundary } from "../ui/DrawerBoundary";
 import { Feed } from "../ui/Feed";
 import { Icon, Logo } from "../ui/icons";
-import { TruckCard, TruckMarkers } from "../ui/Trucks";
+import { bayStats } from "../lib/carriers";
+import { CarrierBay, TruckCard, TruckMarkers } from "../ui/Trucks";
 
 interface Counts { toPlan: number; onRoad: number; delivered: number }
 
@@ -35,6 +36,8 @@ export function MapHome() {
   const [blocked, setBlocked] = useState<Vehicle[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [feed, setFeed] = useState<FeedItem[] | null>(null);
+  // on the carrier bay: waiting for a carrier, and how many of those need a con note
+  const [bay, setBay] = useState({ waiting: 0, needs: 0 });
   const [heardFrom, setHeardFrom] = useState<Map<number, TruckAt>>(new Map());
   // the truck whose card shows: the first on the road until one is picked
   const [picked, setPicked] = useState<number | null | "none">(null);
@@ -66,6 +69,10 @@ export function MapHome() {
     try {
       setFeed((await api.get<{ items: FeedItem[] }>("/v1/feed", { limit: 5 })).items);
     } catch { /* the feed waits for the next go */ }
+    try {
+      const s = bayStats((await api.get<Page<Manifest>>("/v1/manifests", { date: isoDay(new Date()), left_open: true })).items);
+      setBay({ waiting: s.waiting, needs: s.needs });
+    } catch { /* the bay waits for the next go */ }
     if (canLocate) {
       try {
         const at = await api.get<Page<TruckAt>>("/v1/positions", { date: isoDay(new Date()) });
@@ -123,6 +130,7 @@ export function MapHome() {
           <img src="/region.svg" alt="The region: the depot with its carrier bay, the roads and customer stops" />
           <TruckMarkers runs={runs} heardFrom={heardFrom} blocked={blocked.filter((v) => !onRun.has(v.rego))}
                         picked={shown?.id ?? null} onPick={setPicked} now={now} />
+          <CarrierBay waiting={bay.waiting} />
         </div>
         <div className="ov" style={{ top: 20, left: 24, width: 318 }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8 }}>
@@ -150,7 +158,8 @@ export function MapHome() {
             <Icon name="route" />Plan runs{counts && counts.toPlan > 0 && <i>{counts.toPlan}</i>}
           </NavLink>
           <NavLink to="/consignments" className={({ isActive }) => (isActive ? "on" : "")}><Icon name="box" />Consignments</NavLink>
-          <NavLink to="/carriers" className={({ isActive }) => (isActive ? "on" : "")}><Icon name="hand" />Carriers</NavLink>
+          <NavLink to="/carriers" className={({ isActive }) => (isActive ? "on" : "")}><Icon name="hand" />Carriers
+            {bay.needs > 0 && <i className="a" title={`${bay.needs} without a con note`}>{bay.needs}</i>}</NavLink>
           <NavLink to="/fleet" className={({ isActive }) => (isActive ? "on" : "")}><Icon name="truck" />Fleet
             {stuck > 0 && <i className="r" title={`${stuck} can't take a run`}>{stuck}</i>}</NavLink>
         </nav>

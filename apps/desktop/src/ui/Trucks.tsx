@@ -73,6 +73,19 @@ export function TruckMarkers({ runs, heardFrom, blocked, picked, onPick, now }: 
   );
 }
 
+/** "4 for carriers" over the carrier bay at the depot (Main.html): what waits
+ * there for a carrier to collect. Opens Carriers. */
+export function CarrierBay({ waiting }: { waiting: number }) {
+  if (waiting === 0) return null;
+  return (
+    <Link to="/carriers" className="truck" style={at([935, 447])}
+          aria-label={`${waiting} ${waiting === 1 ? "consignment waits" : "consignments wait"} on the carrier bay`}>
+      <span className="tag" style={{ color: "var(--color-amber-ink)" }}>
+        <span className="dot" style={{ width: 9, height: 9, background: "var(--color-amber)" }} />{waiting} for carriers</span>
+    </Link>
+  );
+}
+
 /** The picked run's card: who and what, when it was last heard from, its
  * stops, and the estimates, labelled as such. */
 export function TruckCard({ run, heardFrom, canLocate, now, onClose }: {
