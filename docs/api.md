@@ -48,11 +48,12 @@ are at `/docs`.
 | `admin` | `*` |
 | `manager` | `fleet:read`, `fleet:write`, `consignments:read`, `runs:read`, `runs:write`, `location:read` |
 | `dispatcher` | `fleet:read`, `consignments:read`, `runs:read`, `runs:write`, `location:read` |
-| a driver | `fleet:read`, `deliveries:read`, `deliveries:write` (on their own runs only) |
-| an API key | what it was made with: some of `printing:write`, `runs:read`, `runs:write`, `consignments:read`, `fleet:read`, `deliveries:read`, `deliveries:write`, `location:read` |
+| a driver | `fleet:read`, `deliveries:read`, `deliveries:write`, `location:write` (on their own runs only) |
+| an API key | what it was made with: some of `printing:write`, `runs:read`, `runs:write`, `consignments:read`, `fleet:read`, `deliveries:read`, `deliveries:write`, `location:read`, `location:write` |
 
 `location:read` is where the trucks on the road are: personal information
-about the drivers, so a key has it only when it is named.
+about the drivers, so a key has it only when it is named. `location:write`
+is sending where a run is; a key has it only when it is named, too.
 
 ## Sign in
 
@@ -701,8 +702,10 @@ then the worker deletes them, and clears the position on each proof of
 delivery older than that too; a delivery itself is kept for good.
 
 ### POST /v1/runs/{id}/position
-`deliveries:write`: the run's driver (another driver's run is `404`), or a
-system with a key (a tracker in the truck, say).
+`location:write`: the run's driver (another driver's run is `404`), or a
+system with a key made with `location:write` named (a tracker in the truck,
+say), which may post for any run on the road. `deliveries:write` alone is not
+enough: a key that records deliveries is `403` here.
 ```json
 { "at": "2026-10-14T00:12:30Z", "latitude": "-37.562210", "longitude": "143.850300",
   "accuracy_m": "12" }
@@ -828,7 +831,7 @@ docker compose exec api tms revoke-api-key --name platen
 ```
 A key may be given some of `printing:write`, `runs:read`, `runs:write`,
 `consignments:read`, `fleet:read`, `deliveries:read`, `deliveries:write`,
-`location:read`. `GET /v1/auth/me` with a key answers
+`location:read`, `location:write`. `GET /v1/auth/me` with a key answers
 `"kind": "key"`, its name and scopes. A revoked key is a `401` at once; it is
 kept, not deleted.
 

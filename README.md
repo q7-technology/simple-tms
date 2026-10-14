@@ -104,7 +104,9 @@ and the driver's average time per stop so far (`TMS_ETA_MINUTES_PER_STOP`,
 phone last said, on a real map once map tiles are set up (below), and as a
 list either way. Only the latest position is shown; there are no trails.
 Dispatchers, managers and admins see it (`location:read`); a system needs a
-key made with `location:read`.
+key made with `location:read`. Only the run's driver sends positions
+(`location:write`); a tracker in the truck needs a key made with
+`location:write` named, and may then post for any run on the road.
 
 **Positions are deleted after 90 days** (`TMS_POSITION_RETENTION_DAYS`):
 once an hour the worker deletes older positions and clears the position kept

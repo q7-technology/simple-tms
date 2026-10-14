@@ -5,14 +5,22 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select, update
 
+from conftest import bearer
 from deliveries_samples import delivered, driver_headers, on_the_road, planned_run
 from runs_samples import driver
+from test_api_keys import _key
 from tms.models import ConsignmentEvent, Position
 
 
 def where(**over) -> dict:
     return {"at": datetime.now(UTC).isoformat(), "latitude": "-37.5622104",
             "longitude": "143.8503", "accuracy_m": "12.34", **over}
+
+
+def _older(db, seconds=11):
+    """The positions kept so far arrived this long ago."""
+    db.execute(update(Position).values(received_at=Position.received_at - timedelta(seconds=seconds)))
+    db.commit()
 
 
 def send(client, headers, run_id, **over):
@@ -64,6 +72,21 @@ def test_another_drivers_run_is_not_found(client, db, dispatcher_headers):
 def test_a_dispatcher_cant_send_one(client, db, dispatcher_headers):
     run, _, _ = on_the_road(client, db, dispatcher_headers)
     assert send(client, dispatcher_headers, run["id"]).status_code == 403
+
+
+def test_positions_have_a_scope_of_their_own(client, db, dispatcher_headers, capsys):
+    run, _, kim = on_the_road(client, db, dispatcher_headers)
+    me = client.get("/v1/auth/me", headers=kim).json()
+    assert "location:write" in me["scopes"]
+    # a key that records deliveries is not a tracker
+    handheld = bearer(_key(capsys, "handhelds", "deliveries:read,deliveries:write"))
+    r = send(client, handheld, run["id"])
+    assert r.status_code == 403 and "location:write" in r.json()["detail"]
+    # a tracker is a key made with location:write named, for any run on the road
+    tracker = bearer(_key(capsys, "tracker", "location:write"))
+    assert send(client, tracker, run["id"]).status_code == 204
+    _older(db)
+    assert send(client, kim, run["id"]).status_code == 204
 
 
 def test_a_position_too_rough_to_draw_is_refused(client, db, dispatcher_headers):

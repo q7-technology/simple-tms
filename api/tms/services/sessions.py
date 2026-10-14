@@ -33,9 +33,10 @@ ROLE_SCOPES: dict[str, list[str]] = {
     "dispatcher": ["fleet:read", "consignments:read", "runs:read", "runs:write", "location:read"],
 }
 ROLES = tuple(ROLE_SCOPES)
-# A driver may see the fleet, and read and record the deliveries on their own
-# runs (the routes check the run is theirs).
-DRIVER_SCOPES = ["fleet:read", "deliveries:read", "deliveries:write"]
+# A driver may see the fleet, read and record the deliveries on their own runs,
+# and say where their own run is while it is on the road (the routes check the
+# run is theirs).
+DRIVER_SCOPES = ["fleet:read", "deliveries:read", "deliveries:write", "location:write"]
 
 
 def scopes_for(role: str) -> list[str]:

@@ -41,7 +41,7 @@ export function signedIn(who: { id: number; code: string; name: string } = KIM) 
   window.localStorage.setItem("tms.driver.session", JSON.stringify({
     token: `tms_d.${who.code}`, expires_at: Date.now() + 3_600_000,
     driver: { kind: "driver", id: who.id, name: who.code, display_name: who.name, role: "driver",
-              scopes: ["fleet:read", "deliveries:read", "deliveries:write"] },
+              scopes: ["fleet:read", "deliveries:read", "deliveries:write", "location:write"] },
   }));
 }
 

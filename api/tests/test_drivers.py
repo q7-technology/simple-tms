@@ -69,7 +69,7 @@ def test_driver_signs_in_with_code_and_pin(client, manager_headers):
     assert token.startswith("tms_d.")
     me = client.get("/v1/auth/me", headers=bearer(token)).json()
     assert me["kind"] == "driver" and me["name"] == "drv-01"
-    assert me["scopes"] == ["fleet:read", "deliveries:read", "deliveries:write"]
+    assert me["scopes"] == ["fleet:read", "deliveries:read", "deliveries:write", "location:write"]
     # a driver may see the fleet, but not change it
     assert client.get("/v1/vehicles", headers=bearer(token)).status_code == 200
     r = client.post("/v1/drivers", headers=bearer(token),

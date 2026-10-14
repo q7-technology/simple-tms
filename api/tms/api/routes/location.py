@@ -36,9 +36,10 @@ class PositionIn(BaseModel):
 
 @router.post("/runs/{id}/position", status_code=204)
 def send_position(id: int, body: PositionIn, db: DB,
-                  who: Principal = require("deliveries:write")):
+                  who: Principal = require("location:write")):
     """Where the run's phone is now, about every 30 seconds while the run is
-    on the road. Not a confirmation: no message_id, nothing queued, and a
+    on the road. location:write: the run's driver, or a key made with it
+    named (a tracker in the truck), for any run on the road. Not a confirmation: no message_id, nothing queued, and a
     lost one is simply followed by the next."""
     location.record(db, who, id, at=body.at, latitude=body.latitude,
                     longitude=body.longitude, accuracy_m=body.accuracy_m)
