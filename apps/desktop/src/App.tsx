@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./auth/AuthContext";
 import { RequireAuth } from "./auth/RequireAuth";
+import { Carriers } from "./pages/Carriers";
 import { Fleet } from "./pages/Fleet";
 import { MapHome } from "./pages/MapHome";
 import { PlanRuns } from "./pages/PlanRuns";
@@ -20,9 +21,7 @@ export function AppRoutes() {
           <Route path="/consignments" element={
             <Later title="Consignments" step="a later build step"
                    what="Search by WMS delivery, customer or con note, and see each one's history." />} />
-          <Route path="/carriers" element={
-            <Later title="Carriers" step="build step 6"
-                   what="Today's carrier consignments, con note entry and the manifest." />} />
+          <Route path="/carriers" element={<Carriers />} />
           <Route path="/fleet" element={<Fleet />} />
           <Route path="/where" element={<WhereIsIt />} />
         </Route>

@@ -190,6 +190,24 @@
   .due-a { color: var(--color-amber-ink); font-weight: 800; }
   .due-r { color: var(--color-red-ink); font-weight: 800; }
   .nav a i.r { background: var(--color-red); color: #fff; }
+  .nav a i.a { background: var(--color-amber); color: var(--color-ink); }
+
+  /* the Carriers drawer (Carriers.html) */
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  .connote { padding: 16px; border-radius: 16px; border: 2px dashed var(--color-green); background: #fff; display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+  .connote label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 700; }
+  .grp { border: 1px solid var(--color-card-line); border-radius: 16px; overflow: hidden; }
+  .grp.done { opacity: 0.95; }
+  .ghead { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 14px 16px; background: #F7FAF8; }
+  .ghead .t { font-size: 16px; font-weight: 800; }
+  .ghead .s { font-size: 13px; color: var(--color-ink-2); }
+  .gicon { width: 40px; height: 40px; border-radius: 12px; background: #fff; border: 1px solid var(--color-card-line); display: grid; place-items: center; color: var(--color-ink-2); flex: none; }
+  .grp table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .grp th { padding: 12px 10px; font-weight: 800; text-align: left; color: var(--color-muted); font-size: 12px; letter-spacing: 1px; white-space: nowrap; }
+  .grp td { padding: 6px 10px; border-top: 1px solid var(--color-row); height: 52px; }
+  .grp tr.wait td { background: #FFFBEF; }
+  .grp tr.sel td { background: #F1F8F4; }
+  .grp tr.sel .rowbtn { border-color: var(--color-green); background: var(--color-tint); }
 }
 
 @media (max-width: 960px) {
