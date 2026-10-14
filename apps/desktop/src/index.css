@@ -81,6 +81,7 @@
   .truck:hover .tag { border-color: var(--color-line-2); }
   .truckcard { top: 20px; right: 24px; width: 330px; padding: 18px; border-radius: 18px; box-shadow: var(--shadow-lift); gap: 14px; }
   .panel { padding: 16px; border-radius: 16px; background: #fff; box-shadow: var(--shadow-soft); display: flex; flex-direction: column; gap: 10px; }
+  .slippy { height: 58vh; min-height: 320px; border-radius: 16px; border: 1px solid var(--color-card-line); overflow: hidden; }
   .feedpanel { bottom: 24px; left: 24px; width: 350px; }
   .feed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
   .feed li { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; }

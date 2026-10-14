@@ -29,6 +29,9 @@ services:
       TMS_WMS_API_KEY: ${TMS_WMS_API_KEY:-}
       TMS_PLATEN_URL: ${TMS_PLATEN_URL:-}
       TMS_RUN_SHEET_PRINTER: ${TMS_RUN_SHEET_PRINTER:-dispatch}
+      TMS_MAP_TILE_URL: ${TMS_MAP_TILE_URL:-}
+      TMS_MAP_ATTRIBUTION: ${TMS_MAP_ATTRIBUTION:-}
+      TMS_ETA_MINUTES_PER_STOP: ${TMS_ETA_MINUTES_PER_STOP:-20}
     volumes:
       # signatures and photos for proof of delivery (TMS_POD_DIR)
       - pod_files:/data/pod
@@ -49,7 +52,9 @@ services:
       start_period: 20s
 
   # Makes the ship calls to Simple WMS and sends run sheets to Platen, from
-  # their queues in the database, with backoff. Waits for the api's migrations.
+  # their queues in the database, with backoff; and once an hour deletes
+  # positions older than TMS_POSITION_RETENTION_DAYS. Waits for the api's
+  # migrations.
   worker:
     build: ./api
     restart: unless-stopped
@@ -62,6 +67,7 @@ services:
       TMS_PLATEN_URL: ${TMS_PLATEN_URL:-}
       TMS_PLATEN_KEY: ${TMS_PLATEN_KEY:-}
       TMS_RUN_SHEET_PRINTER: ${TMS_RUN_SHEET_PRINTER:-dispatch}
+      TMS_POSITION_RETENTION_DAYS: ${TMS_POSITION_RETENTION_DAYS:-90}
     depends_on:
       db:
         condition: service_healthy
@@ -73,6 +79,8 @@ services:
       TMS_DOMAIN: ${TMS_DOMAIN:-localhost}
       TMS_HTTP_PORT: ${TMS_HTTP_PORT:-80}
       TMS_HTTPS_PORT: ${TMS_HTTPS_PORT:-443}
+      # the map tile provider's origin, let into the desktop's CSP
+      TMS_MAP_TILE_ORIGIN: ${TMS_MAP_TILE_ORIGIN:-}
     # The same port inside and out: Caddy names it in its redirect to https.
     ports:
       - "${TMS_HTTP_PORT:-80}:${TMS_HTTP_PORT:-80}"

@@ -51,8 +51,9 @@ http://{$TMS_DOMAIN} {
 		# Only the desktop: the API's /docs page loads its scripts from a CDN.
 		# The build has no inline scripts or styles, and its fonts are its own.
 		# Pre-start photos are fetched with the session's token and shown
-		# from blob: URLs.
-		header Content-Security-Policy "default-src 'self'; img-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		# from blob: URLs. Map tiles come from TMS_MAP_TILE_ORIGIN (the tile
+		# provider's https://host, or empty for none or tiles on this server).
+		header Content-Security-Policy "default-src 'self'; img-src 'self' blob: {$TMS_MAP_TILE_ORIGIN}; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 		# the page names the build's files: asked after every time
 		@desktoppage not path /assets/* /favicon.svg /region.svg
 		header @desktoppage Cache-Control "no-cache"

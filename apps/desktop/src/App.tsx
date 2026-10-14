@@ -6,6 +6,7 @@ import { MapHome } from "./pages/MapHome";
 import { PlanRuns } from "./pages/PlanRuns";
 import { Later } from "./pages/Later";
 import { SignIn } from "./pages/SignIn";
+import { WhereIsIt } from "./pages/WhereIsIt";
 
 /** The map is home; every other screen opens as a drawer over it. */
 export function AppRoutes() {
@@ -23,6 +24,7 @@ export function AppRoutes() {
             <Later title="Carriers" step="build step 6"
                    what="Today's carrier consignments, con note entry and the manifest." />} />
           <Route path="/fleet" element={<Fleet />} />
+          <Route path="/where" element={<WhereIsIt />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
