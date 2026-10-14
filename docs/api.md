@@ -588,7 +588,10 @@ carrier took them (see below).
 - `GET /v1/manifests?date=2026-10-15` — that day's manifests with something
   on them, open or collected, oldest first, as `{ "items", "total" }`. With
   `left_open=true`, first the open ones from earlier days still waiting for
-  their carrier.
+  their carrier. With `collected_since` (a time with its offset, such as the
+  start of the dispatcher's day: `2026-10-15T00:00:00+11:00`), also those
+  from earlier days collected since then, so a carrier that came a day late
+  counts in Carriers' **Collected today**.
 - `GET /v1/manifests/{id}`
 - `POST /v1/carriers/{id}/book` — `{ "consignment_id", "date", "con_note"? }`.
   Puts a consignment on the carrier's manifest for that day (made if there is

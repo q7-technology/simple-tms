@@ -7,9 +7,10 @@ import uuid
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, union, update
 
 from tms.api.deps import DB, Principal, require
+from tms.api.errors import FieldError
 from tms.api.routes.carriers import CarrierOut, carrier_out
 from tms.api.routes.runs import RunSheetOut, ShippingOut, StopConsignment, stop_consignment
 from tms.api.schemas import Dec, Page
@@ -143,15 +144,25 @@ def book(id: int, body: BookIn, db: DB, who: Principal = require("runs:write")):
 
 @router.get("/manifests", response_model=Page[ManifestOut])
 def list_manifests(db: DB, day: dt.date = Query(alias="date"), left_open: bool = False,
+                   collected_since: dt.datetime | None = None,
                    who: Principal = require("runs:read")):
     """One day's manifests with something on them, open or collected, oldest
     first. With left_open, first the ones from before that day still waiting
-    for their carrier."""
+    for their carrier. With collected_since (the start of the dispatcher's
+    day), also those from earlier days collected since then."""
     live = select(Booking.manifest_id).where(Booking.removed_at.is_(None))
-    query = select(Manifest.id).where(Manifest.day == day, Manifest.id.in_(live))
+    parts = [select(Manifest.id).where(Manifest.day == day, Manifest.id.in_(live))]
     if left_open:
-        query = query.union(select(Manifest.id).where(
+        parts.append(select(Manifest.id).where(
             Manifest.day < day, Manifest.collected_at.is_(None), Manifest.id.in_(live)))
+    if collected_since is not None:
+        if collected_since.tzinfo is None:
+            raise FieldError("collected_since", "give the time with its offset, e.g. "
+                                                "2026-10-15T00:00:00+11:00")
+        parts.append(select(Manifest.id).where(
+            Manifest.day < day, Manifest.collected_at >= collected_since,
+            Manifest.id.in_(live)))
+    query = union(*parts)
     ids = db.execute(select(Manifest.id).where(Manifest.id.in_(query))
                      .order_by(Manifest.day, Manifest.id)).scalars().all()
     return Page(items=[manifest_out(db, carriers.get_manifest(db, i)) for i in ids],

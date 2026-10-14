@@ -19,11 +19,24 @@ describe("the carrier bay", () => {
   });
 
   it("counts what needs a con note, what waits for pickup and what went today", () => {
-    expect(bayStats([RX, VF, PP])).toEqual({
+    expect(bayStats([RX, VF, PP], "2026-10-15")).toEqual({
       needs: 1, firstNeeding: { manifest: RX, consignment: RX.lines[0].consignment },
       waiting: 3, carriers: 2, collected: 1, lastCollected: PP,
     });
-    expect(bayStats([])).toEqual({ needs: 0, firstNeeding: null, waiting: 0, carriers: 0, collected: 0, lastCollected: null });
+    expect(bayStats([], "2026-10-15")).toEqual({ needs: 0, firstNeeding: null, waiting: 0, carriers: 0, collected: 0, lastCollected: null });
+  });
+
+  it("counts the consignments collected today, by when they were collected", () => {
+    // three went on yesterday's manifest this morning; one went yesterday
+    const late = manifest(5, VALLEY, [line(41, "Two Rivers Vet", "VF-1"), line(42, "Old Mill Books", "VF-2"),
+                                      line(44, "Paddock Produce", "VF-3")],
+                          { date: "2026-10-14", status: "collected", collected_at: new Date(2026, 9, 15, 8, 5).toISOString() });
+    const gone = manifest(6, RIDGELINE, [line(43, "Station Deli", "RX-1")],
+                          { date: "2026-10-15", status: "collected", collected_at: new Date(2026, 9, 14, 23, 50).toISOString() });
+    const s = bayStats([late, gone, PP], "2026-10-15");
+    expect(s.collected).toBe(4);
+    expect(s.lastCollected).toBe(PP);
+    expect(bayStats([late, gone], "2026-10-15").lastCollected).toBe(late);
   });
 
   it("goes on to the next one with no con note", () => {

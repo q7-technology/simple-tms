@@ -40,7 +40,11 @@ describe("Carriers", () => {
     expect(needs).toHaveTextContent("0080034526 · Mill Lane Florist");
     expect((screen.getByText("Waiting for pickup")).parentElement).toHaveTextContent("4on the carrier bay · 2 carriers");
     expect((screen.getByText("Collected today")).parentElement).toHaveTextContent(`1${PLAINS} · 10:15 am`);
-    expect(calls.find((c) => path(c.url) === "/v1/manifests")!.url).toContain(`date=${today}`);
+    const asked = calls.find((c) => path(c.url) === "/v1/manifests")!.url;
+    expect(asked).toContain(`date=${today}`);
+    // and those from earlier days collected since midnight, by this desk's clock
+    expect(new URL(asked, "http://x").searchParams.get("collected_since"))
+      .toBe(new Date(new Date().setHours(0, 0, 0, 0)).toISOString());
 
     const rx = await group(/Ridgeline Express/);
     expect(within(rx).getByText("Pickup about 3:30 pm · 2 consignments · 7 cartons · 96 kg")).toBeInTheDocument();

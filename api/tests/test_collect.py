@@ -189,3 +189,23 @@ def test_one_back_from_its_run_and_collected_stays_shipped_by_its_run_in_simple_
                                        "customer": b.customer, "carrier": "Own fleet",
                                        "tracking_no": run["run_no"]}]
     http.client.close()
+
+
+def test_one_left_from_yesterday_and_collected_today_is_on_todays_bay(
+        client, db, manager_headers, dispatcher_headers):
+    rx = new_carrier(client, manager_headers)
+    c = consignment(db, ref="0080034519")
+    old = book(client, dispatcher_headers, rx["id"], c.id, day=DAY - timedelta(days=1),
+               con_note="RX-77310042").json()
+    collect(client, dispatcher_headers, old, [c.id])
+
+    def bay(**more):
+        r = client.get("/v1/manifests", headers=dispatcher_headers,
+                       params={"date": DAY.isoformat(), "left_open": True, **more})
+        assert r.status_code == 200, r.text
+        return [m["id"] for m in r.json()["items"]]
+
+    assert bay() == []
+    since = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    assert bay(collected_since=since) == [old["id"]]
+    assert bay(collected_since=(datetime.now(UTC) + timedelta(hours=1)).isoformat()) == []

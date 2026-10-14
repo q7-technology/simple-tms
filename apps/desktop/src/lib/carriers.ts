@@ -1,7 +1,7 @@
 /** The carrier bay's own logic, kept out of the components so it can be
  * tested on its own: con notes, what needs one, and each carrier's line. */
 import type { Card, Consignment, Manifest } from "../api/types";
-import { clock } from "./days";
+import { clock, isoDay } from "./days";
 import { plain, toMicro } from "./decimal";
 
 /** As the API reads it: spaces around it off, letters made capitals. */
@@ -30,16 +30,19 @@ export interface BayStats {
 
 const open = (ms: Manifest[]) => ms.filter((m) => m.status === "open");
 
-/** The three numbers at the top of Carriers.html. */
-export function bayStats(manifests: Manifest[]): BayStats {
+/** The three numbers at the top of Carriers.html. Collected today counts
+ * consignments, as waiting does, by the day they were collected on this
+ * desk's clock (`today`), whatever day their manifest was for. */
+export function bayStats(manifests: Manifest[], today: string = isoDay(new Date())): BayStats {
   const waiting = open(manifests);
-  const went = manifests.filter((m) => m.status === "collected");
+  const went = manifests.filter((m) => m.status === "collected" && m.collected_at
+                                       && isoDay(new Date(m.collected_at)) === today);
   return {
     needs: waiting.reduce((n, m) => n + m.needs_con_note, 0),
     firstNeeding: nextNeedingConNote(manifests),
     waiting: waiting.reduce((n, m) => n + m.lines.length, 0),
     carriers: new Set(waiting.map((m) => m.carrier.id)).size,
-    collected: went.length,
+    collected: went.reduce((n, m) => n + m.lines.length, 0),
     lastCollected: went.reduce<Manifest | null>(
       (last, m) => (!last || (m.collected_at ?? "") > (last.collected_at ?? "") ? m : last), null),
   };

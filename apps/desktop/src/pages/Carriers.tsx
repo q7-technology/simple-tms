@@ -43,7 +43,9 @@ export function Carriers() {
 
   const load = useCallback(async () => {
     const [m, c] = await Promise.all([
-      api.get<Page<Manifest>>("/v1/manifests", { date: today, left_open: true }),
+      // and the ones from earlier days collected since midnight, for Collected today
+      api.get<Page<Manifest>>("/v1/manifests", { date: today, left_open: true,
+                                                  collected_since: new Date(new Date().setHours(0, 0, 0, 0)).toISOString() }),
       api.get<Page<Carrier>>("/v1/carriers", { active: true }).catch(() => ({ items: [] as Carrier[], total: 0 })),
     ]);
     setManifests(m.items);
@@ -129,7 +131,7 @@ export function Carriers() {
     }), `${m.carrier.name} has collected ${m.manifest_no}. Simple WMS is being told.`);
   }
 
-  const stats = bayStats(all);
+  const stats = bayStats(all, today);
   const needs = stats.firstNeeding;
   const went = stats.lastCollected;
   return (
