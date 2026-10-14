@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
-import type { Page, Run, TruckAt, Vehicle } from "../api/types";
+import type { FeedItem, Page, Run, TruckAt, Vehicle } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { clock, isoDay } from "../lib/days";
 import { cantGo } from "../lib/fleet";
 import { DrawerBoundary } from "../ui/DrawerBoundary";
+import { Feed } from "../ui/Feed";
 import { Icon, Logo } from "../ui/icons";
 import { TruckCard, TruckMarkers } from "../ui/Trucks";
 
@@ -31,6 +32,7 @@ export function MapHome() {
   const [stuck, setStuck] = useState(0);
   const [blocked, setBlocked] = useState<Vehicle[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
+  const [feed, setFeed] = useState<FeedItem[] | null>(null);
   const [heardFrom, setHeardFrom] = useState<Map<number, TruckAt>>(new Map());
   // the truck whose card shows: the first on the road until one is picked
   const [picked, setPicked] = useState<number | null | "none">(null);
@@ -53,6 +55,9 @@ export function MapHome() {
       setStuck(cantGo(trucks));
       setBlocked(trucks.filter((v) => v.active && (v.state === "grounded" || v.state === "overdue")));
     } catch { /* so does this one */ }
+    try {
+      setFeed((await api.get<{ items: FeedItem[] }>("/v1/feed", { limit: 5 })).items);
+    } catch { /* the feed waits for the next go */ }
     if (canLocate) {
       try {
         const at = await api.get<Page<TruckAt>>("/v1/positions", { date: isoDay(new Date()) });
@@ -133,6 +138,7 @@ export function MapHome() {
           <TruckCard run={shown} heardFrom={heardFrom.get(shown.id)} canLocate={canLocate} now={now}
                      onClose={() => setPicked("none")} />
         )}
+        <Feed items={feed} now={now} />
         <nav className="ov nav" aria-label="Main drawers" style={{ bottom: 24, left: "50%", transform: "translateX(-50%)" }}>
           <NavLink to="/plan" className={({ isActive }) => (isActive ? "on" : "")}>
             <Icon name="route" />Plan runs{counts && counts.toPlan > 0 && <i>{counts.toPlan}</i>}
