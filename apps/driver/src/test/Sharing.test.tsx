@@ -150,4 +150,18 @@ describe("the phone sharing where it is during the run", () => {
     await waitFor(() => expect(screen.getByText("Location off")).toBeInTheDocument());
     expect(watching.cleared).toBe(1);
   });
+
+  it("says it is looking for GPS while the phone has no fix", async () => {
+    Object.defineProperty(navigator, "geolocation", { configurable: true, value: {
+      watchPosition: (_ok: PositionCallback, no: PositionErrorCallback) => {
+        setTimeout(() => no({ code: 3 } as GeolocationPositionError), 0);
+        return 1;
+      },
+      clearWatch: () => undefined,
+      getCurrentPosition: () => undefined,
+    } });
+    stubApi((_m, url) => (url === "/v1/runs/7/stops" ? json(200, RUN) : null));
+    renderApp("/run/7");
+    expect(await screen.findByText("Looking for GPS")).toBeInTheDocument();
+  });
 });

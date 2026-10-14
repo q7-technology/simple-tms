@@ -16,6 +16,7 @@ function fakeGeo() {
     at: (latitude: number, longitude: number, accuracy = 12) =>
       ok!({ coords: { latitude, longitude, accuracy }, timestamp: Date.now() } as GeolocationPosition),
     refuse: () => no!({ code: 1, PERMISSION_DENIED: 1 } as GeolocationPositionError),
+    lose: (code: 2 | 3) => no!({ code } as GeolocationPositionError),
   };
 }
 
@@ -115,5 +116,35 @@ describe("sharing where the truck is", () => {
     states = [];
     sharer(undefined);
     expect(states).toEqual(["off"]);
+  });
+
+  it("goes back to looking for GPS when the phone loses it, and on once it is back", async () => {
+    const g = fakeGeo();
+    sharer(g.geo);
+    g.at(-37.1, 143.1);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(states.at(-1)).toBe("on");
+    g.lose(2);
+    expect(states.at(-1)).toBe("waiting");
+    g.lose(3);
+    expect(states.at(-1)).toBe("waiting");
+    expect(g.cleared).toEqual([]);
+    g.at(-37.2, 143.2);
+    expect(states.at(-1)).toBe("on");
+    await vi.advanceTimersByTimeAsync(EVERY_MS);
+    expect(sent.map((s) => s.body.latitude)).toEqual(["-37.100000", "-37.200000"]);
+  });
+
+  it.each([403, 404])("stops when the API won't take positions from this phone (%i)", async (status) => {
+    const g = fakeGeo();
+    sharer(g.geo);
+    answer = async () => { throw new ApiError(status, { detail: "no" }); };
+    g.at(-37.1, 143.1);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(states.at(-1)).toBe("off");
+    expect(g.cleared).toEqual([42]);
+    g.at(-37.2, 143.2);
+    await vi.advanceTimersByTimeAsync(EVERY_MS * 2);
+    expect(sent).toHaveLength(1);
   });
 });

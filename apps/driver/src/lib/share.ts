@@ -11,7 +11,8 @@ export const EVERY_MS = 30_000;
 /** rougher than this would put the truck in the wrong suburb: the API refuses it too */
 export const ROUGHEST_M = 1000;
 
-/** waiting: watching, nothing heard from the phone's GPS yet; on: sharing;
+/** waiting: watching, no fix from the phone's GPS yet or lost for now
+ * ("Looking for GPS"); on: sharing;
  * denied: the driver hasn't let the app know where it is; off: not sharing */
 export type Sharing = "waiting" | "on" | "denied" | "off";
 
@@ -23,14 +24,15 @@ export class Sharer {
   private latest: Record<string, string> | null = null;
   private sent: Record<string, string> | null = null;
   private stopped = false;
+  private state: Sharing = "off";
 
   constructor(private runId: number, private send: Send, private onState: (s: Sharing) => void,
               private geo: Geolocation | undefined = typeof navigator === "undefined" ? undefined : navigator.geolocation,
               private onEnded: (code: string | null) => void = () => undefined) {}
 
   start() {
-    if (!this.geo?.watchPosition) { this.onState("off"); return; }
-    this.onState("waiting");
+    if (!this.geo?.watchPosition) { this.say("off"); return; }
+    this.say("waiting");
     this.watch = this.geo.watchPosition(
       (p) => {
         if (!Number.isFinite(p.coords.accuracy) || p.coords.accuracy > ROUGHEST_M) return;
@@ -38,12 +40,23 @@ export class Sharer {
         // decimal strings, as for a delivery's position: no float goes to the API
         this.latest = { at: new Date(p.timestamp).toISOString(), latitude: p.coords.latitude.toFixed(6),
                         longitude: p.coords.longitude.toFixed(6), accuracy_m: p.coords.accuracy.toFixed(1) };
-        if (first) { this.onState("on"); void this.tick(); }
+        if (this.state !== "on") this.say("on");
+        if (first) void this.tick();
       },
-      (e) => { if (e.code === 1) { this.stop(); this.onState("denied"); } },
+      (e) => {
+        if (this.stopped) return;
+        // not allowed: stop. No fix just now (2) or not in time (3): keep
+        // watching, and say it is looking for GPS until one comes
+        if (e.code === 1) { this.stop(); this.say("denied"); } else this.say("waiting");
+      },
       { enableHighAccuracy: true, maximumAge: 15_000, timeout: 60_000 },
     );
     this.timer = setInterval(() => void this.tick(), EVERY_MS);
+  }
+
+  private say(state: Sharing) {
+    this.state = state;
+    this.onState(state);
   }
 
   stop() {
@@ -63,7 +76,9 @@ export class Sharer {
       await this.send(`/v1/runs/${this.runId}/position`, fix);
     } catch (e) {
       // the run isn't on the road (finished, say, from the office): stop
-      if (e instanceof ApiError && e.status === 409) { this.stop(); this.onState("off"); this.onEnded(e.code); }
+      if (e instanceof ApiError && e.status === 409) { this.stop(); this.say("off"); this.onEnded(e.code); }
+      // not this phone's to send (signed out, or no longer the run's driver): stop
+      if (e instanceof ApiError && (e.status === 403 || e.status === 404)) { this.stop(); this.say("off"); }
     }
   }
 }

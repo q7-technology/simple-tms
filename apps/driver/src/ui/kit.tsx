@@ -32,7 +32,9 @@ export function RunTop({ run, over = false }: { run: RunStops; over?: boolean })
     const t = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(t);
   }, []);
-  const on = (sharing === "on" || sharing === "waiting") && !over && run.status !== "done";
+  const live = !over && run.status !== "done";
+  const on = sharing === "on" && live;
+  const looking = sharing === "waiting" && live;
   return (
     <div className="top">
       <span className="tile"><Icon name="truck" size={22} /></span>
@@ -40,8 +42,8 @@ export function RunTop({ run, over = false }: { run: RunStops; over?: boolean })
         <div className="ttl">Run {run.run_no}</div>
         <div className="st">{run.vehicle.rego} · {run.driver.name} · {clock(now)}</div>
       </div>
-      <span className={`chip${on ? " on" : ""}`}><Icon name="pin" size={13} width={2.4} />
-        {on ? "Sharing location" : "Location off"}</span>
+      <span className={`chip${on || looking ? " on" : ""}`}><Icon name="pin" size={13} width={2.4} />
+        {on ? "Sharing location" : looking ? "Looking for GPS" : "Location off"}</span>
     </div>
   );
 }
