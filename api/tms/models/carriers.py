@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, String, Time, and_, text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, String, Time, and_, func, text
 from sqlalchemy.orm import Mapped, foreign, mapped_column, relationship
 
 from tms.models.base import Base, created_at_column
@@ -16,6 +16,8 @@ class Carrier(Base):
     another adapter, with no change to the data. Deactivated, never deleted."""
 
     __tablename__ = "carrier"
+    # one carrier per name, whatever its case
+    __table_args__ = (Index("uq_carrier_name_lower", func.lower(text("name")), unique=True),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     # what Simple WMS is told as the carrier when it collects (at most 64 there)
@@ -79,6 +81,8 @@ class Booking(Base):
         # a con note is one consignment's, with that carrier, for good
         Index("uq_booking_carrier_id_con_note", "carrier_id", "con_note", unique=True,
               postgresql_where=text("removed_at is null and con_note is not null")),
+        # and its con notes from bookings taken off or collected, kept for good
+        Index("ix_booking_carrier_id_con_note", "carrier_id", "con_note"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

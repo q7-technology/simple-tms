@@ -120,3 +120,34 @@ def test_codes_that_differ_only_by_case_stop_the_upgrade_and_say_which(blank_dat
     with engine.connect() as conn:
         assert sorted(conn.execute(text("select code from driver")).scalars()) == ["KIM", "Kim"]
     engine.dispose()
+
+
+def _carrier_row(conn, name: str) -> None:
+    conn.execute(text("insert into carrier (name, adapter, active) values (:n, 'manual', true)"),
+                 {"n": name})
+
+
+def test_a_carrier_name_is_one_whatever_its_case_in_the_database_too(blank_database):
+    from sqlalchemy.exc import IntegrityError
+
+    command.upgrade(alembic_config(blank_database), "head")
+    engine = create_engine(blank_database)
+    with engine.begin() as conn:
+        _carrier_row(conn, "Ridgeline Express (sample)")
+    with pytest.raises(IntegrityError, match="uq_carrier_name_lower"):
+        with engine.begin() as conn:
+            _carrier_row(conn, "RIDGELINE EXPRESS (sample)")
+    engine.dispose()
+
+
+def test_carrier_names_that_differ_only_by_case_stop_the_upgrade_and_say_which(blank_database):
+    cfg = alembic_config(blank_database)
+    command.upgrade(cfg, "0008")
+    engine = create_engine(blank_database)
+    with engine.begin() as conn:
+        _carrier_row(conn, "Valley Freight (sample)")
+        _carrier_row(conn, "VALLEY FREIGHT (sample)")
+    with pytest.raises(RuntimeError, match="differ only by case") as refused:
+        command.upgrade(cfg, "head")
+    assert "Valley Freight (sample)" in str(refused.value)
+    engine.dispose()

@@ -89,7 +89,7 @@ def _commit(db, name: str) -> None:
     except IntegrityError as e:
         # another request took the name between the check and this write
         db.rollback()
-        if violated_constraint(e) == "uq_carrier_name":
+        if violated_constraint(e) in ("uq_carrier_name", "uq_carrier_name_lower"):
             raise FieldError("name", f"carrier {name} already exists") from None
         raise
 
