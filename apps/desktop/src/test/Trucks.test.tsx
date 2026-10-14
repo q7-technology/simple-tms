@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Run } from "../api/types";
+import { dayLabel, isoDay } from "../lib/days";
 import { about } from "../lib/live";
 import { DISPATCHER, json, path, renderApp, stubApi } from "./harness";
 
@@ -9,7 +10,7 @@ const card = (id: number, customer: string) => ({ id, wms_ref: `00800345${id}`, 
 const minutes = (n: number) => new Date(Date.now() + n * 60_000).toISOString();
 
 const ON_THE_ROAD = {
-  id: 7, run_no: "R-0007", date: "2026-10-14", status: "departed",
+  id: 7, run_no: "R-0007", date: isoDay(new Date()), status: "departed",
   vehicle: { rego: "TMS041", type: "rigid", max_kg: "4500", max_m3: "22", active: true, blocked: null },
   driver: { code: "kim", name: "Kim" }, departed_at: minutes(-40), finished_at: null,
   stops: [{ sequence: 1, consignment: card(31, "Hillside Bakery"), outcome: "delivered", outcome_at: minutes(-20) },
@@ -24,9 +25,15 @@ const LOADING = { ...ON_THE_ROAD, id: 8, run_no: "R-0008", status: "planned", de
 const HEARD = { run_id: 7, run_no: "R-0007", vehicle: { rego: "TMS041", type: "rigid" }, driver: { code: "kim", name: "Kim" },
                 latitude: "-37.56", longitude: "143.85", accuracy_m: "9", at: minutes(-0.5), received_at: new Date(Date.now() - 30_000).toISOString() };
 
-function stub(who: object = DISPATCHER, heard: object[] = [HEARD]) {
+const YESTERDAY = new Date(Date.now() - 86_400_000);
+// left on the road yesterday and never finished: the API lists it first
+const LEFT_OPEN = { ...ON_THE_ROAD, id: 5, run_no: "R-0005", date: isoDay(YESTERDAY),
+                    vehicle: { ...ON_THE_ROAD.vehicle, rego: "TMS063", type: "van" }, driver: { code: "tom", name: "Tom" },
+                    stops: ON_THE_ROAD.stops.map((s) => ({ ...s, outcome: "delivered" })) } as unknown as Run;
+
+function stub(who: object = DISPATCHER, heard: object[] = [HEARD], runs: Run[] = [ON_THE_ROAD, LOADING]) {
   return stubApi((_m, url) => {
-    if (path(url) === "/v1/runs") return json(200, { items: [ON_THE_ROAD, LOADING], total: 2 });
+    if (path(url) === "/v1/runs") return json(200, { items: runs, total: runs.length });
     if (path(url) === "/v1/positions") return json(200, { items: heard, total: heard.length });
     if (path(url) === "/v1/vehicles") {
       return json(200, { items: [{ rego: "TMS053", type: "van", active: true, state: "grounded",
@@ -95,6 +102,26 @@ describe("the trucks on the map", () => {
     const shown = await screen.findByRole("region", { name: "Selected truck" });
     expect(shown).toHaveTextContent("Run R-0007");
     expect(calls.some((c) => path(c.url) === "/v1/positions")).toBe(false);
+    expect(shown).not.toHaveTextContent("Last heard");
+    expect(within(shown).queryByRole("link", { name: /Where is it/ })).not.toBeInTheDocument();
+  });
+
+  it("shows a run left open from an earlier day as still open, not on the road today", async () => {
+    const { calls } = stub(DISPATCHER, [HEARD], [LEFT_OPEN, ON_THE_ROAD, LOADING]);
+    renderApp("/");
+    const old = await screen.findByRole("button", { name: /R-0005/ });
+    const from = `Still open from ${dayLabel(YESTERDAY)}`;
+    expect(old).toHaveAccessibleName(`R-0005 · Tom: ${from.toLowerCase()}`);
+    expect(calls.find((c) => path(c.url) === "/v1/runs")?.url).toContain("left_open=true");
+    // the card starts on today's run on the road, not the one left open
+    expect(screen.getByRole("region", { name: "Selected truck" })).toHaveTextContent("Run R-0007");
+    await userEvent.setup().click(old);
+    const shown = screen.getByRole("region", { name: "Selected truck" });
+    expect(within(shown).getByText(from)).toHaveClass("p-amber");
+    expect(shown).toHaveTextContent("Every stop has an outcome: finish it in Plan runs.");
+    expect(shown).not.toHaveTextContent("On the road");
+    expect(shown).not.toHaveTextContent("Arrives");
+    expect(shown).not.toHaveTextContent("Back at depot");
     expect(shown).not.toHaveTextContent("Last heard");
     expect(within(shown).queryByRole("link", { name: /Where is it/ })).not.toBeInTheDocument();
   });

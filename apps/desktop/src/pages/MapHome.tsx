@@ -5,6 +5,7 @@ import type { FeedItem, Page, Run, TruckAt, Vehicle } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { clock, isoDay } from "../lib/days";
 import { cantGo } from "../lib/fleet";
+import { leftOpen } from "../lib/live";
 import { DrawerBoundary } from "../ui/DrawerBoundary";
 import { Feed } from "../ui/Feed";
 import { Icon, Logo } from "../ui/icons";
@@ -43,12 +44,18 @@ export function MapHome() {
   const load = useCallback(async () => {
     try {
       // to plan: packed, and what came back undelivered; delivered: today's drops
-      const [toPlan, onRoad, today] = await Promise.all([
-        count("packed,failed"), count("departed"), api.get<Page<Run>>("/v1/runs", { date: isoDay(new Date()) })]);
-      const delivered = today.items.reduce(
+      // with the runs left open from earlier days, shown as such and not counted today
+      const [toPlan, departed, listed] = await Promise.all([
+        count("packed,failed"), count("departed"),
+        api.get<Page<Run>>("/v1/runs", { date: isoDay(new Date()), left_open: true })]);
+      const stale = listed.items.filter((r) => leftOpen(r));
+      const today = listed.items.filter((r) => !leftOpen(r));
+      const delivered = today.reduce(
         (n, run) => n + run.stops.filter((s) => s.outcome === "delivered").length, 0);
-      setCounts({ toPlan, onRoad, delivered });
-      setRuns(today.items);
+      // what is still on a truck left open is not on the road today
+      const onRoad = departed - stale.reduce((n, run) => n + run.stops.filter((s) => !s.outcome).length, 0);
+      setCounts({ toPlan, onRoad: Math.max(onRoad, 0), delivered });
+      setRuns(listed.items);
     } catch { /* the numbers wait for the next go */ }
     try {
       const trucks = (await api.get<Page<Vehicle>>("/v1/vehicles", { date: isoDay(new Date()), active: true })).items;
@@ -80,7 +87,7 @@ export function MapHome() {
   // a truck on a run today is drawn with its run, not as one that can't go
   const onRun = new Set(runs.filter((r) => r.status === "planned" || r.status === "departed").map((r) => r.vehicle.rego));
   const shown = picked === "none" ? null
-    : runs.find((r) => r.id === picked) ?? runs.find((r) => r.status === "departed") ?? null;
+    : runs.find((r) => r.id === picked) ?? runs.find((r) => r.status === "departed" && !leftOpen(r)) ?? null;
 
   const weekday = new Intl.DateTimeFormat("en-AU", { weekday: "short" }).format(now);
   return (

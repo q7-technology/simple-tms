@@ -4,7 +4,7 @@
  * says the run, the driver and when it was last heard from. */
 import { Link } from "react-router-dom";
 import type { Run, TruckAt, Vehicle } from "../api/types";
-import { about, heard, loadLeft, RUN_COLOURS, spot, yard } from "../lib/live";
+import { about, heard, leftOpen, loadLeft, RUN_COLOURS, spot, stillOpenFrom, yard } from "../lib/live";
 import { Icon } from "./icons";
 
 const at = ([x, y]: [number, number]) => ({ left: `${x / 15.4}%`, top: `${y / 10}%` });
@@ -26,8 +26,10 @@ export function TruckMarkers({ runs, heardFrom, blocked, picked, onPick, now }: 
   runs: Run[]; heardFrom: Map<number, TruckAt>; blocked: Vehicle[]; picked: number | null;
   onPick: (id: number) => void; now: Date;
 }) {
-  const onRoad = runs.filter((r) => r.status === "departed");
+  const onRoad = runs.filter((r) => r.status === "departed" && !leftOpen(r));
   const loading = runs.filter((r) => r.status === "planned");
+  // left open from an earlier day: most likely back, so in the yard, flagged
+  const stale = runs.filter((r) => leftOpen(r));
   return (
     <>
       {onRoad.map((r, i) => {
@@ -51,8 +53,16 @@ export function TruckMarkers({ runs, heardFrom, blocked, picked, onPick, now }: 
           <TruckGlyph colour="#7B5CC4" />
         </button>
       ))}
+      {stale.map((r, i) => (
+        <button key={r.id} type="button" className="truck" style={at(yard(loading.length + i))} aria-pressed={picked === r.id}
+                onClick={() => onPick(r.id)} aria-label={`${r.run_no} · ${r.driver.name}: ${stillOpenFrom(r).toLowerCase()}`}>
+          <span className="tag"><span className="dot" style={{ width: 9, height: 9, background: "var(--color-amber)" }} />
+            {r.run_no} · still open</span>
+          <TruckGlyph colour="#9AA6A0" />
+        </button>
+      ))}
       {blocked.map((v, i) => (
-        <Link key={v.rego} to="/fleet" className="truck bad" style={at(yard(loading.length + i))}
+        <Link key={v.rego} to="/fleet" className="truck bad" style={at(yard(loading.length + stale.length + i))}
               aria-label={`${v.rego} · ${v.state}: ${v.blocked?.message ?? ""}`}>
           <span className="tag"><span className="dot" style={{ width: 9, height: 9, background: "var(--color-red)" }} />
             {v.rego} · {v.state}</span>
@@ -71,10 +81,14 @@ export function TruckCard({ run, heardFrom, canLocate, now, onClose }: {
   const total = run.stops.length;
   const finished = done(run);
   const next = run.stops.find((s) => !s.outcome);
-  const e = run.estimate;
+  const stale = leftOpen(run);
+  // a run left open from an earlier day has no times worth giving
+  const e = stale ? null : run.estimate;
+  const onRoad = run.status === "departed" && !stale;
   const nextAt = e && next ? e.stops.find((s) => s.consignment_id === next.consignment.id)?.at : undefined;
   const h = heardFrom ? heard(heardFrom.received_at, now) : null;
-  const pill = run.status === "departed" ? <span className="pill p-green">On the road</span>
+  const pill = stale ? <span className="pill p-amber">{stillOpenFrom(run)}</span>
+    : run.status === "departed" ? <span className="pill p-green">On the road</span>
     : run.status === "planned" ? <span className="pill p-grey">Loading</span>
     : <span className="pill p-grey">Back at the depot</span>;
   return (
@@ -91,11 +105,15 @@ export function TruckCard({ run, heardFrom, canLocate, now, onClose }: {
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         {pill}
-        {run.status === "departed" && canLocate && (h
+        {onRoad && canLocate && (h
           ? <span className={h.stale ? "pill p-amber" : "small"}>Last heard {h.text}</span>
           : <span className="small">Not heard from yet</span>)}
         {run.status === "planned" && <span className="small">Not left yet</span>}
       </div>
+      {stale && (
+        <div className="msg a" role="status"><span>{run.stops.every((s) => s.outcome)
+          ? "Every stop has an outcome: finish it in Plan runs."
+          : "It was never finished. Once every stop has an outcome, finish it in Plan runs."}</span></div>)}
       <div>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
           <b>{finished} of {total} stops</b><span style={{ color: "var(--color-muted)" }}>{total - finished} to go</span></div>
@@ -120,9 +138,9 @@ export function TruckCard({ run, heardFrom, canLocate, now, onClose }: {
             : `Times are estimates from the stop order, at ${e.minutes_per_stop} minutes a stop until ${run.driver.name}'s first drop.`}
         </div>
       )}
-      <div style={{ display: "grid", gridTemplateColumns: canLocate && run.status === "departed" ? "repeat(2,minmax(0,1fr))" : "1fr", gap: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: canLocate && onRoad ? "repeat(2,minmax(0,1fr))" : "1fr", gap: 8 }}>
         <Link to="/plan" className="btn primary" style={{ height: 46, fontSize: 15 }}>Open run<Icon name="go" /></Link>
-        {canLocate && run.status === "departed" && (
+        {canLocate && onRoad && (
           <Link to={`/where?run=${run.id}`} className="btn" style={{ height: 46 }}><Icon name="target" />Where is it</Link>)}
       </div>
     </section>

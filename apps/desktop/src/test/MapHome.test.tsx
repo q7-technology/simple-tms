@@ -67,4 +67,24 @@ describe("the map", () => {
     expect(screen.getByRole("navigation", { name: "Main drawers" })).toBeInTheDocument();
     quiet.mockRestore();
   });
+
+  it("doesn't count a run left open from an earlier day as on the road today", async () => {
+    const stop = (outcome: string | null) => ({ sequence: 1, consignment: {}, outcome });
+    const earlier = new Date(Date.now() - 2 * 86_400_000);
+    const p = (n: number) => String(n).padStart(2, "0");
+    const day = `${earlier.getFullYear()}-${p(earlier.getMonth() + 1)}-${p(earlier.getDate())}`;
+    stubApi((_m, url) => {
+      if (path(url) === "/v1/runs") {
+        return json(200, { items: [{ id: 5, date: day, status: "departed", run_no: "R-0005", driver: { name: "Tom" },
+                                     vehicle: { rego: "TMS063" }, stops: [stop("delivered"), stop(null), stop(null)] }], total: 1 });
+      }
+      if (path(url) !== "/v1/consignments") return null;
+      const status = new URLSearchParams(url.split("?")[1]).get("status");
+      return json(200, { items: [], total: { "packed,failed": 14, departed: 21 }[status ?? ""] ?? 0 });
+    });
+    renderApp("/");
+    expect(await screen.findByText("19")).toBeInTheDocument();
+    // nor its drops as delivered today
+    expect(screen.getByText("Delivered").nextSibling).toHaveTextContent("0");
+  });
 });

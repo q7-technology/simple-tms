@@ -1,6 +1,7 @@
 import { act, cleanup, createEvent, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Card, Consignment, Run } from "../api/types";
+import { dayLabel, isoDay } from "../lib/days";
 import { json, path, renderApp, stubApi, type Call } from "./harness";
 
 const card = (id: number, customer: string, weight_kg: string, volume_m3 = "1"): Card => ({
@@ -9,7 +10,7 @@ const card = (id: number, customer: string, weight_kg: string, volume_m3 = "1"):
 });
 
 const run = (id: number, driver: string, rego: string, stops: Card[], over: Partial<Run> = {}): Run => ({
-  id, run_no: `R-000${id}`, date: "2026-10-14", status: "planned",
+  id, run_no: `R-000${id}`, date: isoDay(new Date()), status: "planned",
   vehicle: { rego, type: "rigid", max_kg: "4500", max_m3: "22", active: true },
   driver: { code: driver.toLowerCase(), name: driver }, created_by: "dee", created_at: "", departed_at: null,
   stops: stops.map((c, i) => ({ sequence: i + 1, consignment: c })),
@@ -325,6 +326,26 @@ describe("Plan runs", () => {
       .toEqual({ message_id: expect.stringMatching(/^[0-9a-f-]{36}$/) }));
     expect(await screen.findByText("R-0001 is finished.")).toBeInTheDocument();
     confirm.mockRestore();
+  });
+
+  it("shows today the runs left open from an earlier day, for the office to finish", async () => {
+    const yesterday = new Date(Date.now() - 86_400_000);
+    const old = run(5, "Tom", "TMS063", [card(51, "Hillside Bakery", "84")],
+                    { status: "departed", date: isoDay(yesterday), departed_at: "2026-10-13T21:10:00Z" });
+    old.stops[0].outcome = "delivered";
+    const { calls } = board({ "GET /v1/runs": () => json(200, { items: [old, KIM], total: 2 }) });
+    renderApp("/plan");
+    const user = userEvent.setup();
+    // tomorrow is planned to start with; today has the ones left open
+    await lane("Run R-0005");
+    const asked = () => calls.filter((c) => path(c.url) === "/v1/runs").map((c) => new URLSearchParams(c.url.split("?")[1]));
+    expect(asked()[0].get("left_open")).toBeNull();
+    await user.selectOptions(screen.getByRole("combobox", { name: "Day" }), isoDay(new Date()));
+    await waitFor(() => expect(asked().at(-1)?.get("left_open")).toBe("true"));
+    const tom = await lane("Run R-0005");
+    expect(within(tom).getByText(`Still open from ${dayLabel(yesterday)}`)).toHaveClass("p-amber");
+    expect(within(tom).queryByText("Departed")).not.toBeInTheDocument();
+    expect(within(tom).getByRole("button", { name: "Finish run" })).toBeInTheDocument();
   });
 
   describe("a truck that can't go (rule 3)", () => {

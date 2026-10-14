@@ -6,6 +6,12 @@ export function isoDay(d: Date): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+/** "2026-10-13" as that day on this computer's calendar. */
+export function fromIso(day: string): Date {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
 /** "Wed 14 Oct", without the comma en-AU puts after the weekday. */
 export function dayLabel(d: Date): string {
   const parts = new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short" })

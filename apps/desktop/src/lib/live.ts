@@ -4,7 +4,7 @@
  * truck drives its route as stops are delivered"). The drawn region is
  * pretend: true positions are for "Where is it". */
 import type { FeedItem, Run } from "../api/types";
-import { clock } from "./days";
+import { clock, dayLabel, fromIso, isoDay } from "./days";
 import { plain, sum } from "./decimal";
 
 const FIVE_MIN = 5 * 60_000;
@@ -12,6 +12,17 @@ const FIVE_MIN = 5 * 60_000;
 /** An estimate to the nearest five minutes: "about 11:40 am". */
 export function about(iso: string): string {
   return `about ${clock(new Date(Math.round(new Date(iso).getTime() / FIVE_MIN) * FIVE_MIN))}`;
+}
+
+/** A run left on the road from an earlier day (by this computer's
+ * calendar) and never finished: not on the road today, and sharing nothing. */
+export function leftOpen(run: Pick<Run, "status" | "date">, today = isoDay(new Date())): boolean {
+  return run.status === "departed" && !!run.date && run.date < today;
+}
+
+/** "Still open from Tue 13 Oct" */
+export function stillOpenFrom(run: Pick<Run, "date">): string {
+  return `Still open from ${dayLabel(fromIso(run.date))}`;
 }
 
 /** Five minutes without a word: a black spot, or the app closed. */

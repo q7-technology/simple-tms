@@ -4,6 +4,7 @@ import { api, ApiError, Unreachable } from "../api/client";
 import type { Card, Consignment, Driver, Page, Run, Vehicle } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { clock, dayOptions } from "../lib/days";
+import { leftOpen, stillOpenFrom } from "../lib/live";
 import { plain, toMicro } from "../lib/decimal";
 import { afterAdding, loadOf, type Gauge } from "../lib/load";
 import { cardOf, dropPosition, kg, m3, moved, packagesLabel, positionWithout, runColour } from "../lib/plan";
@@ -144,7 +145,8 @@ export function PlanRuns() {
     let answers;
     try {
       answers = await Promise.all([
-        api.get<Page<Run>>("/v1/runs", { date: day }),
+        // today, with the runs left open from earlier days, for the office to finish
+        api.get<Page<Run>>("/v1/runs", day === days[0].value ? { date: day, left_open: true } : { date: day }),
         // packed, and any the driver couldn't deliver, back to be planned again
         api.get<Page<Consignment>>("/v1/consignments", { status: "packed,failed", limit: 2000 }),
         // where each truck stands on the day being planned
@@ -161,7 +163,7 @@ export function PlanRuns() {
     setTray(t.items.map(cardOf));
     setVehicles(v.items);
     setDrivers(d.items);
-  }, [day]);
+  }, [day, days]);
 
   useEffect(() => {
     load().catch((e) => setNote({ tone: "r", text: said(e) }));
@@ -389,6 +391,7 @@ export function PlanRuns() {
           const others = planned.filter((r) => r.id !== run.id);
           const sheet = sheetLine(run);
           const pill = open && blocked ? <span className="pill p-red"><Icon name="ban" size={13} width={2.4} />{blockedWord(blocked)}</span>
+            : leftOpen(run) ? <span className="pill p-amber">{stillOpenFrom(run)}</span>
             : run.status === "done" ? <span className="pill p-grey">Done</span>
             : !open ? <span className="pill p-grey">Departed</span>
             : l.state === "over" ? <span className="pill p-red">Over</span>
