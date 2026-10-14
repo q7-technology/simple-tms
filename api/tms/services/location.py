@@ -10,7 +10,7 @@ from decimal import Decimal
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from tms.api.errors import Conflict, Refused
+from tms.api.errors import Conflict, FieldError, Refused
 from tms.models import Position, Run
 from tms.services import deliveries, fleet
 from tms.services.deliveries import MICRO, TENTH
@@ -20,6 +20,10 @@ MIN_GAP = timedelta(seconds=10)
 # the two-number form of an advisory lock, (POSITION_LOCK, run id): one
 # position for a run at a time, so two at once can't both pass the 10 s check
 POSITION_LOCK = 7304
+# only the newest is ever sent, so one older than this is a fault
+OLDEST = timedelta(minutes=10)
+# slack for the phone's clock against the server's, at Start
+CLOCK_SLACK = timedelta(minutes=1)
 # a fix rougher than this would put the truck in the wrong suburb
 MAX_ACCURACY_M = Decimal(1000)
 
@@ -41,7 +45,8 @@ def record(db: Session, who, run_id: int, *, at: datetime, latitude: Decimal,
            longitude: Decimal, accuracy_m: Decimal) -> Position:
     """Where the run's phone is now. Only for a run on the road: before Start
     and after it is finished nothing is kept. The time is the phone's, but
-    never later than now."""
+    never later than now, and refused if more than 10 minutes old or from
+    before the run left (a minute's slack for the phone's clock)."""
     run = deliveries.own_run(db, who, run_id)
     if run.status in NOT_SHARED:
         code, said = NOT_SHARED[run.status]
@@ -49,6 +54,11 @@ def record(db: Session, who, run_id: int, *, at: datetime, latitude: Decimal,
     if stale(run):
         raise Conflict("run_stale", f"{run.number} was for {fleet.long_date(run.day)} and was "
                                     "left open, so where it is isn't shared. Finish it.")
+    now = datetime.now(UTC)
+    if at < now - OLDEST:
+        raise FieldError("at", "a position more than 10 minutes old isn't kept: send the newest")
+    if run.departed_at is not None and at < run.departed_at - CLOCK_SLACK:
+        raise FieldError("at", f"{run.number} hadn't left yet then, so it isn't kept")
     # one at a time for the run, until this transaction ends: a second sent
     # at the same moment waits, then sees the first
     db.execute(text("select pg_advisory_xact_lock(:a, :b)"), {"a": POSITION_LOCK, "b": run.id})

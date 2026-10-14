@@ -181,3 +181,21 @@ def test_positions_sent_all_at_once_still_keep_only_one(client, db, dispatcher_h
     codes = all_at_once(8, post)
     assert sorted(codes) == [204] + [429] * 7
     assert len(db.execute(select(Position)).all()) == 1
+
+
+def test_a_position_from_long_ago_or_before_the_run_left_is_refused(client, db,
+                                                                    dispatcher_headers):
+    from tms.models import Run
+
+    run, _, kim = on_the_road(client, db, dispatcher_headers)
+    now = datetime.now(UTC)
+    # more than 10 minutes old: only the newest is ever sent
+    r = send(client, kim, run["id"], at=(now - timedelta(minutes=11)).isoformat())
+    assert r.status_code == 422 and r.json()["errors"][0]["field"] == "at"
+    # from before the run left (a minute's slack for the phone's clock)
+    db.execute(update(Run).where(Run.id == run["id"]).values(departed_at=now - timedelta(minutes=5)))
+    db.commit()
+    r = send(client, kim, run["id"], at=(now - timedelta(minutes=7)).isoformat())
+    assert r.status_code == 422 and r.json()["errors"][0]["field"] == "at"
+    assert db.execute(select(Position)).first() is None
+    assert send(client, kim, run["id"], at=(now - timedelta(minutes=5, seconds=50)).isoformat()).status_code == 204
