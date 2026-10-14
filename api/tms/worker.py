@@ -4,6 +4,9 @@ as `python -m tms.worker`.
 A failed try is tried again after 1 min, 5, 30 and 2 h. The try after the
 2 h wait is the last: if it fails too, the row is `failed` and waits for a
 person (retry-ship on the run, or print again).
+
+Once an hour (and when it starts) it also forgets positions older than the
+retention period.
 """
 from __future__ import annotations
 
@@ -12,17 +15,18 @@ import time
 from datetime import UTC, datetime, timedelta
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from tms.config import get_settings
 from tms.db import get_sessionmaker
-from tms.models import OutboundCall, PrintJob
+from tms.models import OutboundCall, Pod, Position, PrintJob
 from tms.services import printing, wms_client
 
 log = logging.getLogger("tms.worker")
 
 BACKOFF = (60, 300, 1800, 7200)
+FORGET_EVERY_SECONDS = 3600
 
 
 def retry_later(row, now: datetime, error: str) -> None:
@@ -127,6 +131,24 @@ def send_print_jobs(session: Session, http: httpx.Client, now: datetime | None =
     return tried
 
 
+def forget_positions(session: Session, now: datetime | None = None) -> tuple[int, int]:
+    """Positions are personal information, not business history: those taken
+    longer ago than TMS_POSITION_RETENTION_DAYS are deleted, and the position
+    on a proof of delivery is cleared (the delivery itself stays as it was).
+    Returns how many positions went, and how many deliveries lost theirs."""
+    days = get_settings().position_retention_days
+    cutoff = (now or clock()) - timedelta(days=days)
+    gone = session.execute(delete(Position).where(Position.recorded_at < cutoff)).rowcount
+    cleared = session.execute(
+        update(Pod).where(Pod.at < cutoff, Pod.latitude.is_not(None))
+        .values(latitude=None, longitude=None, accuracy_m=None)).rowcount
+    session.commit()
+    if gone or cleared:
+        log.info("forgot %d positions, and where %d deliveries were, older than %d days",
+                 gone, cleared, days)
+    return gone, cleared
+
+
 def wait_for_schema(session: Session, timeout: float = 120, poll: float = 2) -> None:
     """Block until the api container has run the migrations."""
     from sqlalchemy.exc import ProgrammingError
@@ -170,8 +192,16 @@ def main() -> None:
     with make_session() as session:
         wait_for_schema(session)
     log.info("worker started, polling every %ss", settings.worker_poll_seconds)
+    forget_next = 0.0
     with httpx.Client() as http:
         while True:
+            if time.monotonic() >= forget_next:
+                try:
+                    with make_session() as session:
+                        forget_positions(session)
+                except Exception:  # tried again in an hour; the queues go on
+                    log.exception("forgetting old positions failed")
+                forget_next = time.monotonic() + FORGET_EVERY_SECONDS
             try:
                 with make_session() as session:
                     done = run_once(session, http)
