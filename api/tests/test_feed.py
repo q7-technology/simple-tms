@@ -55,3 +55,19 @@ def test_only_the_newest(client, db, dispatcher_headers):
 def test_for_the_office_not_the_phone(client, db, dispatcher_headers):
     _, _, kim = on_the_road(client, db, dispatcher_headers)
     assert client.get("/v1/feed", headers=kim).status_code == 403
+
+
+def test_pre_starts_and_fixes_only_for_those_who_see_the_fleet(client, db, dispatcher_headers,
+                                                               capsys):
+    from conftest import bearer
+    from test_api_keys import _key
+    from tms.models import Vehicle
+
+    run, _ = planned_run(client, db, dispatcher_headers)
+    kim = driver_headers(client)
+    grounded = prestart(client, kim, run["id"], failed=("Brakes",)).json()
+    record(db, db.get(Vehicle, 1), "fixed", note="New pads", check_id=grounded["check_id"])
+    erp = bearer(_key(capsys, "erp", "runs:read"))
+    assert {i["kind"] for i in feed(client, erp)} == {"packed"}
+    office = bearer(_key(capsys, "office", "runs:read,fleet:read"))
+    assert {i["kind"] for i in feed(client, office)} == {"packed", "prestart", "fixed"}

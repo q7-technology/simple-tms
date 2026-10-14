@@ -41,9 +41,10 @@ class FeedOut(BaseModel):
 def what_just_happened(db: DB, limit: int = Query(default=20, ge=1, le=100),
                        who: Principal = require("runs:read")):
     """Newest first: consignments packed in Simple WMS, delivered or not,
-    runs leaving and finishing, pre-starts and trucks marked fixed."""
+    runs leaving and finishing; pre-starts and trucks marked fixed only for
+    a caller with fleet:read."""
     return FeedOut(items=[FeedItem(
         kind=h.kind, at=h.at, run_id=h.run.id if h.run else None,
         run_no=h.run.number if h.run else None, rego=h.rego, driver=h.driver,
         sequence=h.sequence, customer=h.customer, wms_ref=h.wms_ref, reason=h.reason,
-        result=h.result, failed=h.failed, by=h.by, note=h.note) for h in feed.recent(db, limit)])
+        result=h.result, failed=h.failed, by=h.by, note=h.note) for h in feed.recent(db, who, limit)])

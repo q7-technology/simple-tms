@@ -766,7 +766,8 @@ refused at start-up, as their policy asks.
 | `prestart` | a pre-start check: `result` `passed`, `failed` or `grounded` | the run, `rego`, `driver` (or `by`), `failed` |
 | `fixed` | a fleet manager marked a grounded truck fixed | `rego`, `by`, `note` |
 
-Nothing is written for the feed, and no position is in it.
+`prestart` and `fixed` are the fleet's records: they are left out unless the
+caller also has `fleet:read`. Nothing is written for the feed, and no position is in it.
 
 ## From Simple WMS
 

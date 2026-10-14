@@ -96,7 +96,11 @@ def _fixes(db: Session, limit: int) -> list[Happened]:
             for r, rego in rows]
 
 
-def recent(db: Session, limit: int) -> list[Happened]:
-    """The newest `limit` of each kind, merged and cut to `limit`."""
-    items = _consignments(db, limit) + _trips(db, limit) + _checks(db, limit) + _fixes(db, limit)
+def recent(db: Session, who, limit: int) -> list[Happened]:
+    """The newest `limit` of each kind, merged and cut to `limit`. Pre-starts
+    and trucks marked fixed are the fleet's records: only for a caller who
+    may see the fleet (fleet:read)."""
+    items = _consignments(db, limit) + _trips(db, limit)
+    if who.has_scope("fleet:read"):
+        items += _checks(db, limit) + _fixes(db, limit)
     return sorted(items, key=lambda h: h.at, reverse=True)[:limit]
