@@ -3,11 +3,12 @@ import { Link, Navigate, useParams } from "react-router-dom";
 import { useQueueItems, useSession } from "../auth/Session";
 import { toBlob } from "../lib/picture";
 import type { PictureKind } from "../lib/queue";
-import { loadRun, loadTicks, nextStop, outcomes, plural, saveTicks, stopOf } from "../lib/run";
+import { loadTicks, nextStop, outcomes, plural, saveTicks, stopOf } from "../lib/run";
 import { clock } from "../lib/time";
 import { getPosition } from "../lib/where";
 import { Icon } from "../ui/icons";
 import { BackTop, Phone } from "../ui/kit";
+import { useOnRun } from "./OnTheRun";
 import { PhotoPicker, SignaturePad } from "../ui/pictures";
 
 interface Dinged { sequence: number; doneCount: number; cartons: number; by: string; at: Date }
@@ -21,7 +22,7 @@ export function Proof() {
   const { queue, driver } = useSession();
   const me = driver!.id;
   const items = useQueueItems(runId);
-  const run = loadRun(me, runId);
+  const run = useOnRun();
   const stop = run ? stopOf(run, consignmentId) : null;
   const canvas = useRef<HTMLCanvasElement | null>(null);
   const [signed, setSigned] = useState(false);
@@ -36,6 +37,8 @@ export function Proof() {
   const [ticks] = useState(() => loadTicks(me, runId, consignmentId));
 
   if (!run || !stop) return <Navigate to="/" replace />;
+  // finished by the office meanwhile: the run says so
+  if (!ding && run.status === "done") return <Navigate to={`/run/${runId}`} replace />;
   const back = `/run/${runId}/stop/${consignmentId}`;
   if (!ding && stop.packages.some((p) => !ticks[p.package_no])) return <Navigate to={back} replace />;
   const ready = (signed && name.trim().length > 0) || photo !== null;

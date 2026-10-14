@@ -4,7 +4,7 @@
  * web app can't share from the background. A position is not a
  * confirmation: nothing is queued, so a black spot leaves no backlog, and
  * once the signal is back only the newest goes. */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api/client";
 
 export const EVERY_MS = 30_000;
@@ -25,7 +25,8 @@ export class Sharer {
   private stopped = false;
 
   constructor(private runId: number, private send: Send, private onState: (s: Sharing) => void,
-              private geo: Geolocation | undefined = typeof navigator === "undefined" ? undefined : navigator.geolocation) {}
+              private geo: Geolocation | undefined = typeof navigator === "undefined" ? undefined : navigator.geolocation,
+              private onEnded: (code: string | null) => void = () => undefined) {}
 
   start() {
     if (!this.geo?.watchPosition) { this.onState("off"); return; }
@@ -62,17 +63,21 @@ export class Sharer {
       await this.send(`/v1/runs/${this.runId}/position`, fix);
     } catch (e) {
       // the run isn't on the road (finished, say, from the office): stop
-      if (e instanceof ApiError && e.status === 409) { this.stop(); this.onState("off"); }
+      if (e instanceof ApiError && e.status === 409) { this.stop(); this.onState("off"); this.onEnded(e.code); }
     }
   }
 }
 
-/** Share while `active` (the run on the road, not finished); say how it is going. */
-export function useSharing(runId: number, active: boolean): Sharing {
+/** Share while `active` (the run on the road, not finished); say how it is
+ * going. `onEnded` hears why the API said the run isn't on the road
+ * (run_done, run_cancelled, run_stale…), to look at the run again. */
+export function useSharing(runId: number, active: boolean, onEnded?: (code: string | null) => void): Sharing {
   const [state, setState] = useState<Sharing>("off");
+  const ended = useRef(onEnded);
+  ended.current = onEnded;
   useEffect(() => {
     if (!active) { setState("off"); return; }
-    const s = new Sharer(runId, (path, body) => api.post(path, body), setState);
+    const s = new Sharer(runId, (path, body) => api.post(path, body), setState, undefined, (code) => ended.current?.(code));
     s.start();
     return () => s.stop();
   }, [runId, active]);

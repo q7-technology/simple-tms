@@ -2,12 +2,13 @@ import { useEffect, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { useQueueItems } from "../auth/Session";
 import { addressLine, mapsLink } from "../lib/maps";
-import { loadRun, loadTicks, outcomes, saveTicks, stopOf, type How, type Ticks } from "../lib/run";
+import { loadTicks, outcomes, saveTicks, stopOf, type How, type Ticks } from "../lib/run";
 import { matchScan } from "../lib/scan";
 import { useScanWedge } from "../lib/useScanWedge";
 import { useSession } from "../auth/Session";
 import { Icon } from "../ui/icons";
 import { Goal, OfflineBanner, Phone, RunTop } from "../ui/kit";
+import { useOnRun } from "./OnTheRun";
 
 type Said = { tone: "g" | "a" | "r"; text: string } | null;
 
@@ -20,7 +21,7 @@ export function Stop() {
   const { online, waiting, driver } = useSession();
   const me = driver!.id;
   const items = useQueueItems(runId);
-  const run = loadRun(me, runId);
+  const run = useOnRun();
   const stop = run ? stopOf(run, consignmentId) : null;
   const [ticks, setTicks] = useState<Ticks>(() => loadTicks(me, runId, consignmentId));
   const [said, setSaid] = useState<Said>(null);
@@ -57,7 +58,8 @@ export function Stop() {
 
   if (!run || !stop) return <Navigate to={run ? `/run/${runId}` : "/"} replace />;
   const done = outcomes(run, items);
-  if (done.has(consignmentId)) return <Navigate to={`/run/${runId}`} replace />;
+  // done already, or the whole run finished by the office: back to the run
+  if (done.has(consignmentId) || run.status === "done") return <Navigate to={`/run/${runId}`} replace />;
   const count = stop.packages.filter((p) => ticks[p.package_no]).length;
   const all = count === stop.packages.length;
   const t = stop.ship_to;

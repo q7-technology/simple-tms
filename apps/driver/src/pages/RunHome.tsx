@@ -1,38 +1,27 @@
-import { useEffect, useState } from "react";
 import { Link, Navigate, useLocation, useParams } from "react-router-dom";
-import { api } from "../api/client";
-import type { RunStops } from "../api/types";
 import { useQueueItems, useSession } from "../auth/Session";
 import { addressLine, mapsLink } from "../lib/maps";
-import { finished, loadRun, nextStop, outcomes, plural, saveRun } from "../lib/run";
+import { finished, finishedByOffice, nextStop, outcomes, plural } from "../lib/run";
 import { Icon } from "../ui/icons";
 import { Goal, OfflineBanner, Phone, RunTop, SharingNote, WaitingList } from "../ui/kit";
+import { useOnRun } from "./OnTheRun";
 
 /** Between stops (DriverOffline.html): the next stop, what is waiting to
  * send, and the run's end. Works from the phone's copy of the run; reloads
  * it from the office when there is signal. */
 export function RunHome() {
   const runId = Number(useParams().runId);
-  const { online, waiting, queue, driver } = useSession();
-  const me = driver!.id;
+  const { online, waiting, queue } = useSession();
   const items = useQueueItems(runId);
   const note = (useLocation().state as { note?: string } | null)?.note;
-  const [run, setRun] = useState<RunStops | null>(() => loadRun(me, runId));
-
-  useEffect(() => {
-    if (!online) return;
-    api.get<RunStops>(`/v1/runs/${runId}/stops`)
-      .then((fresh) => {
-        try { saveRun(me, fresh); } catch { /* the copy already on the phone will do */ }
-        setRun(fresh);
-      })
-      .catch(() => undefined);   // the phone's copy will do
-  }, [runId, online, me]);
+  // the phone's copy, looked up again from the office by OnTheRun
+  const run = useOnRun();
 
   if (!run) return <Navigate to="/" replace />;
   const done = outcomes(run, items);
   const next = nextStop(run, done);
   const over = finished(run, items);
+  const byOffice = finishedByOffice(run, items);
   const delivered = [...done.values()].filter((o) => o === "delivered").length;
   const back = done.size - delivered;
 
@@ -53,7 +42,8 @@ export function RunHome() {
       <Goal run={run} done={done} current={next?.consignment_id} />
       <div className="scroll">
         {note && <div className="msg a" role="status">{note}</div>}
-        {next && (
+        {byOffice && <div className="msg a" role="status">The office finished {run.run_no}.</div>}
+        {next && !over && (
           <section aria-label="Next stop" className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
             <div className="lbl">Stop {next.sequence} of {run.stops.length}</div>
             <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1.1 }}>{next.customer}</div>
@@ -87,7 +77,7 @@ export function RunHome() {
       <div style={{ display: "flex", gap: 10, flex: "none" }}>
         {waiting > 0 && (
           <button type="button" className="big ghost" style={{ width: 130 }} onClick={() => void queue.drain()}>Retry now</button>)}
-        {next && (
+        {next && !over && (
           <Link to={`/run/${runId}/stop/${next.consignment_id}`} className="big primary" style={{ flex: 1 }}>
             Start stop {next.sequence}<Icon name="go" size={20} width={2.6} /></Link>)}
         {!next && !over && (

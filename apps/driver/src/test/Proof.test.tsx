@@ -1,7 +1,7 @@
 import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { saveTicks } from "../lib/run";
-import { json, onThePhone, renderApp, signedIn, stubApi } from "./harness";
+import { json, onThePhone, renderApp, RUN, signedIn, stubApi } from "./harness";
 
 vi.mock("../lib/picture", () => ({
   shrinkPhoto: async () => new Blob([new Uint8Array([0xff, 0xd8, 0xff])], { type: "image/jpeg" }),
@@ -22,6 +22,7 @@ describe("proof of delivery", () => {
     const { calls } = stubApi((method, url) => {
       if (method === "PUT") return json(201, {});
       if (url === "/v1/runs/7/stops/31/deliver") return json(200, { outcome: "delivered" });
+      if (url === "/v1/runs/7/stops") return json(200, RUN);
       return json(200, { ...{}, id: 7 });
     });
     renderApp("/run/7/stop/31/proof");

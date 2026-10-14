@@ -1,10 +1,11 @@
 import { useRef, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { useSession } from "../auth/Session";
-import { loadRun, plural, saveTicks, stopOf } from "../lib/run";
+import { plural, saveTicks, stopOf } from "../lib/run";
 import { getPosition } from "../lib/where";
 import { Icon } from "../ui/icons";
 import { BackTop, Phone } from "../ui/kit";
+import { useOnRun } from "./OnTheRun";
 import { PhotoPicker } from "../ui/pictures";
 
 const REASONS = [
@@ -23,7 +24,7 @@ export function CantDeliver() {
   const { queue, online, driver } = useSession();
   const me = driver!.id;
   const navigate = useNavigate();
-  const run = loadRun(me, runId);
+  const run = useOnRun();
   const stop = run ? stopOf(run, consignmentId) : null;
   const [reason, setReason] = useState<string | null>(null);
   const [photo, setPhoto] = useState<Blob | null>(null);
@@ -34,6 +35,8 @@ export function CantDeliver() {
   const going = useRef(false);
 
   if (!run || !stop) return <Navigate to="/" replace />;
+  // finished by the office meanwhile: the run says so
+  if (run.status === "done") return <Navigate to={`/run/${runId}`} replace />;
 
   async function confirm() {
     if (!run || !stop || !reason || going.current) return;

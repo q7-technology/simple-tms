@@ -112,6 +112,12 @@ export function finished(run: RunStops, items: QueueItem[]): boolean {
     || items.some((i) => i.run_id === run.id && i.outcome === "finished" && i.status !== "failed");
 }
 
+/** Finished by the office (Finish run on the desktop), not from this phone. */
+export function finishedByOffice(run: RunStops, items: QueueItem[]): boolean {
+  return run.status === "done"
+    && !items.some((i) => i.run_id === run.id && i.outcome === "finished" && i.status !== "failed");
+}
+
 export function stopOf(run: RunStops, consignmentId: number): StopDetail | null {
   return run.stops.find((s) => s.consignment_id === consignmentId) ?? null;
 }
