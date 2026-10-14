@@ -157,7 +157,7 @@ export function Carriers() {
 
   function collected(m: Manifest) {
     const n = m.lines.length;
-    if (!window.confirm(`${m.carrier.name} has collected ${n} ${n === 1 ? "consignment" : "consignments"}? Each is marked shipped in Simple WMS with its con note.`)) return;
+    if (!window.confirm(`${m.carrier.name} has collected ${n} ${n === 1 ? "consignment" : "consignments"}? Simple WMS is told each has shipped with its con note, unless its run already shipped it.`)) return;
     void act(() => api.post(`/v1/manifests/${m.id}/collect`, {
       message_id: crypto.randomUUID(), consignment_ids: m.lines.map((l) => l.consignment.id),
     }), `${m.carrier.name} has collected ${m.manifest_no}. Simple WMS is being told.`);
