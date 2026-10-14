@@ -11,8 +11,9 @@ from sqlalchemy import func, select, update
 
 from tms.api.deps import DB, Principal, require
 from tms.api.schemas import Dec, Page
+from tms.config import get_settings
 from tms.models import Consignment, OutboundCall, Pod, PrintJob, Run
-from tms.services import fleet, records, runs
+from tms.services import eta, fleet, records, runs
 from tms.services.load import consignment_totals
 
 router = APIRouter(tags=["runs"])
@@ -93,6 +94,23 @@ class ShippingOut(BaseModel):
     failed: int = 0
 
 
+class StopEta(BaseModel):
+    consignment_id: int
+    sequence: int
+    at: dt.datetime
+
+
+class EstimateOut(BaseModel):
+    """Estimates, and to be shown as such: from the stop order and the
+    driver's average time per stop so far on this run."""
+
+    # average (from the stops done so far) or default (none done yet)
+    basis: str
+    minutes_per_stop: int
+    stops: list[StopEta]
+    back_at_depot: dt.datetime
+
+
 class RunOut(BaseModel):
     id: int
     run_no: str
@@ -110,6 +128,22 @@ class RunOut(BaseModel):
     shipping: ShippingOut
     # the latest pre-start of its truck for it: { id, at, result }, or null
     prestart: dict | None = None
+    # while it is on the road: when it should reach each stop left, and the depot
+    estimate: EstimateOut | None = None
+
+
+def run_estimate(run: Run) -> EstimateOut | None:
+    if run.status != "departed" or run.departed_at is None:
+        return None
+    left = [s for s in run.stops if s.outcome is None]
+    e = eta.estimate(departed_at=run.departed_at,
+                     done_at=[s.outcome_at for s in run.stops if s.outcome_at is not None],
+                     left=[s.consignment_id for s in left], now=dt.datetime.now(dt.UTC),
+                     default=dt.timedelta(minutes=get_settings().eta_minutes_per_stop))
+    return EstimateOut(basis=e.basis, minutes_per_stop=round(e.per_stop.total_seconds() / 60),
+                       stops=[StopEta(consignment_id=s.consignment_id, sequence=s.sequence, at=due)
+                              for s, (_, due) in zip(left, e.stops)],
+                       back_at_depot=e.back_at_depot)
 
 
 def stop_consignment(c: Consignment) -> StopConsignment:
@@ -154,6 +188,7 @@ def run_out(db, run: Run) -> RunOut:
             last_error=sheet.last_error, created_at=sheet.created_at,
             printed_at=sheet.printed_at),
         shipping=ShippingOut(**calls),
+        estimate=run_estimate(run),
     )
 
 
