@@ -141,6 +141,8 @@ def test_once_collected_it_stays_as_it_went(client, db, bay, manager_headers, di
     rx = m["carrier"]["id"]
     r = book(client, dispatcher_headers, rx, a.id)
     assert r.status_code == 409 and r.json()["code"] == "not_plannable"
+    assert r.json()["detail"] == ("Hilltop Joinery (0080034519) has been collected by a carrier, "
+                                  "so it can't go with a carrier")
     # the carrier calls again later in the day: a new manifest
     later = book(client, dispatcher_headers, rx, consignment(db, ref="0080034599").id).json()
     assert later["id"] != m["id"] and later["date"] == DAY.isoformat()

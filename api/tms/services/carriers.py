@@ -138,7 +138,7 @@ def book(db: Session, carrier_id: int, consignment_id: int, day: date, con_note:
         raise FieldError("consignment_id", f"no consignment {consignment_id}")
     if c.status not in BOOKABLE:
         raise Conflict("not_plannable",
-                       f"{c.customer} ({c.wms_ref}) has {c.status}, so it can't go with a carrier")
+                       f"{runs.gone(c)}, so it can't go with a carrier")
     booking = _live_booking(db, c.id)
     if booking is not None and booking.carrier_id == carrier.id \
             and db.get(Manifest, booking.manifest_id).day == day:

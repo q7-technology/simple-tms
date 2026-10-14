@@ -69,3 +69,4 @@ def test_a_delivered_consignment_is_not_planned_again(client, db, dispatcher_hea
     other = new_run(client, dispatcher_headers, rego="TMS018", day=DAY + timedelta(days=1))
     r = assign(client, dispatcher_headers, other["id"], a.id)
     assert r.status_code == 409 and r.json()["code"] == "not_plannable"
+    assert r.json()["detail"].endswith(" was delivered, so it can't be planned")

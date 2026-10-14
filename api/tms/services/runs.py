@@ -137,6 +137,14 @@ def cancel(db: Session, run_id: int) -> Run:
 # couldn't deliver comes back to the depot and is planned again, and one on
 # the carrier bay can come off it onto a run
 PLANNABLE = ("packed", "assigned", "failed", "booked")
+# where one that can't be planned any more has gone, in words
+_GONE = {"departed": "has left on its run", "delivered": "was delivered",
+         "collected": "has been collected by a carrier"}
+
+
+def gone(c: Consignment) -> str:
+    """Why it can't move now: "Station Deli (0080034519) was delivered"."""
+    return f"{c.customer} ({c.wms_ref}) {_GONE.get(c.status, f'is {c.status}')}"
 
 
 def _now() -> datetime:
@@ -166,7 +174,7 @@ def _plannable(db: Session, consignment_id: int) -> Consignment:
         raise FieldError("consignment_id", f"no consignment {consignment_id}")
     if c.status not in PLANNABLE:
         raise Conflict("not_plannable",
-                       f"{c.customer} ({c.wms_ref}) has {c.status}, so it can't be planned")
+                       f"{gone(c)}, so it can't be planned")
     return c
 
 

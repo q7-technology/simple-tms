@@ -172,7 +172,7 @@ def test_what_has_left_cant_go_with_a_carrier(client, db, manager_headers, dispa
     client.post(f"/v1/runs/{run['id']}/depart", headers=dispatcher_headers)
     r = book(client, dispatcher_headers, rx["id"], c.id)
     assert r.status_code == 409 and r.json()["code"] == "not_plannable"
-    assert r.json()["detail"] == "Station Deli (0080034519) has departed, so it can't go with a carrier"
+    assert r.json()["detail"] == "Station Deli (0080034519) has left on its run, so it can't go with a carrier"
 
 
 def test_nothing_new_with_a_deactivated_carrier(client, db, manager_headers, dispatcher_headers):
