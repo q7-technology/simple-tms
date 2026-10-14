@@ -103,6 +103,51 @@ def test_a_con_note_is_one_consignments_with_a_carrier(
     assert book(client, dispatcher_headers, vf["id"], c.id, con_note="RX-77310042").status_code == 200
 
 
+def test_a_con_note_stays_its_consignments_after_it_is_taken_off_the_bay(
+        client, db, manager_headers, dispatcher_headers):
+    rx = new_carrier(client, manager_headers)
+    a = consignment(db, ref="0080034519", customer="Hilltop Joinery")
+    b = consignment(db, ref="0080034520")
+    m = book(client, dispatcher_headers, rx["id"], a.id, con_note="RX-77310042").json()
+    client.post(f"/v1/manifests/{m['id']}/unbook", headers=dispatcher_headers,
+                json={"consignment_id": a.id})
+    r = book(client, dispatcher_headers, rx["id"], b.id, con_note="RX-77310042")
+    assert r.status_code == 422
+    assert r.json()["errors"] == [{"field": "con_note", "message":
+                                   f"RX-77310042 is already the con note of {a.wms_ref} "
+                                   f"(Hilltop Joinery) with {RIDGELINE}"}]
+    m2 = book(client, dispatcher_headers, rx["id"], b.id).json()
+    assert con_note(client, dispatcher_headers, m2["id"], b.id, "RX-77310042").status_code == 422
+    # its own again: back on the bay, it may have it
+    again = book(client, dispatcher_headers, rx["id"], a.id, con_note="RX-77310042")
+    assert again.status_code == 200, again.text
+
+
+def test_a_con_note_put_right_is_free_again(client, db, manager_headers, dispatcher_headers):
+    rx = new_carrier(client, manager_headers)
+    a, b = consignment(db, ref="0080034519"), consignment(db, ref="0080034520")
+    m = book(client, dispatcher_headers, rx["id"], a.id, con_note="RX-77310024").json()
+    con_note(client, dispatcher_headers, m["id"], a.id, "RX-77310042")
+    assert book(client, dispatcher_headers, rx["id"], b.id, con_note="RX-77310024").status_code == 200
+
+
+def test_one_con_note_given_to_two_at_once_goes_to_one(
+        client, db, manager_headers, dispatcher_headers):
+    rx = new_carrier(client, manager_headers)
+    ids = [consignment(db, ref=f"008003452{i}").id for i in range(4)]
+    for i in ids:
+        book(client, dispatcher_headers, rx["id"], i)
+    m = _bay(client, dispatcher_headers)[0]
+    counter = iter(ids)
+
+    def go():
+        cid = next(counter)
+        with fresh_client() as other:
+            return con_note(other, dispatcher_headers, m["id"], cid, "RX-77310042").status_code
+
+    assert sorted(all_at_once(4, go)) == [200, 422, 422, 422]
+
+
 def test_the_same_booking_twice_changes_nothing(client, db, manager_headers, dispatcher_headers):
     rx = new_carrier(client, manager_headers)
     c = consignment(db)
@@ -125,9 +170,9 @@ def test_to_another_carrier_without_its_con_note(client, db, manager_headers, di
                       "manifest_id": first["id"], "by": "dee"}),
         ("booked", {"carrier": VALLEY, "carrier_id": vf["id"], "manifest": m["manifest_no"],
                     "manifest_id": m["id"], "by": "dee"})]
-    # its old number is free again
+    # its old number stays its own with that carrier, for good
     d = consignment(db, ref="0080034599")
-    assert book(client, dispatcher_headers, rx["id"], d.id, con_note="RX-77310042").status_code == 200
+    assert book(client, dispatcher_headers, rx["id"], d.id, con_note="RX-77310042").status_code == 422
 
 
 def test_to_another_day_with_the_same_carrier_keeps_its_con_note(

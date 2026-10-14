@@ -87,9 +87,16 @@ def take_off_bay(db: Session, c: Consignment, by: str) -> None:
 
 
 def _con_note_free(db: Session, carrier: Carrier, note: str, booking: Booking) -> None:
+    """A con note is one consignment's with a carrier for good: refused while
+    another consignment has it on the bay, and after, once it has been taken
+    off or collected (its booking keeps it). The same consignment back on the
+    bay, or moved to another day, may have it again; one put right is free
+    (no booking keeps it). The caller holds the planning lock, so two
+    consignments given the same one at once can't both have it."""
     taken = db.execute(select(Booking).where(
         Booking.carrier_id == carrier.id, Booking.con_note == note,
-        Booking.removed_at.is_(None), Booking.id != booking.id)).scalar_one_or_none()
+        Booking.consignment_id != booking.consignment_id)
+        .order_by(Booking.removed_at.is_not(None), Booking.id.desc()).limit(1)).scalar_one_or_none()
     if taken is not None:
         other = taken.consignment
         raise FieldError("con_note", f"{note} is already the con note of {other.wms_ref} "

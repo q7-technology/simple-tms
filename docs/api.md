@@ -607,8 +607,10 @@ off and letters made capitals (` rx-77310042 ` is `RX-77310042`); it must
 then be 4 to 40 letters, digits and dashes, starting with a letter or digit,
 or it is a `422` on `con_note` (a space inside is refused, not guessed at). A
 con note is one consignment's with a carrier, for good: another consignment
-with the same carrier and con note is a `422` naming the first. Another
-carrier's numbers are its own.
+with the same carrier and con note is a `422` naming the first, even once the
+first has been taken off the bay or collected. The first may have it again
+(back on the bay, or moved to another day), and a con note put right is free
+for another. Another carrier's numbers are its own.
 
 | `409` code | When |
 | --- | --- |
