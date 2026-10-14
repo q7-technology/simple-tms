@@ -137,7 +137,8 @@ export function Carriers() {
       if (String(m.carrier.id) === carrierId) {
         await api.post(`/v1/manifests/${m.id}/con-note`, { consignment_id: c.id, con_note: value });
       } else {
-        await api.post(`/v1/carriers/${carrierId}/book`, { consignment_id: c.id, date: m.date, con_note: value });
+        // to another carrier: for today, even if it has waited since an earlier day
+        await api.post(`/v1/carriers/${carrierId}/book`, { consignment_id: c.id, date: today, con_note: value });
       }
       setNote({ tone: "g", text: `Con note ${value} saved for ${c.customer}.` });
       const fresh = await load().catch(() => all);

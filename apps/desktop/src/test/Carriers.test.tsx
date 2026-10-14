@@ -197,6 +197,19 @@ describe("Carriers", () => {
     }
   });
 
+  it("books one left from an earlier day with another carrier for today", async () => {
+    const old = manifest(1, RIDGELINE, [line(26, "Mill Lane Florist", null)], { date: "2026-10-01" });
+    const { calls } = bay([old, VF]);
+    renderApp("/carriers");
+    const box = await screen.findByRole("form", { name: "Add a con note" });
+    const user = userEvent.setup();
+    await user.selectOptions(within(box).getByRole("combobox", { name: "Carrier" }), "2");
+    await user.type(within(box).getByRole("textbox", { name: "Con note number" }), "VF-00418830{Enter}");
+    await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
+    expect(calls.find((c) => c.method === "POST")!).toMatchObject({
+      url: "/v1/carriers/2/book", body: { consignment_id: 26, date: today, con_note: "VF-00418830" } });
+  });
+
   it("prints a manifest, marks it collected and puts one back in the tray", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     const { calls } = bay();
