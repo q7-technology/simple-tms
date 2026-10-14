@@ -7,18 +7,19 @@ const REASONS: Record<string, string> = { closed: "closed", refused: "refused", 
 
 const text = (v: unknown) => (typeof v === "string" && v ? v : null);
 const join = (...parts: (string | null)[]) => parts.filter(Boolean).join(" · ");
+const packages = (n: unknown) => (n ? `${n} ${n === 1 ? "package" : "packages"}` : null);
 
 /** The title, the small line under it, and whether Simple WMS or Simple TMS did it. */
 export function historyLine(h: HistoryRow): { title: string; more: string; from: "wms" | "tms" } {
   const d = h.detail;
   const by = text(d.by);
   switch (h.kind) {
-    case "packed": return { title: "Packed in Simple WMS", more: d.packages ? `${d.packages} packages` : "", from: "wms" };
+    case "packed": return { title: "Packed in Simple WMS", more: packages(d.packages) ?? "", from: "wms" };
     case "assigned": return { title: `On run ${d.run}`, more: join(by), from: "tms" };
     case "unassigned": return { title: `Off run ${d.run}`, more: join(by), from: "tms" };
     case "departed": return { title: "Departed", more: join(text(d.vehicle), text(d.driver)), from: "tms" };
     case "delivered":
-      return { title: "Delivered", more: join(d.packages ? `${d.packages} packages` : null,
+      return { title: "Delivered", more: join(packages(d.packages),
                                               text(d.signed_name) ? `signed by ${d.signed_name}` : null), from: "tms" };
     case "failed": return { title: "Not delivered", more: REASONS[String(d.reason)] ?? String(d.reason ?? ""), from: "tms" };
     case "booked": return { title: `Booked with ${d.carrier}`, more: join(text(d.manifest), by), from: "tms" };
