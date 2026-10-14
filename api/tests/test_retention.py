@@ -54,3 +54,21 @@ def test_the_period_is_the_businesss_to_set(client, db, dispatcher_headers, monk
     _position(db, run["id"], 29)
     monkeypatch.setattr(get_settings(), "position_retention_days", 30)
     assert forget_positions(db) == (1, 0)
+
+
+def test_it_is_time_to_forget_on_start_and_then_once_an_hour():
+    from tms.worker import FORGET_EVERY_SECONDS, time_to_forget
+
+    assert time_to_forget(None, 5.0)
+    assert not time_to_forget(100.0, 100.0 + FORGET_EVERY_SECONDS - 1)
+    assert time_to_forget(100.0, 100.0 + FORGET_EVERY_SECONDS)
+
+
+def test_each_go_says_what_it_forgot_even_nothing(db, caplog):
+    import logging
+
+    from tms.worker import forget_positions
+
+    with caplog.at_level(logging.INFO, logger="tms.worker"):
+        assert forget_positions(db) == (0, 0)
+    assert "forgot 0 positions, and where 0 deliveries were, older than 90 days" in caplog.text

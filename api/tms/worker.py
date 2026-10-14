@@ -143,10 +143,17 @@ def forget_positions(session: Session, now: datetime | None = None) -> tuple[int
         update(Pod).where(Pod.at < cutoff, Pod.latitude.is_not(None))
         .values(latitude=None, longitude=None, accuracy_m=None)).rowcount
     session.commit()
-    if gone or cleared:
-        log.info("forgot %d positions, and where %d deliveries were, older than %d days",
-                 gone, cleared, days)
+    # every go, even when nothing was old enough: the log shows it is running
+    log.info("forgot %d positions, and where %d deliveries were, older than %d days",
+             gone, cleared, days)
     return gone, cleared
+
+
+def time_to_forget(last: float | None, now: float) -> bool:
+    """When it starts (never forgotten yet), then once FORGET_EVERY_SECONDS
+    have passed since the last go, whether that went well or not. Times are
+    time.monotonic()'s."""
+    return last is None or now - last >= FORGET_EVERY_SECONDS
 
 
 def wait_for_schema(session: Session, timeout: float = 120, poll: float = 2) -> None:
@@ -192,16 +199,16 @@ def main() -> None:
     with make_session() as session:
         wait_for_schema(session)
     log.info("worker started, polling every %ss", settings.worker_poll_seconds)
-    forget_next = 0.0
+    forgot_at: float | None = None
     with httpx.Client() as http:
         while True:
-            if time.monotonic() >= forget_next:
+            if time_to_forget(forgot_at, time.monotonic()):
                 try:
                     with make_session() as session:
                         forget_positions(session)
                 except Exception:  # tried again in an hour; the queues go on
                     log.exception("forgetting old positions failed")
-                forget_next = time.monotonic() + FORGET_EVERY_SECONDS
+                forgot_at = time.monotonic()
             try:
                 with make_session() as session:
                     done = run_once(session, http)

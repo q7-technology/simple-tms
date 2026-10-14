@@ -110,7 +110,9 @@ key made with `location:read`. Only the run's driver sends positions
 
 **Positions are deleted after 90 days** (`TMS_POSITION_RETENTION_DAYS`):
 once an hour the worker deletes older positions and clears the position kept
-with each proof of delivery; the deliveries themselves are kept. Some states
+with each proof of delivery; the deliveries themselves are kept. Each go
+logs a line in `docker compose logs worker` ("forgot 12 positions, and where
+3 deliveries were, older than 90 days", zeros included). Some states
 regulate tracking employees (for example the NSW Workplace Surveillance Act,
 which asks for notice to staff before tracking starts): check your own
 obligations, tell your drivers, and set the retention period to suit.
