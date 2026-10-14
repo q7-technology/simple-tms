@@ -1,5 +1,6 @@
-"""carrier names one whatever their case, in the database too; and con notes
-found quickly among bookings taken off the bay, which keep theirs for good
+"""carrier names one whatever their case, in the database too; con notes
+found quickly among bookings taken off the bay, which keep theirs for good;
+and a ship call Simple WMS answered already_shipped, said so
 
 Revision ID: 0009
 Revises: 0008
@@ -27,8 +28,11 @@ def upgrade() -> None:
             "(PATCH /v1/carriers/{id} with a new name), then upgrade again.")
     op.create_index("uq_carrier_name_lower", "carrier", [sa.text("lower(name)")], unique=True)
     op.create_index("ix_booking_carrier_id_con_note", "booking", ["carrier_id", "con_note"])
+    op.add_column("outbound_call", sa.Column("already_shipped", sa.Boolean(), nullable=False,
+                                             server_default=sa.false()))
 
 
 def downgrade() -> None:
+    op.drop_column("outbound_call", "already_shipped")
     op.drop_index("ix_booking_carrier_id_con_note", table_name="booking")
     op.drop_index("uq_carrier_name_lower", table_name="carrier")

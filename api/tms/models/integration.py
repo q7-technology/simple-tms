@@ -3,7 +3,9 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Uuid
+from sqlalchemy import (
+    Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Uuid, false,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -51,6 +53,10 @@ class OutboundCall(Base):
     next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(String(500))
     done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # done, but Simple WMS answered 409 already_shipped: it had the delivery
+    # shipped already (a consignment back from its run, then collected by a
+    # carrier) and kept what it had, not this call's carrier and tracking no.
+    already_shipped: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     created_at: Mapped[datetime] = created_at_column()
 
 

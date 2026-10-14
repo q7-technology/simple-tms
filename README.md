@@ -537,6 +537,13 @@ stood in for by `fake-indexeddb`: `cd apps/driver && npm test`.
   adapter (`api/tms/services/carrier_adapters.py`) without changing the data.
 - **Carriers are added through the API.** There is no screen to add or
   change a carrier yet (see "Carriers" above; `docs/api.md` has the rest).
+- **Back from a run, then with a carrier: Simple WMS keeps the run.** A
+  consignment that couldn't be delivered can go with a carrier next, but
+  Simple WMS already has it as shipped by the run (`Own fleet`, `R-0007`)
+  and keeps that: the carrier's name and con note aren't recorded there.
+  **Carriers** says so on the collected manifest ("already shipped by its
+  run: Simple WMS still has R-0007"); give the carrier's con note to anyone
+  who asks Simple WMS.
 - **What a carrier brings back isn't recorded.** If a carrier returns
   freight it couldn't deliver, Simple TMS has no step for it: the
   consignment stays collected, and shipped in Simple WMS.

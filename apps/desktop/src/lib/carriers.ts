@@ -63,6 +63,21 @@ function count(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
+/** Once every ship call is done. Back from its run, a consignment was
+ * shipped in Simple WMS already: it keeps the run's carrier and number. */
+function shippedLine(m: Manifest): string {
+  const back = m.already_shipped ?? [];
+  if (!back.length) return "marked shipped in Simple WMS";
+  const runs = [...new Set(back.map((b) => b.tracking_no).filter(Boolean))];
+  const known = back.every((b) => b.tracking_no);
+  const said = !known ? "already shipped in Simple WMS: it keeps what it had"
+    : `already shipped by ${back.length === 1 ? "its run" : "their runs"}`;
+  if (back.length >= m.lines.length) return known ? `${said}: Simple WMS still has ${runs.join(", ")}` : said;
+  const who = back.map((b) => b.customer).join(", ");
+  return known ? `marked shipped in Simple WMS, but for ${who}: ${said}, Simple WMS still has ${runs.join(", ")}`
+    : `marked shipped in Simple WMS, but for ${who}: ${said}`;
+}
+
 /** Under the carrier's name: when it calls and what it takes, or once it
  * has been, when, its manifest and whether Simple WMS has heard. */
 export function pickupLine(m: Manifest): string {
@@ -72,7 +87,7 @@ export function pickupLine(m: Manifest): string {
     const s = m.shipping;
     if (s.failed) parts.push(`${s.failed} not marked shipped in Simple WMS`);
     else if (s.pending) parts.push("telling Simple WMS");
-    else parts.push("marked shipped in Simple WMS");
+    else parts.push(shippedLine(m));
     return parts.join(" · ");
   }
   const parts = m.carrier.pickup_time ? [`Pickup about ${pickupClock(m.carrier.pickup_time)}`] : [];

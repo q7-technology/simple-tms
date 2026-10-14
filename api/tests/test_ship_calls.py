@@ -52,6 +52,7 @@ def test_the_ship_call_goes_with_our_key_and_its_message_id(db, http, departed):
                                 "carrier": "Own fleet", "tracking_no": departed["run_no"],
                                 "shipped_by": "dee"}
     assert row.status == "done" and row.attempts == 1 and row.done_at == T0
+    assert row.already_shipped is False
 
 
 def test_a_failed_try_waits_1_5_30_then_120_minutes_and_the_next_failure_gives_up(
@@ -85,7 +86,7 @@ def test_already_shipped_in_simple_wms_counts_as_done(db, http, departed):
     http.answers.append((409, {"detail": "0080034519 has already shipped",
                                "code": "already_shipped"}))
     worker.send_ship_calls(db, http.client, now=T0)
-    assert _call(db).status == "done"
+    assert (_call(db).status, _call(db).already_shipped) == ("done", True)
 
 
 def test_a_key_without_the_scope_is_logged_as_an_error_and_retried(db, http, departed, caplog):

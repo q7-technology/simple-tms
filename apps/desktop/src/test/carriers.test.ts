@@ -44,6 +44,19 @@ describe("the carrier bay", () => {
     expect(pickupLine({ ...PP, shipping: { pending: 1, done: 0, failed: 0 } }))
       .toBe("Collected 10:15 am · manifest M-0003 · telling Simple WMS");
   });
+
+  it("says plainly when Simple WMS had it shipped by its run already", () => {
+    const back = { consignment_id: 20, wms_ref: "0080034520", customer: "Corner Hardware", carrier: "Own fleet", tracking_no: "R-0007" };
+    expect(pickupLine({ ...PP, shipping: { pending: 0, done: 1, failed: 0 }, already_shipped: [back] }))
+      .toBe("Collected 10:15 am · manifest M-0003 · already shipped by its run: Simple WMS still has R-0007");
+    const two = manifest(5, PLAINS, [line(20, "Corner Hardware", "PP-1001"), line(21, "Old Mill Books", "PP-1002")],
+                         { status: "collected", collected_at: PP.collected_at, shipping: { pending: 0, done: 2, failed: 0 },
+                           already_shipped: [back] });
+    expect(pickupLine(two))
+      .toBe("Collected 10:15 am · manifest M-0005 · marked shipped in Simple WMS, but for Corner Hardware: already shipped by its run, Simple WMS still has R-0007");
+    expect(pickupLine({ ...PP, shipping: { pending: 0, done: 1, failed: 0 }, already_shipped: [{ ...back, carrier: null, tracking_no: null }] }))
+      .toBe("Collected 10:15 am · manifest M-0003 · already shipped in Simple WMS: it keeps what it had");
+  });
 });
 
 describe("where a consignment is now", () => {

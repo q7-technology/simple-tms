@@ -214,7 +214,11 @@ export interface Manifest {
   needs_con_note: number;
   print_job: RunSheet | null;
   shipping: { pending: number; done: number; failed: number };
+  /** what Simple WMS had shipped already (back from its run): it kept what it had */
+  already_shipped: AlreadyShipped[];
 }
+
+export interface AlreadyShipped { consignment_id: number; wms_ref: string; customer: string; carrier: string | null; tracking_no: string | null }
 
 /** A line of what just happened (GET /v1/feed). */
 export interface FeedItem {

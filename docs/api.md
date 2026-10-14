@@ -576,11 +576,14 @@ of runs, so a consignment is on one run or with one carrier, never both.
   "totals": { "consignments": 1, "packages": 5, "cartons": 5, "weight_kg": "72" },
   "needs_con_note": 0,
   "print_job": null,
-  "shipping": { "pending": 0, "done": 0, "failed": 0 }
+  "shipping": { "pending": 0, "done": 0, "failed": 0 },
+  "already_shipped": []
 }
 ```
 `status` is `open` or `collected`. `print_job` is its latest print (as a
-run's `run_sheet`), `shipping` its ship calls to Simple WMS by state.
+run's `run_sheet`), `shipping` its ship calls to Simple WMS by state, and
+`already_shipped` the consignments Simple WMS had shipped already when this
+carrier took them (see below).
 
 - `GET /v1/manifests?date=2026-10-15` — that day's manifests with something
   on them, open or collected, oldest first, as `{ "items", "total" }`. With
@@ -647,6 +650,14 @@ POST {TMS_WMS_URL}/v1/deliveries/{wms_ref}/ship
 ```
 with the same retries, so Simple WMS ships each delivery once and fires
 `delivery.shipped` with that carrier and tracking number.
+
+A consignment that came back from its run (`failed`) and then went with a
+carrier was already shipped in Simple WMS when the run left. Simple WMS
+answers its ship call `409 already_shipped` and keeps `Own fleet` and the run
+number: Simple TMS allows this, counts the call `done`, and lists it in the
+manifest's `already_shipped` as
+`{ "consignment_id", "wms_ref", "customer", "carrier": "Own fleet", "tracking_no": "R-0007" }`
+(what Simple TMS first told Simple WMS for it; `null` if it never did).
 
 - `POST /v1/manifests/{id}/retry-ship` — calls that gave up start again from
   scratch, each with its same `message_id`.

@@ -19,5 +19,5 @@ export const manifest = (id: number, carrier: string, lines: ManifestLine[], ove
   totals: { consignments: lines.length, packages: lines.reduce((n, l) => n + l.consignment.packages, 0),
             cartons: lines.reduce((n, l) => n + l.consignment.cartons, 0), weight_kg: "96" },
   needs_con_note: lines.filter((l) => !l.con_note).length, print_job: null,
-  shipping: { pending: 0, done: 0, failed: 0 }, ...over,
+  shipping: { pending: 0, done: 0, failed: 0 }, already_shipped: [], ...over,
 });
