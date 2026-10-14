@@ -104,3 +104,41 @@ def test_each_consignment_says_what_it_weighs_and_takes_up(client, wms, dispatch
     assert listed["weight_kg"] == "9.5" and listed["volume_m3"] == "0.096"
     one = client.get(f"/v1/consignments/{cid}", headers=dispatcher_headers).json()
     assert one["weight_kg"] == "9.5" and one["volume_m3"] == "0.096"
+
+
+def test_each_says_where_it_is_now_on_a_run_or_with_a_carrier(
+        client, db, manager_headers, dispatcher_headers):
+    from carriers_samples import RIDGELINE, book, new_carrier
+    from runs_samples import assign, consignment, driver, new_run, vehicle
+    vehicle(db)
+    driver(db)
+    run = new_run(client, dispatcher_headers)
+    rx = new_carrier(client, manager_headers)
+    on_run = consignment(db, ref="0080034519")
+    with_rx = consignment(db, ref="0080034520")
+    waiting = consignment(db, ref="0080034521")
+    assign(client, dispatcher_headers, run["id"], on_run.id)
+    m = book(client, dispatcher_headers, rx["id"], with_rx.id, con_note="RX-77310042").json()
+    items = {c["id"]: c for c in client.get("/v1/consignments", headers=dispatcher_headers).json()["items"]}
+    assert items[on_run.id]["run"] == {"id": run["id"], "run_no": run["run_no"], "driver": "Kim",
+                                       "sequence": 1}
+    assert items[on_run.id]["carrier"] is None
+    assert items[with_rx.id]["carrier"] == {"id": rx["id"], "name": RIDGELINE,
+                                            "con_note": "RX-77310042", "manifest_id": m["id"],
+                                            "manifest_no": m["manifest_no"], "collected_at": None}
+    assert items[with_rx.id]["run"] is None
+    assert (items[waiting.id]["run"], items[waiting.id]["carrier"]) == (None, None)
+    one = client.get(f"/v1/consignments/{with_rx.id}", headers=dispatcher_headers).json()
+    assert one["carrier"]["con_note"] == "RX-77310042"
+
+
+def test_found_by_its_con_note_too(client, db, manager_headers, dispatcher_headers):
+    from carriers_samples import book, new_carrier
+    from runs_samples import consignment
+    rx = new_carrier(client, manager_headers)
+    a = consignment(db, ref="0080034519", customer="Hilltop Joinery")
+    consignment(db, ref="0080034520", customer="Old Mill Books")
+    book(client, dispatcher_headers, rx["id"], a.id, con_note="RX-77310042")
+    found = client.get("/v1/consignments", headers=dispatcher_headers,
+                       params={"q": "rx-7731"}).json()
+    assert [c["id"] for c in found["items"]] == [a.id] and found["total"] == 1
