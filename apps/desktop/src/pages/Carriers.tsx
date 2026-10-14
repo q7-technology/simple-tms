@@ -62,7 +62,8 @@ export function Carriers() {
 
   const all = manifests ?? [];
   const open = all.filter((m) => m.status === "open");
-  // the consignment the box is for: the one picked, else the first without a con note
+  // the consignment the box is for: the one picked (or the one being typed
+  // for: fixed on the first key), else the first without a con note
   const chosen: Needing | null = (() => {
     for (const m of open) {
       const l = m.lines.find((x) => x.consignment.id === picked);
@@ -72,14 +73,43 @@ export function Carriers() {
   })();
   const chosenId = chosen?.consignment.id ?? null;
   const chosenLine = chosen?.manifest.lines.find((l) => l.consignment.id === chosenId);
+  const lastChosen = useRef<Needing | null>(null);
+  // the one picked, as last seen on the bay (kept once it has gone)
+  if (chosen && (picked === null || chosenId === picked)) lastChosen.current = chosen;
 
-  // the box starts from the consignment's carrier and its con note, if any,
-  // each time it moves to another one (not on each poll, over what is typed)
+  // the box starts empty, with the consignment's carrier, each time it moves
+  // to another one. A con note it has already is shown beside it, not put in
+  // the box: the next scan always replaces what is there, never adds to it.
   const chosenKey = chosen ? `${chosen.manifest.id}:${chosenId}` : "";
   useEffect(() => {
     setCarrierId(chosen ? String(chosen.manifest.carrier.id) : "");
-    setConNote(chosenLine?.con_note ?? "");
   }, [chosenKey]);
+  useEffect(() => { setConNote(""); }, [chosenId]);
+
+  // the one being typed for has left the bay (another desk put it on a run,
+  // or in the tray): say so, rather than move the half-typed number to another
+  useEffect(() => {
+    if (!manifests || picked === null) return;
+    if (open.some((m) => m.lines.some((l) => l.consignment.id === picked))) return;
+    const was = lastChosen.current;
+    if (conNote.trim() && was?.consignment.id === picked) {
+      const c = was.consignment;
+      setNote({ tone: "a", text: `${c.customer} (${c.wms_ref}) has left the carrier bay, so the con note being typed for it was cleared.` });
+    }
+    setConNote("");
+    setPicked(null);
+  }, [manifests]);
+
+  /** After a refusal the number stays, all selected: the next scan replaces it. */
+  function selectBox() {
+    setTimeout(() => { input.current?.focus(); input.current?.select(); }, 0);
+  }
+
+  function typed(value: string) {
+    // the first key fixes the consignment it is for, whatever the poll brings
+    if (picked === null && chosenId !== null) setPicked(chosenId);
+    setConNote(value);
+  }
 
   async function act(fn: () => Promise<unknown>, done: string) {
     setBusy(true);
@@ -97,10 +127,10 @@ export function Carriers() {
 
   async function save(e: FormEvent) {
     e.preventDefault();
-    if (!chosen) return;
+    if (!chosen || busy) return;
     const value = normalConNote(conNote);
     const problem = conNoteProblem(value);
-    if (problem) { setNote({ tone: "r", text: problem }); return; }
+    if (problem) { setNote({ tone: "r", text: problem }); selectBox(); return; }
     const { manifest: m, consignment: c } = chosen;
     setBusy(true);
     try {
@@ -118,6 +148,7 @@ export function Carriers() {
       setTimeout(() => input.current?.focus(), 0);
     } catch (err) {
       setNote({ tone: "r", text: said(err) });
+      selectBox();
     } finally {
       setBusy(false);
     }
@@ -158,7 +189,8 @@ export function Carriers() {
           <div style={{ display: "flex", alignItems: "center", gap: 12, flex: "1 1 100%" }}>
             <span style={{ color: "var(--color-green)" }}><Icon name="scan" size={28} /></span>
             <div><div style={{ fontSize: 16, fontWeight: 800 }}>Con note for {chosen.consignment.wms_ref} · {chosen.consignment.customer}</div>
-              <div className="small">Scan the carrier's label with the desk scanner, or type the number.</div></div>
+              <div className="small">Scan the carrier's label with the desk scanner, or type the number.</div>
+              {chosenLine?.con_note && <div className="small">{`Now ${chosenLine.con_note}: scan or type the new one.`}</div>}</div>
           </div>
           <label style={{ flex: "1 1 200px" }}>Carrier
             <select className="field" value={carrierId} onChange={(e) => setCarrierId(e.target.value)} disabled={busy}>
@@ -167,9 +199,11 @@ export function Carriers() {
               {carriers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select></label>
           <label style={{ flex: "2 1 240px" }}>Con note number
+            {/* read-only while a save is on its way, so a scan can't land in it and be lost */}
             <input ref={input} className="field mono" type="text" autoComplete="off" spellCheck={false} autoFocus
-                   value={conNote} onChange={(e) => setConNote(e.target.value)} maxLength={64} /></label>
-          <button type="submit" className="btn primary" disabled={busy || !conNote.trim()}>Save con note</button>
+                   readOnly={busy} aria-busy={busy} placeholder={chosenLine?.con_note ?? "e.g. RX-77310049"}
+                   value={conNote} onChange={(e) => typed(e.target.value)} maxLength={64} /></label>
+          <button type="submit" className="btn primary" disabled={busy || !conNote.trim()}>{busy ? "Saving…" : "Save con note"}</button>
         </form>
       )}
 

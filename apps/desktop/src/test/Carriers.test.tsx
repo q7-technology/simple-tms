@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Manifest } from "../api/types";
 import { isoDay } from "../lib/days";
@@ -36,7 +36,7 @@ describe("Carriers", () => {
     renderApp("/carriers");
     expect(await screen.findByRole("dialog", { name: "Carriers" })).toBeInTheDocument();
     const needs = (await screen.findByText("Needs a con note")).parentElement!;
-    expect(needs).toHaveTextContent("1");
+    await waitFor(() => expect(needs).toHaveTextContent("1"));
     expect(needs).toHaveTextContent("0080034526 · Mill Lane Florist");
     expect((screen.getByText("Waiting for pickup")).parentElement).toHaveTextContent("4on the carrier bay · 2 carriers");
     expect((screen.getByText("Collected today")).parentElement).toHaveTextContent(`1${PLAINS} · 10:15 am`);
@@ -109,7 +109,92 @@ describe("Carriers", () => {
     expect(calls.some((c) => c.method === "POST")).toBe(false);
     await user.click(screen.getByRole("button", { name: "Con note for Hilltop Joinery" }));
     expect(within(box).getByText("Con note for 0080034533 · Hilltop Joinery")).toBeInTheDocument();
-    expect(within(box).getByRole("textbox", { name: "Con note number" })).toHaveValue("RX-77310042");
+    // its con note now is shown, not put in the box, so a scan replaces it
+    expect(within(box).getByRole("textbox", { name: "Con note number" })).toHaveValue("");
+    expect(within(box).getByText("Now RX-77310042: scan or type the new one.")).toBeInTheDocument();
+  });
+
+  it("puts only the new number in when a row that has a con note is picked and scanned", async () => {
+    const { calls } = bay();
+    renderApp("/carriers");
+    const box = await screen.findByRole("form", { name: "Add a con note" });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Con note for Hilltop Joinery" }));
+    // the scanner types into the box it was focused on, and presses Enter
+    await user.keyboard("RX-77310050{Enter}");
+    await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
+    expect(calls.find((c) => c.method === "POST")!.body).toEqual({ consignment_id: 33, con_note: "RX-77310050" });
+  });
+
+  it("takes the next scan alone after a refused one, and none mid-save", async () => {
+    let answer: (r: Response) => void = () => undefined;
+    const { calls } = bay([RX], {
+      "POST /v1/manifests/1/con-note": ({ body }) => (body as { con_note: string }).con_note === "RX-77310042"
+        ? json(422, { detail: "invalid", errors: [{ field: "con_note", message: "RX-77310042 is already the con note of 0080034533 (Hilltop Joinery) with Ridgeline" }] })
+        : (new Promise<Response>((r) => { answer = r; }) as unknown as Response),
+    });
+    renderApp("/carriers");
+    const box = await screen.findByRole("form", { name: "Add a con note" });
+    const input = within(box).getByRole("textbox", { name: "Con note number" });
+    const user = userEvent.setup();
+    await user.keyboard("RX-77310042{Enter}");
+    expect(await screen.findByRole("alert")).toHaveTextContent("RX-77310042 is already the con note of 0080034533");
+    await waitFor(() => expect(input).toHaveFocus());
+    await user.keyboard("RX-77310051{Enter}");
+    await waitFor(() => expect(calls.filter((c) => c.method === "POST")).toHaveLength(2));
+    expect(calls.filter((c) => c.method === "POST")[1].body).toEqual({ consignment_id: 26, con_note: "RX-77310051" });
+    // while that is saved, the box takes nothing: a scan can't land and be lost
+    expect(input).toHaveAttribute("readonly");
+    answer(json(200, RX));
+    await waitFor(() => expect(input).not.toHaveAttribute("readonly"));
+  });
+
+  it("keeps what is being typed for its consignment when the poll changes what needs one first", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const earlier = manifest(5, VALLEY, [line(45, "Two Rivers Vet", null)], { date: today });
+      let shown = [RX];
+      const { calls } = bay([], { "GET /v1/manifests": () => json(200, { items: shown, total: shown.length }) });
+      renderApp("/carriers");
+      const box = await screen.findByRole("form", { name: "Add a con note" });
+      const input = within(box).getByRole("textbox", { name: "Con note number" });
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      await user.keyboard("RX-773");
+      // another desk put Two Rivers Vet on the bay ahead of it
+      shown = [earlier, RX];
+      await act(async () => { vi.advanceTimersByTime(20_000); });
+      await waitFor(() => expect(screen.getByRole("region", { name: /Valley Freight/ })).toBeInTheDocument());
+      expect(within(box).getByText("Con note for 0080034526 · Mill Lane Florist")).toBeInTheDocument();
+      expect(input).toHaveValue("RX-773");
+      await user.keyboard("10049{Enter}");
+      await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
+      expect(calls.find((c) => c.method === "POST")!.body).toEqual({ consignment_id: 26, con_note: "RX-77310049" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("says so, and clears the box, when the consignment being typed for leaves the bay", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let shown = [RX];
+      bay([], { "GET /v1/manifests": () => json(200, { items: shown, total: shown.length }) });
+      renderApp("/carriers");
+      const box = await screen.findByRole("form", { name: "Add a con note" });
+      const input = within(box).getByRole("textbox", { name: "Con note number" });
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      await user.keyboard("RX-773");
+      // another desk put Mill Lane Florist on a run, and booked Two Rivers Vet
+      shown = [manifest(1, RIDGELINE, [line(45, "Two Rivers Vet", null), RX.lines[1]], { date: today })];
+      await act(async () => { vi.advanceTimersByTime(20_000); });
+      expect(await screen.findByText("Mill Lane Florist (0080034526) has left the carrier bay, so the con note being typed for it was cleared."))
+        .toBeInTheDocument();
+      // the half-typed number isn't carried over to another consignment
+      expect(within(box).getByText("Con note for 0080034545 · Two Rivers Vet")).toBeInTheDocument();
+      expect(input).toHaveValue("");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("prints a manifest, marks it collected and puts one back in the tray", async () => {
