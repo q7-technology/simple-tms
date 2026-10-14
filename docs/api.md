@@ -36,16 +36,23 @@ are at `/docs`.
   stops taken off, never deleted. A consignment's history is append-only, and
   so are pre-start checks and what a fleet manager records about a truck: a
   mistake is put right by a newer record.
+- **Except positions.** Where a truck was (live location, and the position on
+  a proof of delivery) is personal information, not business history: it is
+  never put in a consignment's history, and the worker deletes it once it is
+  older than `TMS_POSITION_RETENTION_DAYS` (90 by default). See Live location.
 
 ## Scopes
 
 | Who | Scopes |
 | --- | --- |
 | `admin` | `*` |
-| `manager` | `fleet:read`, `fleet:write`, `consignments:read`, `runs:read`, `runs:write` |
-| `dispatcher` | `fleet:read`, `consignments:read`, `runs:read`, `runs:write` |
+| `manager` | `fleet:read`, `fleet:write`, `consignments:read`, `runs:read`, `runs:write`, `location:read` |
+| `dispatcher` | `fleet:read`, `consignments:read`, `runs:read`, `runs:write`, `location:read` |
 | a driver | `fleet:read`, `deliveries:read`, `deliveries:write` (on their own runs only) |
-| an API key | what it was made with: some of `printing:write`, `runs:read`, `runs:write`, `consignments:read`, `fleet:read`, `deliveries:read`, `deliveries:write` |
+| an API key | what it was made with: some of `printing:write`, `runs:read`, `runs:write`, `consignments:read`, `fleet:read`, `deliveries:read`, `deliveries:write`, `location:read` |
+
+`location:read` is where the trucks on the road are: personal information
+about the drivers, so a key has it only when it is named.
 
 ## Sign in
 
@@ -320,7 +327,8 @@ Each run:
             "unknown_weight": 0, "unknown_volume": 0, "state": "ok", "message": null },
   "run_sheet": null,
   "shipping": { "pending": 0, "done": 0, "failed": 0 },
-  "prestart": null
+  "prestart": null,
+  "estimate": null
 }
 ```
 `status` is `planned`, `departed`, `done` (the driver finished it) or
@@ -344,6 +352,22 @@ planned for a truck that is then grounded stays as it is and says so.
 ground it (`passed` or `failed`), made after that truck was last grounded and
 last marked fixed. A check that grounded the truck is never the run's
 pre-start, so once the truck is marked fixed it is `null` until a fresh check.
+
+`estimate` is `null` unless the run is on the road (`departed`). Then it is
+when the run should reach each stop still to go, and the depot:
+```json
+{ "basis": "average", "minutes_per_stop": 18,
+  "stops": [{ "consignment_id": 33, "sequence": 3, "at": "2026-10-14T00:40:00Z" }],
+  "back_at_depot": "2026-10-14T00:58:00Z" }
+```
+These are estimates, and are shown as such. A stop takes the driver's average
+so far on this run (from leaving the depot to the latest stop done, delivered
+or not: `basis` `average`); until the first stop is done, it takes
+`TMS_ETA_MINUTES_PER_STOP` (20 unless set: `basis` `default`). Stops follow
+the run's order, one average apart, the first one average after the latest
+stop done (or leaving), and the drive back is one stop more. Nothing is due
+before now: a driver running late is due now, and the rest move with it. No
+routing service and no distances: the average already has the driving in it.
 
 **Rule 3: a grounded or overdue truck does not go on a run.** Making a run
 for it (`POST /v1/runs`), giving a run that truck (`PATCH`), putting a stop on
@@ -666,6 +690,81 @@ Simple TMS sends no events of its own yet (`consignment.delivered`,
 `consignment.failed`, `run.completed` in the design): they come with the
 first system that subscribes.
 
+## Live location
+
+While a run is on the road, from **Start** until it is finished, the driver's
+phone sends where it is about every 30 seconds, and the office sees each
+truck's latest position and when it was last heard from. Never before Start,
+never after the run is finished, and the phone says on screen that it is
+sharing. Positions are kept `TMS_POSITION_RETENTION_DAYS` (90 unless set),
+then the worker deletes them, and clears the position on each proof of
+delivery older than that too; a delivery itself is kept for good.
+
+### POST /v1/runs/{id}/position
+`deliveries:write`: the run's driver (another driver's run is `404`), or a
+system with a key (a tracker in the truck, say).
+```json
+{ "at": "2026-10-14T00:12:30Z", "latitude": "-37.562210", "longitude": "143.850300",
+  "accuracy_m": "12" }
+```
+→ `204`. Decimal strings, as for a delivery's position; more than six places
+is rounded. `at` is when the phone took it, never later than it arrived.
+Not a confirmation: no `message_id`, and nothing is queued on the phone. A
+lost one is simply followed by the next; with no signal, the phone sends only
+its latest once it is back.
+
+| Answer | When |
+| --- | --- |
+| `409 run_not_started` | the run hasn't left: nothing is shared before Start |
+| `409 run_done`, `409 run_cancelled` | the run is finished or was cancelled: the phone stops |
+| `422` | `accuracy_m` missing, or rougher than 1,000 m |
+| `429 too_often` | another position for the run arrived less than 10 seconds ago |
+
+### GET /v1/positions?date=2026-10-14
+`location:read`. The latest position of each of that day's runs on the road,
+by run, as `{ "items", "total" }`:
+```json
+{ "run_id": 7, "run_no": "R-0007", "vehicle": { "rego": "TMS041", "type": "rigid" },
+  "driver": { "code": "kim", "name": "Kim" },
+  "latitude": "-37.56221", "longitude": "143.8503", "accuracy_m": "12",
+  "at": "2026-10-14T00:12:30Z", "received_at": "2026-10-14T00:12:31.204Z" }
+```
+`received_at` is when it was last heard from. A run that hasn't left, or is
+finished, has none here, whatever was kept from it. There is no endpoint for
+a truck's earlier positions: the office sees where each truck is now.
+
+### GET /v1/map
+`location:read`. Where the desktop's map tiles come from:
+`{ "tile_url": "https://…/{z}/{x}/{y}.png?key=…", "attribution": "© …" }`, from
+`TMS_MAP_TILE_URL` and `TMS_MAP_ATTRIBUTION`, or both `null` when no tiles are
+set up (the desktop then lists each truck's position without a map). The
+tile address is a provider's (with its key, which the browser sees: restrict
+it to your domain at the provider) or a tile server of your own, an `https`
+address or a path on this server; OpenStreetMap's own tile servers are
+refused at start-up, as their policy asks.
+
+## What just happened
+
+### GET /v1/feed?limit=20
+`runs:read`. The latest of what the office hears, newest first (`limit` 1 to
+100, 20 unless given), read from the records already kept:
+```json
+{ "items": [{ "kind": "delivered", "at": "2026-10-14T00:31:07Z",
+  "run_id": 7, "run_no": "R-0007", "rego": "TMS041", "driver": "Kim",
+  "sequence": 3, "customer": "Main Street Chemist", "wms_ref": "0080034521",
+  "reason": null, "result": null, "failed": [], "by": null, "note": null }] }
+```
+
+| `kind` | What | Fields with something in them |
+| --- | --- | --- |
+| `packed` | a consignment came from Simple WMS | `customer`, `wms_ref` |
+| `delivered`, `failed` | a stop delivered, or not (with the `reason`) | the run, `rego`, `driver`, `sequence`, `customer`, `wms_ref` |
+| `left`, `finished` | a run left the depot, or was finished | the run, `rego`, `driver` |
+| `prestart` | a pre-start check: `result` `passed`, `failed` or `grounded` | the run, `rego`, `driver` (or `by`), `failed` |
+| `fixed` | a fleet manager marked a grounded truck fixed | `rego`, `by`, `note` |
+
+Nothing is written for the feed, and no position is in it.
+
 ## From Simple WMS
 
 ### POST /v1/wms/events
@@ -728,7 +827,8 @@ docker compose exec api tms create-api-key --name platen --scopes printing:write
 docker compose exec api tms revoke-api-key --name platen
 ```
 A key may be given some of `printing:write`, `runs:read`, `runs:write`,
-`consignments:read`, `fleet:read`, `deliveries:read`, `deliveries:write`. `GET /v1/auth/me` with a key answers
+`consignments:read`, `fleet:read`, `deliveries:read`, `deliveries:write`,
+`location:read`. `GET /v1/auth/me` with a key answers
 `"kind": "key"`, its name and scopes. A revoked key is a `401` at once; it is
 kept, not deleted.
 
