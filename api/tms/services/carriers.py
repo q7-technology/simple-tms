@@ -9,13 +9,15 @@ Version one books by hand: see carrier_adapters for what comes later."""
 from __future__ import annotations
 
 import re
+import uuid
 from datetime import UTC, date, datetime
+from urllib.parse import quote
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from tms.api.errors import Conflict, FieldError, NotFound
-from tms.models import Booking, Carrier, Consignment, ConsignmentEvent, Manifest
+from tms.models import Booking, Carrier, Consignment, ConsignmentEvent, Manifest, OutboundCall
 from tms.services import runs
 from tms.services.runs import lock_planning
 
@@ -185,4 +187,49 @@ def set_con_note(db: Session, manifest_id: int, consignment_id: int, con_note: s
     if booking is None:
         raise NotFound(f"{m.number} has no consignment {consignment_id}")
     _set_con_note(db, m.carrier, booking, note, by)
+    return m
+
+
+def collect(db: Session, manifest_id: int, consignment_ids: list[int], by: str) -> Manifest:
+    """The carrier has called and taken what is on the manifest: each
+    consignment is collected, and a ship call to Simple WMS waits in the
+    queue for each, with the carrier's name and the con note, in the same
+    transaction, so none is lost and none is made twice. Only what the
+    dispatcher saw (`consignment_ids`), each with its con note. A manifest
+    already collected with just those on it is left as it is."""
+    lock_planning(db)
+    m = get_manifest(db, manifest_id)
+    on_it = {b.consignment_id for b in m.lines}
+    if m.collected_at is not None:
+        if set(consignment_ids) == on_it:
+            return m
+        raise Conflict("manifest_collected",
+                       f"{m.carrier.name} has collected {m.number}; what is on it can't change")
+    if not m.lines:
+        raise Conflict("manifest_empty", f"{m.number} has nothing on it")
+    if len(consignment_ids) != len(set(consignment_ids)) or set(consignment_ids) != on_it:
+        raise Conflict("stale", f"{m.number} changed while you were looking; it has been "
+                                "reloaded, so check it and try again")
+    missing = [b.consignment for b in m.lines if b.con_note is None]
+    if missing:
+        c = missing[0]
+        raise Conflict("con_note_missing",
+                       f"Add the con note of {c.customer} ({c.wms_ref}) first: each consignment "
+                       "needs one before the carrier takes it")
+    now = _now()
+    for b in m.lines:
+        c = b.consignment
+        c.status = "collected"
+        _event(c, "collected", carrier=m.carrier.name, con_note=b.con_note, manifest=m.number,
+               manifest_id=m.id, by=by)
+        message_id = uuid.uuid4()
+        db.add(OutboundCall(
+            message_id=message_id, kind="ship", manifest_id=m.id, consignment_id=c.id,
+            path=f"/v1/deliveries/{quote(c.wms_ref, safe='')}/ship",
+            body={"message_id": str(message_id), "owner": c.owner, "carrier": m.carrier.name,
+                  "tracking_no": b.con_note, "shipped_by": by[:64]},
+            status="pending", attempts=0, next_attempt_at=now))
+    m.collected_at = now
+    m.collected_by = by
+    db.flush()
     return m

@@ -3,10 +3,11 @@ carrier's manifest for the day, with their con notes."""
 from __future__ import annotations
 
 import datetime as dt
+import uuid
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from tms.api.deps import DB, Principal, require
 from tms.api.routes.carriers import CarrierOut, carrier_out
@@ -14,6 +15,7 @@ from tms.api.routes.runs import RunSheetOut, ShippingOut, StopConsignment, stop_
 from tms.api.schemas import Dec, Page
 from tms.models import Booking, Manifest, OutboundCall, PrintJob
 from tms.services import carriers
+from tms.services.envelope import handle
 from tms.services.load import consignment_totals, total
 
 router = APIRouter(tags=["carriers"])
@@ -138,4 +140,33 @@ def con_note(id: int, body: ConNoteIn, db: DB, who: Principal = require("runs:wr
 @router.post("/manifests/{id}/unbook", response_model=ManifestOut)
 def unbook(id: int, body: ConsignmentIn, db: DB, who: Principal = require("runs:write")):
     carriers.unbook(db, id, body.consignment_id, by=who.name)
+    return _fresh(db, id)
+
+
+class CollectIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    message_id: uuid.UUID
+    # what is on the manifest as the dispatcher saw it: anything else is stale
+    consignment_ids: list[int] = Field(max_length=500)
+
+
+@router.post("/manifests/{id}/collect", response_model=ManifestOut)
+def collect(id: int, body: CollectIn, db: DB, who: Principal = require("runs:write")):
+    """The carrier has taken it: each consignment is marked shipped in Simple
+    WMS with the carrier's name and its con note. Once per message_id."""
+    def work():
+        m = carriers.collect(db, id, body.consignment_ids, by=who.name)
+        return manifest_out(db, m)
+    return handle(db, who, body.message_id, f"/v1/manifests/{id}/collect", work)
+
+
+@router.post("/manifests/{id}/retry-ship", response_model=ManifestOut)
+def retry_ship(id: int, db: DB, who: Principal = require("runs:write")):
+    """Ship calls that gave up are tried again from the start, with the same
+    message_id each, so Simple WMS still ships each delivery once."""
+    carriers.get_manifest(db, id)
+    db.execute(update(OutboundCall)
+               .where(OutboundCall.manifest_id == id, OutboundCall.status == "failed")
+               .values(status="pending", attempts=0, last_error=None,
+                       next_attempt_at=func.now()))
     return _fresh(db, id)
