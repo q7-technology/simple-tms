@@ -4,20 +4,21 @@ An open source, self-hosted transport management system for businesses that
 deliver with their own trucks and also send freight with outside carriers.
 It sits beside Simple WMS and Platen and works without either.
 
-Status: **build step 5, live location.** While a run is on the road the
-driver's phone shares where it is about every 30 seconds, and says so; the
-desktop's map draws the day's trucks, says when each was last heard from and
-when it should reach its next stop and the depot (estimates from the stop
-order and the driver's own pace), shows what just happened, and opens **Where
-is it** on a real map when map tiles are set up. Positions are deleted after
-90 days. On top of step 4 (pre-start checks, grounding, rego and service
-due), step 3 (the driver app: start the run, deliver each stop with a
-signature, a photo or both, or say why not, and finish, with or without
-signal), step 2 (runs planned on a map-and-drawer desktop, run sheets
-printed through Platen, Simple WMS told each delivery shipped when its run
-leaves) and step 1 (sign-in, vehicles and drivers, consignments from Simple
-WMS's `delivery.packed`). Carriers come with the next step in
-`docs/plans/2026-10-10-simple-tms-design.md`.
+Status: **build step 6, carriers**, the last step of version one in
+`docs/plans/2026-10-10-simple-tms-design.md`. A dispatcher sends a
+consignment with an outside carrier from **Plan runs**, types or scans its
+con note in **Carriers**, prints the carrier's manifest through Platen, and
+marks it collected when the carrier calls: Simple WMS is then told it
+shipped, with the carrier's name and the con note. **Consignments** finds
+any consignment by its WMS delivery, customer or con note, with its history
+and proof of delivery. On top of step 5 (live location: the trucks on the
+map, ETAs, what just happened, **Where is it**), step 4 (pre-start checks,
+grounding, rego and service due), step 3 (the driver app: start the run,
+deliver each stop with a signature, a photo or both, or say why not, and
+finish, with or without signal), step 2 (runs planned on a map-and-drawer
+desktop, run sheets printed through Platen, Simple WMS told each delivery
+shipped when its run leaves) and step 1 (sign-in, vehicles and drivers,
+consignments from Simple WMS's `delivery.packed`).
 
 ## What is in this repo
 
@@ -50,7 +51,8 @@ The desktop is at `https://<TMS_DOMAIN>/` (default `https://localhost/`,
 self-signed): sign in, then **Plan runs**. The API runs its migrations each
 time it starts; it is at `/v1`, its interactive docs at `/docs`, and it is
 also published on `127.0.0.1:8022` (`TMS_API_PORT`) for local work. The
-`worker` makes the calls to Simple WMS and sends run sheets to Platen, taking
+`worker` makes the calls to Simple WMS and sends run sheets and carrier
+manifests to Platen, taking
 one of each in turn so neither queue holds up the other, and deletes positions
 past the retention period; it needs no port. Rebuild the desktop (`npm run build`) after pulling changes to
 `apps/desktop`; Caddy serves `apps/desktop/dist` as it is.
@@ -292,7 +294,8 @@ consignment. Details are in `docs/api.md`.
 When a run leaves, Simple TMS calls `POST /v1/deliveries/{ref}/ship` for each
 consignment with carrier "Own fleet" and the run number as the tracking
 number, retrying after 1 min, 5, 30 and 2 h if Simple WMS is away; Simple WMS
-then fires `delivery.shipped` as usual.
+then fires `delivery.shipped` as usual. When a carrier collects, the same
+call goes with the carrier's name and the con note as the tracking number.
 
 ## Connecting Platen
 
@@ -314,6 +317,72 @@ docker compose exec api tms create-api-key --name platen --scopes printing:write
 
 (Platen's keys screen has the two fields; Platen 0014 or later.)
 
+Carrier manifests print the same way, from a page template with the id
+`carrier-manifest` (the fields are in `docs/api.md` under "Manifests"), on
+the printer `TMS_MANIFEST_PRINTER` (empty: the run sheets' printer). A
+starting point, made with Platen's admin session (or in its studio's page
+editor) and then published:
+
+```
+curl -s -b "$PLATEN_COOKIE" -X PUT https://<platen>/pages/carrier-manifest \
+  -H 'Content-Type: application/json' -d @- <<'JSON'
+{
+  "id": "carrier-manifest",
+  "name": "Carrier manifest (Simple TMS)",
+  "folder": "Simple TMS",
+  "paper": "A4",
+  "margin_mm": 15,
+  "header": [
+    {"kind": "text", "value": "{{ carrier }} · manifest {{ manifest_no }}", "size_pt": 18, "bold": true},
+    {"kind": "text", "value": "{{ date }} · account {{ account }} · pickup {{ pickup_time }}", "size_pt": 11},
+    {"kind": "text", "value": "{{ consignment_count }} consignments · {{ package_count }} packages · {{ total_kg }} kg", "size_pt": 10},
+    {"kind": "rule"}
+  ],
+  "body": [
+    {"kind": "barcode", "value": "{{ manifest_no }}", "height_mm": 10},
+    {"kind": "table", "size_pt": 9, "columns": [
+      {"title": "#", "value": "{{ line }}", "width_mm": 8, "align": "right"},
+      {"title": "Con note", "value": "{{ con_note }}", "width_mm": 34},
+      {"title": "Customer", "value": "{{ customer }}"},
+      {"title": "Address", "value": "{{ address }}, {{ suburb }} {{ state }} {{ postcode }}"},
+      {"title": "Pkgs", "value": "{{ packages }}", "width_mm": 12, "align": "right"},
+      {"title": "kg", "value": "{{ weight_kg }}", "width_mm": 16, "align": "right"}
+    ]}
+  ],
+  "footer": [
+    {"kind": "text", "value": "Received by the carrier's driver: name ______________ signed ______________", "size_pt": 9},
+    {"kind": "text", "value": "{{ manifest_no }} · page {{ page }} of {{ pages }}", "size_pt": 8, "align": "right"}
+  ]
+}
+JSON
+curl -s -b "$PLATEN_COOKIE" -X POST https://<platen>/templates/carrier-manifest/publish
+```
+
+## Carriers
+
+Freight going with outside carriers is booked by hand in this version: book
+with the carrier as you always have (its website or a phone call), then in
+Simple TMS:
+
+1. **Add the carriers** you use, once, as a fleet manager or admin (there is
+   no screen for it yet):
+   ```
+   curl -s -X POST https://tms.example.com/v1/carriers -H "Authorization: Bearer <token>" \
+     -H 'Content-Type: application/json' \
+     -d '{"name": "<the carrier, as Simple WMS should record it>", "account": "<your account no.>", "pickup_time": "15:30"}'
+   ```
+2. In **Plan runs**, send a consignment **With a carrier…** (from the tray,
+   or off a planned run with **Move to…**). It goes on that carrier's
+   manifest for the day being planned, and waits on the carrier bay.
+3. In **Carriers**, type the con note, or scan the carrier's label with a
+   desk scanner (any USB or Bluetooth scanner that types what it reads and
+   presses Enter). Put a wrong one right the same way; each is kept in the
+   consignment's history.
+4. **Print manifest** once every con note is in, for the carrier's driver to
+   sign.
+5. When the carrier has been, **Mark collected**: each consignment is marked
+   shipped in Simple WMS with the carrier's name and its con note.
+
 ## Run the API outside Docker
 
 ```
@@ -324,7 +393,7 @@ export TMS_DATABASE_URL=postgresql+psycopg://tms:<POSTGRES_PASSWORD>@127.0.0.1:5
 .venv/bin/alembic upgrade head
 .venv/bin/tms create-user --username you --role admin
 .venv/bin/uvicorn tms.api.app:app --reload --port 8022
-.venv/bin/python -m tms.worker      # in another terminal: ship calls and run sheets
+.venv/bin/python -m tms.worker      # in another terminal: ship calls, run sheets and manifests
 ```
 
 ## Run the desktop
@@ -459,6 +528,18 @@ stood in for by `fake-indexeddb`: `cd apps/driver && npm test`.
 - **Due dates are on screen only.** The `vehicle.due` event in the design, for
   another system to send email or SMS, comes with the first system that
   subscribes.
+
+- **Carriers are booked by hand.** Simple TMS doesn't talk to any carrier:
+  book with the carrier as you always have and type or scan the con note.
+  It doesn't follow the freight after it is collected either: a carrier's
+  consignment stays "Collected" in Simple TMS, and the carrier's own
+  tracking says where it is. A carrier's own API can come later as an
+  adapter (`api/tms/services/carrier_adapters.py`) without changing the data.
+- **Carriers are added through the API.** There is no screen to add or
+  change a carrier yet (see "Carriers" above; `docs/api.md` has the rest).
+- **What a carrier brings back isn't recorded.** If a carrier returns
+  freight it couldn't deliver, Simple TMS has no step for it: the
+  consignment stays collected, and shipped in Simple WMS.
 
 - **What came back is still shipped in Simple WMS.** When a driver can't
   deliver, the consignment comes back to the depot and returns to the
