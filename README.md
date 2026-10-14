@@ -4,17 +4,19 @@ An open source, self-hosted transport management system for businesses that
 deliver with their own trucks and also send freight with outside carriers.
 It sits beside Simple WMS and Platen and works without either.
 
-Status: **build step 4, fleet care.** Drivers do a pre-start check of the
-truck on their phones before each run; a failed critical item grounds the
-truck until a fleet manager marks it fixed, and the desktop's **Fleet**
-shows each truck's rego and service due (amber a month or 1,000 km out, red
-when overdue). A grounded or overdue truck can't be given a run. On top of
-step 3 (the driver app: start the run, deliver each stop with a signature, a
-photo or both, or say why not, and finish, with or without signal), step 2
-(runs planned on a map-and-drawer desktop, run sheets printed through
-Platen, Simple WMS told each delivery shipped when its run leaves) and step 1
-(sign-in, vehicles and drivers, consignments from Simple WMS's
-`delivery.packed`). Live location and carriers come with the next steps in
+Status: **build step 5, live location.** While a run is on the road the
+driver's phone shares where it is about every 30 seconds, and says so; the
+desktop's map draws the day's trucks, says when each was last heard from and
+when it should reach its next stop and the depot (estimates from the stop
+order and the driver's own pace), shows what just happened, and opens **Where
+is it** on a real map when map tiles are set up. Positions are deleted after
+90 days. On top of step 4 (pre-start checks, grounding, rego and service
+due), step 3 (the driver app: start the run, deliver each stop with a
+signature, a photo or both, or say why not, and finish, with or without
+signal), step 2 (runs planned on a map-and-drawer desktop, run sheets
+printed through Platen, Simple WMS told each delivery shipped when its run
+leaves) and step 1 (sign-in, vehicles and drivers, consignments from Simple
+WMS's `delivery.packed`). Carriers come with the next step in
 `docs/plans/2026-10-10-simple-tms-design.md`.
 
 ## What is in this repo
@@ -49,7 +51,8 @@ self-signed): sign in, then **Plan runs**. The API runs its migrations each
 time it starts; it is at `/v1`, its interactive docs at `/docs`, and it is
 also published on `127.0.0.1:8022` (`TMS_API_PORT`) for local work. The
 `worker` makes the calls to Simple WMS and sends run sheets to Platen, taking
-one of each in turn so neither queue holds up the other; it needs no port. Rebuild the desktop (`npm run build`) after pulling changes to
+one of each in turn so neither queue holds up the other, and deletes positions
+past the retention period; it needs no port. Rebuild the desktop (`npm run build`) after pulling changes to
 `apps/desktop`; Caddy serves `apps/desktop/dist` as it is.
 
 The driver app is at `https://<TMS_DOMAIN>/driver/`. A driver signs in with
@@ -85,6 +88,62 @@ right; set how often a truck is serviced with `service_every_months` and/or
 recorded is never due, so record each truck's rego expiry and last service
 when you start. The checklists are the design's six items for each type of
 vehicle; change them with `PUT /v1/checklists/{type}` (see `docs/api.md`).
+
+**Live location.** From **Start run** until the run is finished, the driver's
+phone tells the office where it is about every 30 seconds, and its top bar
+says **Sharing location**; never before Start or after the run is finished.
+It needs the phone's permission (asked once, at Start) and the app open: a
+web app can't share from the background. In a black spot nothing piles up:
+once the signal is back only the newest position goes. On the desktop's map
+each run's truck is drawn on a road of its own, further along as its stops
+are done (the drawn region is a picture, not real geography); pick one to
+see when it was last heard from, its next stop and when it should get there,
+the load left and when it should be back, all estimates from the stop order
+and the driver's average time per stop so far (`TMS_ETA_MINUTES_PER_STOP`,
+20, until the first stop is done). **Where is it** shows each truck where its
+phone last said, on a real map once map tiles are set up (below), and as a
+list either way. Only the latest position is shown; there are no trails.
+Dispatchers, managers and admins see it (`location:read`); a system needs a
+key made with `location:read`.
+
+**Positions are deleted after 90 days** (`TMS_POSITION_RETENTION_DAYS`):
+once an hour the worker deletes older positions and clears the position kept
+with each proof of delivery; the deliveries themselves are kept. Some states
+regulate tracking employees (for example the NSW Workplace Surveillance Act,
+which asks for notice to staff before tracking starts): check your own
+obligations, tell your drivers, and set the retention period to suit.
+
+## Map tiles
+
+**Where is it** draws a real map from raster map tiles. Simple TMS doesn't
+come with any, and won't use OpenStreetMap's own tile servers (their policy
+rules out apps), so until you set them up it lists each truck's position as
+coordinates. Two ways:
+
+- **A tile provider** (MapTiler, Stadia Maps, Thunderforest and others have
+  free tiers for small use; each needs an account). Set
+  `TMS_MAP_TILE_URL` to its raster address with `{z}`, `{x}` and `{y}` and
+  your key, `TMS_MAP_ATTRIBUTION` to the credit it asks for, and
+  `TMS_MAP_TILE_ORIGIN` to its `https://host` so the desktop's
+  Content-Security-Policy lets the tiles in. For example:
+
+  ```
+  TMS_MAP_TILE_URL=https://api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key=<your key>
+  TMS_MAP_ATTRIBUTION=© MapTiler © OpenStreetMap contributors
+  TMS_MAP_TILE_ORIGIN=https://api.maptiler.com
+  ```
+
+  The key is in every tile address, so browsers see it: restrict it to your
+  domain in the provider's settings.
+- **Your own tile server** (for example `tileserver-gl` serving an extract
+  for your state). On another host, as above. Behind this Caddy, give it a
+  path, say `/tiles/*`, with `TMS_MAP_TILE_URL=/tiles/{z}/{x}/{y}.png`; it is
+  then the same origin and `TMS_MAP_TILE_ORIGIN` stays empty.
+
+Then `docker compose up -d api` and `docker compose up -d --force-recreate
+caddy`. A tile address the API can't use (no `{z}`, `{x}` and `{y}`, not
+`https`, or OpenStreetMap's own) stops it starting, with the reason in
+`docker compose logs api`. If the tiles don't load, **Where is it** says so.
 
 ## Production on a real domain
 
@@ -128,6 +187,7 @@ not run the TMS one: start Simple TMS with
   		file_server
   	}
   	handle {
+  		# add your map tile provider's https://host after blob: (see Map tiles)
   		header Content-Security-Policy "default-src 'self'; img-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
   		@desktoppage not path /assets/* /favicon.svg /region.svg
   		header @desktoppage Cache-Control "no-cache"
@@ -185,6 +245,7 @@ not run the TMS one: start Simple TMS with
   		file_server
   	}
   	handle {
+  		# add your map tile provider's https://host after blob: (see Map tiles)
   		header Content-Security-Policy "default-src 'self'; img-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
   		@desktoppage not path /assets/* /favicon.svg /region.svg
   		header @desktoppage Cache-Control "no-cache"
@@ -271,6 +332,13 @@ The dev server sends `/v1` to the API on `http://127.0.0.1:8022`;
 desktop's tests, `npm run typecheck` its type check, and `npm run build`
 writes `dist/` for Caddy.
 
+Leaflet (pinned at 1.9.4) is loaded only by **Where is it**. Leaflet points a
+tile it drops at a `data:` image, which the desktop's CSP refuses, so
+`src/lib/slippy.ts` overrides three of its internal tile methods
+(`_abortLoading`, `_removeTile`, `_tileReady`) to use a `blob:` copy instead,
+and the CSP needs no `data:`. Check those three against the new version's
+`GridLayer` and `TileLayer` before upgrading Leaflet.
+
 ## Run the driver app
 
 ```
@@ -353,6 +421,19 @@ The driver app's tests are Vitest too, with the API stubbed and IndexedDB
 stood in for by `fake-indexeddb`: `cd apps/driver && npm test`.
 
 ## Known limitations
+
+- **The phone shares only with the app open.** A web app can't use location
+  in the background, so a driver who switches to another app, or locks the
+  phone, isn't heard from until they come back to Simple TMS; the map says
+  how long it has been ("Last heard 12 min ago", in amber after 5 minutes).
+  A native app could share in the background; that is not planned.
+- **Estimates are plain.** ETAs come from the stop order and the driver's
+  average time per stop so far on the run, with no routing service and no
+  distances, so a long drive to one far stop throws them out until it is
+  done. They are labelled as estimates.
+- **The map's region is a picture.** Trucks on the home map are placed along
+  drawn roads by how many stops they have done, not by where they are; **Where
+  is it** shows true positions.
 
 - **The office's Leaves now doesn't ask for a pre-start.** The driver app
   won't start a run until the truck's pre-start is in, but **Leaves now** on

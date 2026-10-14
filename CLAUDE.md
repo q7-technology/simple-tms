@@ -64,8 +64,13 @@ copy and states. Do not edit anything under `design/` unless asked.
   tells it what shipped through its API. Nothing in Simple WMS changes for it.
 - Printing: Simple TMS never renders a document. It sends `template` + JSON
   `data` to Platen (or any print service) through the same queue.
-- Location: the driver app shares its position only during a run, and says
-  so on screen. Positions are deleted after the retention period.
+- Location: the driver app shares its position only during a run (from Start
+  until the run is finished), and says so on screen. Positions are personal
+  information, not business history: they never go in a consignment's
+  history, and the worker deletes them, and clears the position on each proof
+  of delivery, after the retention period (`TMS_POSITION_RETENTION_DAYS`, 90
+  days by default). That is the one deletion allowed: rule 1 keeps business
+  records, and a position is not one.
 - Build order is in the design under "Build order". Finish a step so it is
   usable before starting the next.
 - Tests: pytest for the API against a real PostgreSQL, Vitest for the apps.
