@@ -4,14 +4,14 @@ and kept only for the retention period: positions are personal information,
 not business history, so they never go in a consignment's history."""
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from tms.api.errors import Conflict, Refused
-from tms.models import Position
+from tms.models import Position, Run
 from tms.services import deliveries
 from tms.services.deliveries import MICRO, TENTH
 
@@ -46,3 +46,16 @@ def record(db: Session, who, run_id: int, *, at: datetime, latitude: Decimal,
     db.add(row)
     db.flush()
     return row
+
+
+def latest(db: Session, day: date) -> list[tuple[Run, Position]]:
+    """Each of the day's runs on the road, with the latest position its phone
+    sent. A run not on the road shows none, whatever was kept from it."""
+    # the newest row of each run is its latest: rows are numbered as they arrive
+    newest = (select(func.max(Position.id)).join(Run, Run.id == Position.run_id)
+              .where(Run.day == day, Run.status == "departed").group_by(Position.run_id))
+    rows = db.execute(select(Position).where(Position.id.in_(newest))
+                      .order_by(Position.run_id)).scalars().all()
+    runs = {r.id: r for r in db.execute(select(Run).where(
+        Run.id.in_([p.run_id for p in rows]))).scalars()}
+    return [(runs[p.run_id], p) for p in rows]

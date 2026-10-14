@@ -24,11 +24,13 @@ REFRESH_TTL = timedelta(days=14)
 DRIVER_PREFIX = "tms_d."
 DRIVER_TTL_SECONDS = 12 * 3600
 
-# What each desktop role may do.
+# What each desktop role may do. location:read is where the trucks on the
+# road are: personal information about the drivers, so a key needs it named.
 ROLE_SCOPES: dict[str, list[str]] = {
     "admin": ["*"],
-    "manager": ["fleet:read", "fleet:write", "consignments:read", "runs:read", "runs:write"],
-    "dispatcher": ["fleet:read", "consignments:read", "runs:read", "runs:write"],
+    "manager": ["fleet:read", "fleet:write", "consignments:read", "runs:read", "runs:write",
+                "location:read"],
+    "dispatcher": ["fleet:read", "consignments:read", "runs:read", "runs:write", "location:read"],
 }
 ROLES = tuple(ROLE_SCOPES)
 # A driver may see the fleet, and read and record the deliveries on their own

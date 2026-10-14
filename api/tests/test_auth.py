@@ -11,7 +11,8 @@ def test_sign_in_gives_a_token_that_says_who_you_are(client, dispatcher):
     r = client.get("/v1/auth/me", headers=bearer(session["token"]))
     assert r.status_code == 200
     assert r.json()["kind"] == "user"
-    assert r.json()["scopes"] == ["fleet:read", "consignments:read", "runs:read", "runs:write"]
+    assert r.json()["scopes"] == ["fleet:read", "consignments:read", "runs:read", "runs:write",
+                                  "location:read"]
 
 
 def test_a_wrong_password_says_how_many_tries_are_left(client, dispatcher):
