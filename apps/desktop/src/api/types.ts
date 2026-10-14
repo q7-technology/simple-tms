@@ -146,4 +146,49 @@ export interface Run {
    * for it that didn't ground it, made since the truck was last grounded
    * and last marked fixed; else null */
   prestart?: { id: number; at: string; result: CheckResult } | null;
+  /** while it is on the road: estimates from the stop order and the driver's
+   * average time per stop so far on the run */
+  estimate?: Estimate | null;
+}
+
+export interface Estimate {
+  basis: "average" | "default";
+  minutes_per_stop: number;
+  stops: { consignment_id: number; sequence: number; at: string }[];
+  back_at_depot: string;
+}
+
+/** A run on the road's latest position (GET /v1/positions). */
+export interface TruckAt {
+  run_id: number;
+  run_no: string;
+  vehicle: { rego: string; type: string };
+  driver: { code: string; name: string };
+  latitude: string;
+  longitude: string;
+  accuracy_m: string;
+  at: string;
+  /** when it was last heard from */
+  received_at: string;
+}
+
+/** Where the map tiles come from (GET /v1/map); null: no map, a list only. */
+export interface MapTiles { tile_url: string | null; attribution: string | null }
+
+/** A line of what just happened (GET /v1/feed). */
+export interface FeedItem {
+  kind: "packed" | "delivered" | "failed" | "left" | "finished" | "prestart" | "fixed";
+  at: string;
+  run_id: number | null;
+  run_no: string | null;
+  rego: string | null;
+  driver: string | null;
+  sequence: number | null;
+  customer: string | null;
+  wms_ref: string | null;
+  reason: string | null;
+  result: CheckResult | null;
+  failed: string[];
+  by: string | null;
+  note: string | null;
 }
