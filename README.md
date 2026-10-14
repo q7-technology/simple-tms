@@ -335,7 +335,7 @@ curl -s -b "$PLATEN_COOKIE" -X PUT https://<platen>/pages/carrier-manifest \
   "header": [
     {"kind": "text", "value": "{{ carrier }} · manifest {{ manifest_no }}", "size_pt": 18, "bold": true},
     {"kind": "text", "value": "{{ date }} · account {{ account }} · pickup {{ pickup_time }}", "size_pt": 11},
-    {"kind": "text", "value": "{{ consignment_count }} consignments · {{ package_count }} packages · {{ total_kg }} kg", "size_pt": 10},
+    {"kind": "text", "value": "Consignments: {{ consignment_count }} · packages: {{ package_count }} · {{ total_kg }} kg", "size_pt": 10},
     {"kind": "rule"}
   ],
   "body": [
