@@ -317,7 +317,11 @@ Each consignment, in the list and on its own, also says where it is now:
 `run` is the run it is on, or was last on once it is `delivered` or `failed`;
 `carrier` is the carrier it is booked with or collected by,
 `{ "id", "name", "con_note", "manifest_id", "manifest_no", "collected_at" }`.
-Each is `null` otherwise. `q` also matches the con note.
+Each is `null` otherwise. `q` also matches the con note. These come with
+`consignments:read` alone: a key made with just that scope sees which run a
+consignment is on (and its driver's name) and which carrier, con note and
+manifest it is with, though it can't read the run or the manifest itself
+(that is `runs:read`). Give a partner `consignments:read` knowing that.
 
 ## Runs
 
