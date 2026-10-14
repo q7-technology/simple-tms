@@ -90,6 +90,29 @@ describe("Plan runs", () => {
       .toEqual({ consignment_id: 31 }));
   });
 
+  it("sends a consignment with a carrier from the tray, and a stop off its run", async () => {
+    const carriers = { items: [{ id: 2, name: "Valley Freight (sample)", account: null, pickup_time: null, adapter: "manual",
+                                 active: true, created_at: "" }], total: 1 };
+    const { calls } = board({ "GET /v1/carriers": () => json(200, carriers) });
+    renderApp("/plan");
+    const user = userEvent.setup();
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Send Paddock Produce with a carrier" }), "2");
+    await waitFor(() => expect(calls.find((c) => c.url === "/v1/carriers/2/book")?.body)
+      .toEqual({ consignment_id: 31, date: isoDay(new Date(Date.now() + 86_400_000)) }));
+    expect(await screen.findByText("Paddock Produce is on the carrier bay for Valley Freight (sample). Add its con note in Carriers."))
+      .toBeInTheDocument();
+    await user.selectOptions(screen.getByRole("combobox", { name: "Move Two Rivers Vet to" }), "carrier:2");
+    await waitFor(() => expect(calls.filter((c) => c.url === "/v1/carriers/2/book").at(-1)?.body)
+      .toEqual({ consignment_id: 12, date: isoDay(new Date(Date.now() + 86_400_000)) }));
+  });
+
+  it("offers no carrier when there is none", async () => {
+    board();
+    renderApp("/plan");
+    await screen.findByRole("combobox", { name: "Put Paddock Produce on a run" });
+    expect(screen.queryByRole("combobox", { name: "Send Paddock Produce with a carrier" })).toBeNull();
+  });
+
   it("moves a stop down from the keyboard by sending the whole order", async () => {
     const { calls } = board();
     renderApp("/plan");

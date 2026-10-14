@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { Link, useOutletContext } from "react-router-dom";
 import { api, ApiError, Unreachable } from "../api/client";
-import type { Card, Consignment, Driver, Page, Run, Vehicle } from "../api/types";
+import type { Card, Carrier, Consignment, Driver, Page, Run, Vehicle } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { clock, dayOptions } from "../lib/days";
 import { leftOpen, stillOpenFrom } from "../lib/live";
@@ -109,6 +109,7 @@ export function PlanRuns() {
   const [tray, setTray] = useState<Card[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [carriers, setCarriers] = useState<Carrier[]>([]);
   const [filter, setFilter] = useState("");
   const [note, setNote] = useState<Note>(null);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
@@ -163,6 +164,9 @@ export function PlanRuns() {
     setTray(t.items.map(cardOf));
     setVehicles(v.items);
     setDrivers(d.items);
+    // the carriers a consignment can go with instead; the board doesn't wait on them
+    const c = await api.get<Page<Carrier>>("/v1/carriers", { active: true }).catch(() => null);
+    if (c && mine === latestLoad.current) setCarriers(c.items);
   }, [day, days]);
 
   useEffect(() => {
@@ -193,6 +197,12 @@ export function PlanRuns() {
     act(() => api.post(`/v1/runs/${runId}/assign`, { consignment_id: c.id, position }));
   const unassign = (runId: number, c: Card) =>
     act(() => api.post(`/v1/runs/${runId}/unassign`, { consignment_id: c.id }));
+  /** Onto the carrier's manifest for the day being planned, off its run if it was on one. */
+  function book(carrierId: string, c: Card) {
+    const carrier = carriers.find((x) => String(x.id) === carrierId);
+    void act(() => api.post(`/v1/carriers/${carrierId}/book`, { consignment_id: c.id, date: day }),
+             `${c.customer} is on the carrier bay for ${carrier?.name ?? "the carrier"}. Add its con note in Carriers.`);
+  }
   // with the order as drawn, so the API can refuse it if someone else has moved a stop since
   const reorder = (run: Run, ids: number[]) =>
     act(() => api.post(`/v1/runs/${run.id}/reorder`,
@@ -374,6 +384,11 @@ export function PlanRuns() {
                               onChoose={(to) => { focusNext.current = [`[data-stop="${c.id}"]`]; void assign(Number(to), c); }}>
                   {planned.map((r) => <option key={r.id} value={r.id}>{r.run_no} · {r.driver.name}</option>)}
                 </ActionSelect>
+                {carriers.length > 0 && (
+                  <ActionSelect label={`Send ${c.customer} with a carrier`} placeholder="With a carrier…" disabled={busy}
+                                onChoose={(to) => book(to, c)}>
+                    {carriers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                  </ActionSelect>)}
               </div>
             </div>
           ))}
@@ -448,6 +463,8 @@ export function PlanRuns() {
                                         if (to === "tray") {
                                           focusNext.current = [`[data-card="${s.consignment.id}"]`];
                                           void unassign(run.id, s.consignment);
+                                        } else if (to.startsWith("carrier:")) {
+                                          book(to.slice("carrier:".length), s.consignment);
                                         } else {
                                           focusNext.current = [`[data-stop="${s.consignment.id}"]`];
                                           void assign(Number(to), s.consignment);
@@ -455,6 +472,10 @@ export function PlanRuns() {
                                       }}>
                           <option value="tray">Back to the tray</option>
                           {others.map((r) => <option key={r.id} value={r.id}>{r.run_no} · {r.driver.name}</option>)}
+                          {carriers.length > 0 && (
+                            <optgroup label="With a carrier">
+                              {carriers.map((x) => <option key={x.id} value={`carrier:${x.id}`}>{x.name}</option>)}
+                            </optgroup>)}
                         </ActionSelect>
                       </span>
                     )}
@@ -508,7 +529,7 @@ export function PlanRuns() {
           </div>
         )}
       </div></div>
-      <div className="small">Print run sheets sends each run to the dispatch printer through Platen. When a run leaves, each consignment is marked shipped in Simple WMS.</div>
+      <div className="small">Print run sheets sends each run to the dispatch printer through Platen. When a run leaves, each consignment is marked shipped in Simple WMS. A consignment sent with a carrier waits on the carrier bay: see Carriers.</div>
     </Drawer>
   );
 }
