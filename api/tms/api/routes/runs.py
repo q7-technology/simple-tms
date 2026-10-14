@@ -199,14 +199,19 @@ def _fresh(db, run_id: int) -> RunOut:
 
 @router.get("/runs", response_model=Page[RunOut])
 def list_runs(db: DB, day: dt.date = Query(alias="date"), status: str | None = None,
-              who: Principal = require("runs:read")):
-    """One day's runs, oldest first. Cancelled ones only when asked for."""
+              left_open: bool = False, who: Principal = require("runs:read")):
+    """One day's runs, oldest first. Cancelled ones only when asked for. With
+    left_open, first the runs from before that day still on the road: left
+    and never finished, for the office to finish."""
     query = select(Run.id).where(Run.day == day)
     if status:
         query = query.where(Run.status.in_(status.split(",")))
     else:
         query = query.where(Run.status != "cancelled")
-    ids = db.execute(query.order_by(Run.id)).scalars().all()
+    if left_open:
+        query = query.union(select(Run.id).where(Run.day < day, Run.status == "departed"))
+    ids = db.execute(select(Run.id).where(Run.id.in_(query))
+                     .order_by(Run.day, Run.id)).scalars().all()
     return Page(items=[run_out(db, runs.get_run(db, i)) for i in ids], total=len(ids))
 
 

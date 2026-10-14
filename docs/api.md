@@ -381,7 +381,10 @@ still allowed, and so is everything on a run that has already left.
 
 - `GET /v1/runs?date=2026-10-14` — that day's runs, oldest first, as
   `{ "items", "total" }`. Cancelled runs only with `status=cancelled` (or a
-  comma list of statuses). `date` is required.
+  comma list of statuses). `date` is required. With `left_open=true`, the
+  runs from before that day still on the road (left and never finished) come
+  first, by day: the desktop shows them as "Still open from Tue 13 Oct", and
+  the office finishes them once every stop has an outcome.
 - `POST /v1/runs` — `{ "date", "vehicle": "TMS041", "driver": "kim" }` →
   `201` with the run. The rego is read as for vehicles (`tms 041` is
   `TMS041`). A truck has one run a day (a cancelled one frees it); a driver

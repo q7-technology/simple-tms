@@ -121,3 +121,32 @@ def test_the_driver_is_read_however_the_code_is_typed(client, db, dispatcher_hea
     vehicle(db)
     driver(db)
     assert new_run(client, dispatcher_headers, code="KIM")["driver"]["code"] == "kim"
+
+
+def test_a_day_with_the_runs_left_open_from_before(client, db, dispatcher_headers):
+    from datetime import timedelta
+
+    from sqlalchemy import update
+
+    from deliveries_samples import on_the_road
+    from runs_samples import assign, consignment
+    from tms.models import Run
+
+    old, _, _ = on_the_road(client, db, dispatcher_headers, day=DAY - timedelta(days=2))
+    vehicle(db, rego="TMS018")
+    vehicle(db, rego="TMS019")
+    today = new_run(client, dispatcher_headers, rego="TMS018")
+    # one that left the day before and was finished is not left open
+    back = new_run(client, dispatcher_headers, rego="TMS019", day=DAY - timedelta(days=1))
+    assign(client, dispatcher_headers, back["id"], consignment(db, ref="0080099999").id)
+    client.post(f"/v1/runs/{back['id']}/depart", headers=dispatcher_headers)
+    db.execute(update(Run).where(Run.id == back["id"]).values(status="done"))
+    db.commit()
+    params = {"date": DAY.isoformat()}
+    plain = client.get("/v1/runs", params=params, headers=dispatcher_headers).json()
+    assert [x["id"] for x in plain["items"]] == [today["id"]]
+    both = client.get("/v1/runs", params=params | {"left_open": "true"},
+                      headers=dispatcher_headers).json()
+    assert [(x["id"], x["date"]) for x in both["items"]] == [
+        (old["id"], (DAY - timedelta(days=2)).isoformat()), (today["id"], DAY.isoformat())]
+    assert both["total"] == 2
