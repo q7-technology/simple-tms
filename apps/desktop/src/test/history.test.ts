@@ -26,7 +26,7 @@ describe("a consignment's history, in words", () => {
 
   it("finds the proof of delivery in the history", () => {
     const h = [row("packed", {}), row("delivered", { signature_file: "s1", photo_file: "p1", signed_name: "Priya" })];
-    expect(proofOf(h)).toEqual({ at: "2026-10-14T21:42:00Z", outcome: "delivered", signature: "s1", photo: "p1", signedName: "Priya", reason: null });
+    expect(proofOf(h)).toEqual({ at: "2026-10-14T21:42:00Z", outcome: "delivered", signature: "s1", photo: "p1", signedName: "Priya", reason: null, note: null });
     expect(proofOf([row("packed", {})])).toBeNull();
   });
 });

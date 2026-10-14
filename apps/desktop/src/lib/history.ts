@@ -32,13 +32,19 @@ export function historyLine(h: HistoryRow): { title: string; more: string; from:
   }
 }
 
+/** Why it wasn't delivered, in words: "wrong address". */
+export function reasonWords(reason: string): string {
+  return REASONS[reason] ?? reason;
+}
+
 export interface Proof { at: string; outcome: "delivered" | "failed"; signature: string | null; photo: string | null;
-                         signedName: string | null; reason: string | null }
+                         signedName: string | null; reason: string | null; note: string | null }
 
 /** The latest delivery, or failed delivery, and its pictures. */
 export function proofOf(history: HistoryRow[]): Proof | null {
   const h = [...history].reverse().find((r) => r.kind === "delivered" || r.kind === "failed");
   if (!h) return null;
   return { at: h.at, outcome: h.kind as Proof["outcome"], signature: text(h.detail.signature_file),
-           photo: text(h.detail.photo_file), signedName: text(h.detail.signed_name), reason: text(h.detail.reason) };
+           photo: text(h.detail.photo_file), signedName: text(h.detail.signed_name), reason: text(h.detail.reason),
+           note: text(h.detail.note) };
 }

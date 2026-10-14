@@ -18,13 +18,13 @@ const FLORIST = con(97, "Mill Lane Florist", "booked", { carrier: { id: 2, name:
 const COUNTS: Record<string, number> = { "": 48, "packed,failed": 14, "assigned,departed": 21, "booked,collected": 6,
                                          delivered: 17, failed: 1 };
 
-function desk() {
+function desk(more = 3) {
   return stubApi((_m, url) => {
     const p = new URLSearchParams(url.split("?")[1]);
     if (path(url) === "/v1/consignments" && p.get("limit") === "0") {
       return json(200, { items: [], total: COUNTS[p.get("status") ?? ""] ?? 0 });
     }
-    if (path(url) === "/v1/consignments") return json(200, { items: [BAKERY, DELI, FLORIST], total: 3 });
+    if (path(url) === "/v1/consignments") return json(200, { items: [BAKERY, DELI, FLORIST], total: more });
     if (path(url) === "/v1/consignments/88") {
       return json(200, { ...BAKERY, history: [
         { kind: "packed", at: "2026-10-13T20:42:00Z", detail: { packages: 4 } },
@@ -36,6 +36,11 @@ function desk() {
     if (path(url) === "/v1/consignments/97") {
       return json(200, { ...FLORIST, history: [{ kind: "booked", at: "2026-10-13T21:05:00Z",
                                                  detail: { carrier: "Valley Freight (sample)", manifest: "M-0003", by: "jo" } }] });
+    }
+    if (path(url) === "/v1/consignments/19") {
+      return json(200, { ...DELI, status: "failed", history: [
+        { kind: "failed", at: "2026-10-13T23:52:00Z", detail: { run: "R-0007", reason: "closed",
+                                                                note: "Rang the number, no answer.", by: "kim" } }] });
     }
     if (path(url).startsWith("/v1/pod-files/")) {
       return new Response(new Uint8Array([0x89, 0x50]), { status: 200, headers: { "Content-Type": "image/png" } });
@@ -88,5 +93,32 @@ describe("Consignments", () => {
     const aside = await screen.findByRole("complementary", { name: "Consignment details" });
     expect(await within(aside).findByText("Booked with Valley Freight (sample)")).toBeInTheDocument();
     expect(within(aside).getByText("Valley Freight (sample) · no con note yet")).toBeInTheDocument();
+  });
+
+  it("follows the header's search while it is open", async () => {
+    const { calls } = desk();
+    renderApp("/consignments?q=vf-0041");
+    const box = await screen.findByRole("searchbox", { name: "Search consignments" });
+    const user = userEvent.setup();
+    const header = screen.getByRole("searchbox", { name: "Search" });
+    await user.clear(header);
+    await user.type(header, "deli{Enter}");
+    await waitFor(() => expect(box).toHaveValue("deli"));
+    await waitFor(() => expect(calls.some((c) => c.url.includes("q=deli") && !c.url.includes("limit=0"))).toBe(true));
+  });
+
+  it("says why one wasn't delivered", async () => {
+    desk();
+    renderApp("/consignments");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Show 0080034419" }));
+    const aside = await screen.findByRole("complementary", { name: "Consignment details" });
+    expect(await within(aside).findByText("Closed · Rang the number, no answer.")).toBeInTheDocument();
+  });
+
+  it("says when there are more than it shows", async () => {
+    desk(230);
+    renderApp("/consignments");
+    expect(await screen.findByText("Showing 3 of 230. Search to narrow it down.")).toBeInTheDocument();
   });
 });

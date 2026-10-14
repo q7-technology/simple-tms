@@ -5,7 +5,7 @@ import type { Consignment, ConsignmentDetail, Page } from "../api/types";
 import { whereNow, type Tone } from "../lib/carriers";
 import { clock } from "../lib/days";
 import { plain, toMicro } from "../lib/decimal";
-import { historyLine, proofOf } from "../lib/history";
+import { historyLine, proofOf, reasonWords } from "../lib/history";
 import { Drawer } from "../ui/Drawer";
 import { Icon } from "../ui/icons";
 import { Photo } from "../ui/Photo";
@@ -25,6 +25,8 @@ function said(e: unknown): string {
   if (e instanceof Unreachable) return e.message;
   return e instanceof ApiError ? e.message : "Simple TMS could not be reached. Check the connection and try again.";
 }
+
+const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 function Pill({ c }: { c: Consignment }) {
   const w = whereNow(c);
@@ -89,6 +91,8 @@ function Details({ id }: { id: number }) {
             {pod.photo && <Photo fileId={pod.photo} label="Photo at the drop" />}
           </div>
           {pod.signedName && <div style={{ fontSize: 13 }}>Signed by <b>{pod.signedName}</b> (printed name)</div>}
+          {pod.outcome === "failed" && pod.reason && (
+            <div style={{ fontSize: 13 }}>{[sentence(reasonWords(pod.reason)), pod.note].filter(Boolean).join(" · ")}</div>)}
         </div>
       )}
     </aside>
@@ -103,6 +107,10 @@ export function Consignments() {
   const [q, setQ] = useState(params.get("q") ?? "");
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("all");
   const [items, setItems] = useState<Consignment[] | null>(null);
+  const [total, setTotal] = useState(0);
+  // the header's search, used while this is open, changes ?q=: follow it
+  const urlQ = params.get("q") ?? "";
+  useEffect(() => { setQ((now) => (now.trim() === urlQ.trim() ? now : urlQ)); }, [urlQ]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [chosen, setChosen] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -114,7 +122,7 @@ export function Consignments() {
     // a moment after the last key, not on each one
     const t = setTimeout(() => {
       api.get<Page<Consignment>>("/v1/consignments", { status, q: q.trim(), limit: 100 })
-        .then((p) => { if (mine === latest.current) { setItems(p.items); setError(null); } })
+        .then((p) => { if (mine === latest.current) { setItems(p.items); setTotal(p.total); setError(null); } })
         .catch((e) => { if (mine === latest.current) setError(said(e)); });
       Promise.all(TABS.map((x) => api.get<Page<unknown>>("/v1/consignments", { status: x.status, q: q.trim(), limit: 0 })))
         .then((ps) => { if (mine === latest.current) setCounts(Object.fromEntries(TABS.map((x, i) => [x.key, ps[i].total]))); })
@@ -168,6 +176,8 @@ export function Consignments() {
             </tbody>
           </table>
           {items && shown.length === 0 && <div className="small" style={{ padding: 16 }}>Nothing matches.</div>}
+          {items && total > shown.length && (
+            <div className="small" style={{ padding: 16 }}>Showing {shown.length} of {total}. Search to narrow it down.</div>)}
         </div>
         {picked && <Details key={picked.id} id={picked.id} />}
       </div>
