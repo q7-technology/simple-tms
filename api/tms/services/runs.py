@@ -134,8 +134,9 @@ def cancel(db: Session, run_id: int) -> Run:
 # ---- stops -------------------------------------------------------------------
 
 # a consignment that may still go on a run, or move to another; one the driver
-# couldn't deliver comes back to the depot and is planned again
-PLANNABLE = ("packed", "assigned", "failed")
+# couldn't deliver comes back to the depot and is planned again, and one on
+# the carrier bay can come off it onto a run
+PLANNABLE = ("packed", "assigned", "failed", "booked")
 
 
 def _now() -> datetime:
@@ -169,11 +170,35 @@ def _plannable(db: Session, consignment_id: int) -> Consignment:
     return c
 
 
+def _current_stop(db: Session, consignment_id: int) -> Stop | None:
+    """Its stop on a run now; a stop on a trip already made (it has an
+    outcome) is a record."""
+    return db.execute(select(Stop).where(
+        Stop.consignment_id == consignment_id, Stop.removed_at.is_(None),
+        Stop.outcome.is_(None))).scalar_one_or_none()
+
+
+def take_off_run(db: Session, c: Consignment, by: str) -> None:
+    """Off the planned run it is on, if any, with a history row; the stops
+    left are numbered again. The caller holds the planning lock and says
+    where it goes next."""
+    current = _current_stop(db, c.id)
+    if current is None:
+        return
+    old = _planned(db, current.run_id)          # a departed run keeps its stops
+    current.removed_at = _now()
+    _event(c, "unassigned", run=old.number, run_id=old.id, by=by)
+    db.flush()
+    _renumber(_live_stops(db, old.id))
+
+
 def assign(db: Session, run_id: int, consignment_id: int, position: int | None,
            by: str) -> Run:
     """Put a consignment on this run at a place in the order (1 is first; none
-    is last), moving it off another planned run if it was on one. Asking for
-    what is already so changes nothing."""
+    is last), moving it off another planned run, or off the carrier bay, if
+    it was on one. Asking for what is already so changes nothing."""
+    from tms.services import carriers     # carriers plans with this module's lock
+
     lock_planning(db)
     run = _planned(db, run_id)
     if not run.vehicle.active:
@@ -181,17 +206,11 @@ def assign(db: Session, run_id: int, consignment_id: int, position: int | None,
                        f"{run.vehicle.rego} is deactivated, so {run.number} can't take stops")
     fleet.refuse_if_blocked(db, run.vehicle, run.day)
     c = _plannable(db, consignment_id)
-    # its stop on a run now; a stop on a trip already made (it has an outcome) is a record
-    current = db.execute(select(Stop).where(
-        Stop.consignment_id == c.id, Stop.removed_at.is_(None),
-        Stop.outcome.is_(None))).scalar_one_or_none()
+    carriers.take_off_bay(db, c, by)
+    current = _current_stop(db, c.id)
 
     if current is not None and current.run_id != run.id:
-        old = _planned(db, current.run_id)          # a departed run keeps its stops
-        current.removed_at = _now()
-        _event(c, "unassigned", run=old.number, run_id=old.id, by=by)
-        db.flush()
-        _renumber(_live_stops(db, old.id))
+        take_off_run(db, c, by)
         current = None
 
     stops = [s for s in _live_stops(db, run.id) if s.consignment_id != c.id]
