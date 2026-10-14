@@ -21,8 +21,9 @@ are at `/docs`.
   a `422` too. Something that is not there is `404` with `{ "detail" }`.
   Something well formed that cannot be done as things stand (a run that has
   left, a truck over its limit) is `409` with `{ "detail", "code" }`.
-- **Confirmations from the driver app** (pre-start, start, deliver, fail, finish) carry a
-  `message_id`, a UUID the phone makes when the confirmation is made. The
+- **Confirmations** (from the driver app: pre-start, start, deliver, fail,
+  finish; from the office: finish, and a carrier's manifest collected) carry a
+  `message_id`, a UUID the phone or the desktop makes when the confirmation is made. The
   first time, the API does the work and keeps the reply; the same
   `message_id` again from the same sender gets that reply back (status and
   body) and changes nothing, however long after. A refusal is not kept, so the
@@ -32,8 +33,9 @@ are at `/docs`.
   `message_id` someone else has used is `409 message_id_taken`; one the same
   sender used for another confirmation (another action, or the same on
   another run or stop) is `409 message_id_reused`.
-- **Never deleted:** drivers and vehicles are deactivated, runs cancelled and
-  stops taken off, never deleted. A consignment's history is append-only, and
+- **Never deleted:** drivers, vehicles and carriers are deactivated, runs
+  cancelled, stops taken off and consignments taken off a carrier's manifest,
+  never deleted. A consignment's history is append-only, and
   so are pre-start checks and what a fleet manager records about a truck: a
   mistake is put right by a newer record.
 - **Except positions.** Where a truck was (live location, and the position on
@@ -266,7 +268,7 @@ Each driver: `{ "id", "code", "name", "active", "locked", "failed_attempts", "cr
 
 ### GET /v1/consignments
 Newest first. Filters: `status` (comma separated), `warehouse`, `q` (part of
-the WMS delivery ref or the customer name, any case; `%` and `_` are plain
+the WMS delivery ref, the customer name or the con note, any case; `%` and `_` are plain
 text; at most 64 characters), `limit` (0 to 2000, default 200), `offset`
 (default 0). → `{ "items", "total" }`, where `total` counts every match, not
 just this page. Each:
@@ -295,12 +297,27 @@ The same, plus its history, oldest first:
               "detail": { "wms_event_id": "…", "packages": 1 } }]
 ```
 Statuses: `packed` (in the tray), `assigned` (on a planned run), `departed`
-(its run has left), `delivered`, and `failed` (the driver couldn't deliver
-it: it comes back to the depot and waits in the tray to be planned again).
-The history has a row for each: `packed`, `assigned` and `unassigned` (with
-the run and who), `departed` (with the run, vehicle, driver and who),
-`delivered` and `failed` (see "The driver app"). A consignment planned again
-after `failed` gets `assigned` and `departed` rows again.
+(its run has left), `delivered`, `failed` (the driver couldn't deliver
+it: it comes back to the depot and waits in the tray to be planned again),
+`booked` (on a carrier's manifest, on the carrier bay) and `collected` (the
+carrier has it). The history has a row for each: `packed`, `assigned` and
+`unassigned` (with the run and who), `departed` (with the run, vehicle,
+driver and who), `delivered` and `failed` (see "The driver app"), `booked`
+and `unbooked` (with the carrier, the manifest and who), `con_note` (each con
+note set, with the one it replaced in `was`, the carrier and who) and
+`collected` (with the carrier, the con note, the manifest and who). A
+consignment planned again after `failed` gets `assigned` and `departed` rows
+again.
+
+Each consignment, in the list and on its own, also says where it is now:
+```json
+"run": { "id": 7, "run_no": "R-0007", "driver": "Kim", "sequence": 3 },
+"carrier": null
+```
+`run` is the run it is on, or was last on once it is `delivered` or `failed`;
+`carrier` is the carrier it is booked with or collected by,
+`{ "id", "name", "con_note", "manifest_id", "manifest_no", "collected_at" }`.
+Each is `null` otherwise. `q` also matches the con note.
 
 ## Runs
 
@@ -406,7 +423,8 @@ Each answers with the run as it now is.
 - `POST /v1/runs/{id}/assign` — `{ "consignment_id", "position"? }`. Puts a
   `packed` consignment (or a `failed` one, back from a run) on the run at
   `position` (1 is first; left out, last; past the end, last), or moves one already on this run to that place, or
-  takes it off another planned run and puts it here. Already in that place:
+  takes it off another planned run, or off the carrier bay (history
+  `unbooked`), and puts it here. Already in that place:
   nothing changes (with no `position`, one already on this run moves to last). The history gets `assigned` (and `unassigned` from the other run)
   with the run and who. Past the truck's limits is allowed: the run shows
   `over`, and cannot print or leave until a stop moves.
@@ -423,7 +441,7 @@ Each answers with the run as it now is.
 | `409` code | When |
 | --- | --- |
 | `run_not_planned` | the run has departed or been cancelled; its stops are fixed |
-| `not_plannable` | the consignment has left or been delivered |
+| `not_plannable` | the consignment has left, been delivered or been collected by a carrier |
 | `vehicle_unavailable` | the run's truck has been deactivated |
 | `vehicle_grounded`, `vehicle_overdue` | the run's truck can't go (rule 3) |
 | `stale` | a reorder from an order that is not the run's as it is now |
@@ -471,8 +489,8 @@ logged as an error naming the likely cause. Without `TMS_WMS_URL` and
   `vehicle_grounded`, `vehicle_overdue`.
 
 ```json
-{ "job_id": "uuid", "run_id": 7, "template": "run-sheet", "printer": "dispatch",
-  "status": "pending", "attempts": 0, "last_error": null,
+{ "job_id": "uuid", "run_id": 7, "manifest_id": null, "template": "run-sheet",
+  "printer": "dispatch", "status": "pending", "attempts": 0, "last_error": null,
   "created_at": "…", "sent_at": null, "printed_at": null }
 ```
 The worker sends it to `TMS_PLATEN_URL` (Platen's `https://<platen>/intake/jobs`)
@@ -498,12 +516,164 @@ calls, and `last_error` keeps Platen's answer in its own words.
 
 ### POST /v1/print-jobs/{job_id}/status
 
-How a print went, from Platen: the body Simple WMS takes,
+How a print went, from Platen, for a run sheet or a carrier manifest: the body Simple WMS takes,
 `{ "status": "accepted" | "printed" | "failed", "message"?, "printer"? }`.
 Needs `printing:write` (an API key made for Platen). `printed` sets
 `printed_at`; `failed` keeps `message` as `last_error`; a late `accepted` does
 not undo `printed` or `failed`. Answers with the print job as it now is. An
 unknown `job_id` is `404`, which Platen does not ask again.
+
+## Carriers
+
+Freight going with outside carriers, booked by hand in this version: the
+dispatcher books with the carrier as they always have, then types or scans
+the con note here. The carrier calls, takes what is on its manifest, and the
+dispatcher marks it collected: each consignment is then marked shipped in
+Simple WMS with the carrier's name and the con note, as a run's are when it
+leaves.
+
+A carrier is changed by a fleet manager (`fleet:write`) and read by the
+office (`runs:read`). Each:
+```json
+{ "id": 2, "name": "Ridgeline Express (sample)", "account": "RX-4410",
+  "pickup_time": "15:30", "adapter": "manual", "active": true,
+  "created_at": "2026-10-15T00:02:11Z" }
+```
+`name` is what Simple WMS is told as the carrier (1 to 64 characters, one
+carrier per name whatever its case, and never `Own fleet`, which is your own
+trucks). `account` is your account with the carrier, printed on the manifest
+(at most 40, or `null`). `pickup_time` is when it usually calls, by the
+depot's clock (`HH:MM`, or `null`). `adapter` is how it is booked: `manual`
+(by hand) is the only one yet; anything else is a `422`. A carrier's own API
+comes later as another adapter, with no change to any of this.
+
+- `GET /v1/carriers?active=true` — by name, as `{ "items", "total" }`.
+- `POST /v1/carriers` — `{ "name", "account"?, "pickup_time"?, "adapter"? }` → `201`.
+- `GET /v1/carriers/{id}`
+- `PATCH /v1/carriers/{id}` — only what is given changes; `account` or
+  `pickup_time` given as `null` is cleared. A new name is what Simple WMS is
+  told from the next collection on.
+- `POST /v1/carriers/{id}/deactivate`, `/reactivate` — a deactivated carrier
+  takes no new bookings; what is already on its manifest stays, to be collected.
+
+### The carrier bay
+
+A **manifest** is one carrier's pickup: the consignments waiting on the
+carrier bay for it on a day, then what it took. There is one open manifest
+per carrier per day; once collected, the next booking for that carrier and
+day starts a new one (a carrier that calls twice). `runs:read` to look,
+`runs:write` to change. Each change is made one at a time with the planning
+of runs, so a consignment is on one run or with one carrier, never both.
+```json
+{
+  "id": 3, "manifest_no": "M-0003", "date": "2026-10-15", "status": "open",
+  "carrier": { "id": 2, "name": "Ridgeline Express (sample)", "…": "…" },
+  "created_by": "dee", "created_at": "…", "collected_at": null, "collected_by": null,
+  "lines": [{ "con_note": "RX-77310042", "added_at": "…",
+              "consignment": { "id": 31, "wms_ref": "0080034519", "customer": "Hilltop Joinery",
+                               "suburb": "Bacchus Marsh", "status": "booked", "packages": 5,
+                               "cartons": 5, "weight_kg": "72", "volume_m3": "0.5" } }],
+  "totals": { "consignments": 1, "packages": 5, "cartons": 5, "weight_kg": "72" },
+  "needs_con_note": 0,
+  "print_job": null,
+  "shipping": { "pending": 0, "done": 0, "failed": 0 }
+}
+```
+`status` is `open` or `collected`. `print_job` is its latest print (as a
+run's `run_sheet`), `shipping` its ship calls to Simple WMS by state.
+
+- `GET /v1/manifests?date=2026-10-15` — that day's manifests with something
+  on them, open or collected, oldest first, as `{ "items", "total" }`. With
+  `left_open=true`, first the open ones from earlier days still waiting for
+  their carrier.
+- `GET /v1/manifests/{id}`
+- `POST /v1/carriers/{id}/book` — `{ "consignment_id", "date", "con_note"? }`.
+  Puts a consignment on the carrier's manifest for that day (made if there is
+  none): from the tray (`packed` or `failed`), off a planned run (history
+  `unassigned`), or off another manifest (history `unbooked`). It becomes
+  `booked` (history `booked`). Moved to another day with the same carrier it
+  keeps its con note; to another carrier it doesn't, as a con note is one
+  carrier's. Already there: nothing changes, but for a `con_note` given.
+  Answers with the manifest it is on.
+- `POST /v1/manifests/{id}/con-note` — `{ "consignment_id", "con_note" }`:
+  typed or scanned, or put right, until it is collected. Each new con note is
+  a `con_note` row in the history naming the one it replaced; the same again
+  changes nothing. Not on this manifest: `404`.
+- `POST /v1/manifests/{id}/unbook` — `{ "consignment_id" }`: back to the
+  tray (`packed`, history `unbooked`). Not on it: nothing happens.
+
+A **con note** is read as the carrier prints it: spaces around it are taken
+off and letters made capitals (` rx-77310042 ` is `RX-77310042`); it must
+then be 4 to 40 letters, digits and dashes, starting with a letter or digit,
+or it is a `422` on `con_note` (a space inside is refused, not guessed at). A
+con note is one consignment's with a carrier, for good: another consignment
+with the same carrier and con note is a `422` naming the first. Another
+carrier's numbers are its own.
+
+| `409` code | When |
+| --- | --- |
+| `not_plannable` | the consignment has left on a run, been delivered or been collected |
+| `carrier_inactive` | the carrier is deactivated: nothing new can be booked with it |
+| `manifest_collected` | the carrier has collected it; what is on it can't change |
+
+An unknown consignment is a `422` on `consignment_id`; an unknown carrier or
+manifest `404`.
+
+### POST /v1/manifests/{id}/collect
+
+`{ "message_id", "consignment_ids": [ … ] }`: the carrier has called and
+taken it, with what is on the manifest as you saw it. Each consignment
+becomes `collected` (history `collected` with the carrier, the con note, the
+manifest and who), and a ship call to Simple WMS is queued for each, all in
+one go; the manifest is `collected` with when and who. Once per `message_id`
+(see Shared rules); a manifest already collected with just those on it is
+answered as it is, and nothing more is queued.
+
+| `409` code | When |
+| --- | --- |
+| `stale` | `consignment_ids` isn't exactly what is on it now (someone booked or took one off meanwhile): reload and check |
+| `con_note_missing` | something on it has no con note: the detail names the first |
+| `manifest_empty` | nothing is on it |
+| `manifest_collected` | it was collected with something else on it |
+
+The worker then makes, for each consignment, the same call as for a run
+(see `POST /v1/runs/{id}/depart`), with the carrier and its con note:
+```
+POST {TMS_WMS_URL}/v1/deliveries/{wms_ref}/ship
+{ "message_id": "<its own uuid>", "owner": "DEFAULT",
+  "carrier": "Ridgeline Express (sample)", "tracking_no": "RX-77310042", "shipped_by": "dee" }
+```
+with the same retries, so Simple WMS ships each delivery once and fires
+`delivery.shipped` with that carrier and tracking number.
+
+- `POST /v1/manifests/{id}/retry-ship` — calls that gave up start again from
+  scratch, each with its same `message_id`.
+
+### Manifests
+
+- `POST /v1/manifests/{id}/print` → `202` with the print job, as a run sheet's
+  (`run_id` `null`, `manifest_id` set). Each call prints again: before it is
+  collected, what is on the bay now; after, what went. Refused with `409`:
+  `printing_not_set_up`, `manifest_empty`, and `con_note_missing` (the
+  carrier's driver signs for each consignment by its con note).
+
+The worker sends it to Platen as a run sheet goes, to the printer
+`TMS_MANIFEST_PRINTER` (or `TMS_RUN_SHEET_PRINTER` when that is empty):
+```json
+{ "job_id": "uuid", "template": "carrier-manifest", "version": "v1", "printer": "dispatch",
+  "copies": 1, "reference": { "type": "manifest", "ref": "M-0003" },
+  "data": {
+    "manifest_no": "M-0003", "date": "2026-10-15", "carrier": "Ridgeline Express (sample)",
+    "account": "RX-4410", "pickup_time": "15:30", "consignment_count": 2,
+    "package_count": 7, "total_kg": "126",
+    "lines": [{ "line": 1, "con_note": "RX-77310042", "wms_ref": "0080034519",
+                "customer": "Hilltop Joinery", "address": "4 Mill Rd", "suburb": "Bacchus Marsh",
+                "state": "VIC", "postcode": "3340", "packages": 5, "weight_kg": "72" }]
+  } }
+```
+Every value is text or a whole number, never `null`. In Platen,
+`carrier-manifest` is a page template: one row per entry in `lines`, with the
+rest beside it.
 
 ## The driver app
 
@@ -771,7 +941,8 @@ is HTML, as the map shows it.
 { "items": [{ "kind": "delivered", "at": "2026-10-14T00:31:07Z",
   "run_id": 7, "run_no": "R-0007", "rego": "TMS041", "driver": "Kim",
   "sequence": 3, "customer": "Main Street Chemist", "wms_ref": "0080034521",
-  "reason": null, "result": null, "failed": [], "by": null, "note": null }] }
+  "reason": null, "result": null, "failed": [], "by": null, "note": null,
+  "carrier": null, "con_note": null, "manifest_no": null, "count": null }] }
 ```
 
 | `kind` | What | Fields with something in them |
@@ -779,6 +950,8 @@ is HTML, as the map shows it.
 | `packed` | a consignment came from Simple WMS | `customer`, `wms_ref` |
 | `delivered`, `failed` | a stop delivered, or not (with the `reason`) | the run, `rego`, `driver`, `sequence`, `customer`, `wms_ref` |
 | `left`, `finished` | a run left the depot, or was finished | the run, `rego`, `driver` |
+| `con_note` | a con note typed, scanned or put right | `carrier`, `con_note`, `customer`, `wms_ref`, `by` |
+| `collected` | a carrier collected its manifest | `carrier`, `manifest_no`, `count` (how many on it), `by` |
 | `prestart` | a pre-start check: `result` `passed`, `failed` or `grounded` | the run, `rego`, `driver` (or `by`), `failed` |
 | `fixed` | a fleet manager marked a grounded truck fixed | `rego`, `by`, `note` |
 
@@ -797,7 +970,7 @@ POST /v1/subscribers   (on Simple WMS, with an integration:admin key)
 ```
 and give Simple TMS a Simple WMS key with `tasks:read` and `tasks:write` in
 `TMS_WMS_API_KEY` (`tasks:read` to read a packed delivery, `tasks:write` to say
-it shipped: see `POST /v1/runs/{id}/depart`) and the WMS address in
+it shipped: see `POST /v1/runs/{id}/depart` and `POST /v1/manifests/{id}/collect`) and the WMS address in
 `TMS_WMS_URL`.
 
 The body is Simple WMS's event envelope, exactly as sent:
