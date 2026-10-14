@@ -12,7 +12,9 @@ from sqlalchemy import func, select, union, update
 from tms.api.deps import DB, Principal, require
 from tms.api.errors import FieldError
 from tms.api.routes.carriers import CarrierOut, carrier_out
-from tms.api.routes.runs import RunSheetOut, ShippingOut, StopConsignment, stop_consignment
+from tms.api.routes.runs import (
+    RunSheetOut, ShippingOut, StopConsignment, shipping_out, stop_consignment,
+)
 from tms.api.schemas import Dec, Page
 from tms.models import Booking, Consignment, Manifest, OutboundCall, PrintJob
 from tms.services import carriers
@@ -92,9 +94,6 @@ def manifest_out(db, m: Manifest) -> ManifestOut:
     t = total(consignment_totals(b.consignment.packages) for b in m.lines)
     job = db.execute(select(PrintJob).where(PrintJob.manifest_id == m.id)
                      .order_by(PrintJob.id.desc()).limit(1)).scalar_one_or_none()
-    calls = dict(db.execute(select(OutboundCall.status, func.count())
-                            .where(OutboundCall.manifest_id == m.id)
-                            .group_by(OutboundCall.status)).all())
     return ManifestOut(
         id=m.id, manifest_no=m.number, date=m.day,
         status="open" if m.collected_at is None else "collected",
@@ -108,7 +107,7 @@ def manifest_out(db, m: Manifest) -> ManifestOut:
         print_job=None if job is None else RunSheetOut(
             job_id=job.job_id, status=job.status, printer=job.printer,
             last_error=job.last_error, created_at=job.created_at, printed_at=job.printed_at),
-        shipping=ShippingOut(**calls), already_shipped=already_shipped(db, m.id))
+        shipping=shipping_out(db, OutboundCall.manifest_id == m.id), already_shipped=already_shipped(db, m.id))
 
 
 def _fresh(db, manifest_id: int) -> ManifestOut:

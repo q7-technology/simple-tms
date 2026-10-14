@@ -45,7 +45,7 @@ def test_collected_queues_a_ship_call_each_with_the_carrier_and_con_note(
     out = r.json()
     assert (out["status"], out["collected_by"]) == ("collected", "dee") and out["collected_at"]
     assert [line["consignment"]["status"] for line in out["lines"]] == ["collected", "collected"]
-    assert out["shipping"] == {"pending": 2, "done": 0, "failed": 0}
+    assert out["shipping"] == {"pending": 2, "done": 0, "failed": 0, "last_error": None}
     calls = _calls(db)
     assert [(c.path, c.manifest_id, c.run_id, c.consignment_id) for c in calls] == [
         ("/v1/deliveries/0080034519/ship", m["id"], None, a.id),
@@ -72,7 +72,7 @@ def test_the_worker_tells_simple_wms_as_for_a_run(client, db, bay, dispatcher_he
     assert [(b["carrier"], b["tracking_no"]) for b in http.bodies()] == [
         (RIDGELINE, "RX-77310042"), (RIDGELINE, "RX-77310043")]
     got = client.get(f"/v1/manifests/{m['id']}", headers=dispatcher_headers).json()
-    assert got["shipping"] == {"pending": 0, "done": 2, "failed": 0}
+    assert got["shipping"] == {"pending": 0, "done": 2, "failed": 0, "last_error": None}
     http.client.close()
 
 
@@ -154,8 +154,10 @@ def test_ship_calls_that_gave_up_are_tried_again_on_request(client, db, bay, dis
     db.execute(OutboundCall.__table__.update().values(status="failed", attempts=5,
                                                       last_error="HTTP 503: down"))
     db.commit()
+    got = client.get(f"/v1/manifests/{m['id']}", headers=dispatcher_headers).json()
+    assert got["shipping"] == {"pending": 0, "done": 0, "failed": 2, "last_error": "HTTP 503: down"}
     r = client.post(f"/v1/manifests/{m['id']}/retry-ship", headers=dispatcher_headers)
-    assert r.status_code == 200 and r.json()["shipping"] == {"pending": 2, "done": 0, "failed": 0}
+    assert r.status_code == 200 and r.json()["shipping"] == {"pending": 2, "done": 0, "failed": 0, "last_error": None}
     assert {(c.attempts, c.last_error) for c in _calls(db)} == {(0, None)}
     assert all(c.next_attempt_at <= datetime.now(UTC) + timedelta(seconds=1) for c in _calls(db))
 
@@ -184,7 +186,7 @@ def test_one_back_from_its_run_and_collected_stays_shipped_by_its_run_in_simple_
     assert (call.manifest_id, call.status, call.already_shipped) == (m["id"], "done", True)
     assert not any(c.already_shipped for c in _calls(db)[:-1])
     got = client.get(f"/v1/manifests/{m['id']}", headers=dispatcher_headers).json()
-    assert got["shipping"] == {"pending": 0, "done": 1, "failed": 0}
+    assert got["shipping"] == {"pending": 0, "done": 1, "failed": 0, "last_error": None}
     assert got["already_shipped"] == [{"consignment_id": b.id, "wms_ref": b.wms_ref,
                                        "customer": b.customer, "carrier": "Own fleet",
                                        "tracking_no": run["run_no"]}]

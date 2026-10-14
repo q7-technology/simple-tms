@@ -131,6 +131,17 @@ describe("Carriers", () => {
     confirm.mockRestore();
   });
 
+  it("says why Simple WMS wasn't told, beside Try again", async () => {
+    const stuck = { ...PP, shipping: { pending: 0, done: 0, failed: 1, last_error: "HTTP 503: Simple WMS is down for maintenance" } };
+    const { calls } = bay([stuck]);
+    renderApp("/carriers");
+    const pp = await group(/Plains Parcels/);
+    expect(within(pp).getByText("1 not marked shipped in Simple WMS after five tries: HTTP 503: Simple WMS is down for maintenance"))
+      .toBeInTheDocument();
+    await userEvent.setup().click(within(pp).getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(calls.some((c) => path(c.url) === "/v1/manifests/3/retry-ship")).toBe(true));
+  });
+
   it("says plainly when nothing waits, and when there are no carriers yet", async () => {
     stubApi((_m, url) => json(200, { items: [], total: 0 }));
     renderApp("/carriers");

@@ -150,7 +150,7 @@ export interface Run {
     unknown_weight: number; unknown_volume: number; state: "ok" | "near" | "over"; message: string | null;
   };
   run_sheet: RunSheet | null;
-  shipping: { pending: number; done: number; failed: number };
+  shipping: { pending: number; done: number; failed: number; last_error?: string | null };
   /** the run's pre-start as Start counts it: the latest check of its truck
    * for it that didn't ground it, made since the truck was last grounded
    * and last marked fixed; else null */
@@ -213,7 +213,7 @@ export interface Manifest {
   totals: { consignments: number; packages: number; cartons: number; weight_kg: string };
   needs_con_note: number;
   print_job: RunSheet | null;
-  shipping: { pending: number; done: number; failed: number };
+  shipping: { pending: number; done: number; failed: number; last_error?: string | null };
   /** what Simple WMS had shipped already (back from its run): it kept what it had */
   already_shipped: AlreadyShipped[];
 }

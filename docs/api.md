@@ -344,7 +344,7 @@ Each run:
   "load": { "weight_kg": "72", "volume_m3": "0.5", "max_kg": "4500", "max_m3": "22",
             "unknown_weight": 0, "unknown_volume": 0, "state": "ok", "message": null },
   "run_sheet": null,
-  "shipping": { "pending": 0, "done": 0, "failed": 0 },
+  "shipping": { "pending": 0, "done": 0, "failed": 0, "last_error": null },
   "prestart": null,
   "estimate": null
 }
@@ -362,7 +362,8 @@ rounded down. `unknown_weight` and `unknown_volume` count packages with no
 weight, or without all three sides, which add nothing. `run_sheet` is the
 latest print of it (see Run sheets), `null` until it is first printed:
 `{ "job_id", "status", "printer", "last_error", "created_at", "printed_at" }`.
-`shipping` counts its ship calls to Simple WMS by state. `vehicle.blocked`
+`shipping` counts its ship calls to Simple WMS by state, with `last_error`
+the latest answer of one that gave up (`null` when none has). `vehicle.blocked`
 is why its truck can't take it, on its day (see Vehicles), else `null`: a run
 planned for a truck that is then grounded stays as it is and says so.
 `prestart` is the run's pre-start as Start counts it, `{ "id", "at",
@@ -576,12 +577,13 @@ of runs, so a consignment is on one run or with one carrier, never both.
   "totals": { "consignments": 1, "packages": 5, "cartons": 5, "weight_kg": "72" },
   "needs_con_note": 0,
   "print_job": null,
-  "shipping": { "pending": 0, "done": 0, "failed": 0 },
+  "shipping": { "pending": 0, "done": 0, "failed": 0, "last_error": null },
   "already_shipped": []
 }
 ```
 `status` is `open` or `collected`. `print_job` is its latest print (as a
-run's `run_sheet`), `shipping` its ship calls to Simple WMS by state, and
+run's `run_sheet`), `shipping` its ship calls to Simple WMS by state (with
+`last_error`, as a run's), and
 `already_shipped` the consignments Simple WMS had shipped already when this
 carrier took them (see below).
 

@@ -206,7 +206,7 @@ export function Carriers() {
             </div>
             {printed && <div className={`msg ${printed.tone}`} style={{ margin: "0 16px 10px" }}>{printed.text}</div>}
             {m.shipping.failed > 0 && (
-              <div className="msg r" style={{ margin: "0 16px 10px" }}><span>{m.shipping.failed} not marked shipped in Simple WMS after five tries.</span>
+              <div className="msg r" style={{ margin: "0 16px 10px" }}><span>{m.shipping.failed} not marked shipped in Simple WMS after five tries{m.shipping.last_error ? `: ${m.shipping.last_error}` : "."}</span>
                 <button type="button" className="btn sm" disabled={busy}
                         onClick={() => void act(() => api.post(`/v1/manifests/${m.id}/retry-ship`), "Trying Simple WMS again.")}>Try again</button></div>)}
             {isOpen && (

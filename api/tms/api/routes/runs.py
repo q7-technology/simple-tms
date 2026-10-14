@@ -92,6 +92,19 @@ class ShippingOut(BaseModel):
     pending: int = 0
     done: int = 0
     failed: int = 0
+    # why the latest call that gave up did, or null
+    last_error: str | None = None
+
+
+def shipping_out(db, *where) -> ShippingOut:
+    """A run's or a manifest's ship calls by state, and the latest error of
+    one that gave up."""
+    calls = dict(db.execute(select(OutboundCall.status, func.count()).where(*where)
+                            .group_by(OutboundCall.status)).all())
+    error = db.execute(select(OutboundCall.last_error).where(*where, OutboundCall.status == "failed")
+                       .order_by(OutboundCall.id.desc())
+                       .limit(1)).scalar_one_or_none()
+    return ShippingOut(**calls, last_error=error)
 
 
 class StopEta(BaseModel):
@@ -160,9 +173,6 @@ def run_out(db, run: Run) -> RunOut:
                        .order_by(PrintJob.id.desc()).limit(1)).scalar_one_or_none()
     reasons = dict(db.execute(select(Pod.stop_id, Pod.reason).where(
         Pod.run_id == run.id, Pod.outcome == "failed")).all())
-    calls = dict(db.execute(select(OutboundCall.status, func.count())
-                            .where(OutboundCall.run_id == run.id)
-                            .group_by(OutboundCall.status)).all())
     v = run.vehicle
     why = fleet.standing(db, v, run.day).blocked
     check = records.run_check(db, run)
@@ -187,7 +197,7 @@ def run_out(db, run: Run) -> RunOut:
             job_id=sheet.job_id, status=sheet.status, printer=sheet.printer,
             last_error=sheet.last_error, created_at=sheet.created_at,
             printed_at=sheet.printed_at),
-        shipping=ShippingOut(**calls),
+        shipping=shipping_out(db, OutboundCall.run_id == run.id),
         estimate=run_estimate(run),
     )
 
