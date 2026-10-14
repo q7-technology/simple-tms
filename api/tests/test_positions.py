@@ -199,3 +199,19 @@ def test_a_position_from_long_ago_or_before_the_run_left_is_refused(client, db,
     assert r.status_code == 422 and r.json()["errors"][0]["field"] == "at"
     assert db.execute(select(Position)).first() is None
     assert send(client, kim, run["id"], at=(now - timedelta(minutes=5, seconds=50)).isoformat()).status_code == 204
+
+
+def test_what_a_position_must_be(client, db, dispatcher_headers):
+    run, _, kim = on_the_road(client, db, dispatcher_headers)
+
+    def field(**over):
+        r = send(client, kim, run["id"], **over)
+        assert r.status_code == 422, r.text
+        return r.json()["errors"][0]["field"]
+
+    assert field(latitude="-90.5") == "latitude"
+    assert field(longitude="180.1") == "longitude"
+    assert field(at=None) == "at"
+    assert field(at="2026-10-14T10:00:00") == "at"     # no time zone
+    assert field(speed="80") == "speed"
+    assert db.execute(select(Position)).first() is None

@@ -714,18 +714,28 @@ enough: a key that records deliveries is `403` here.
   "accuracy_m": "12" }
 ```
 → `204`. Decimal strings, as for a delivery's position; more than six places
-is rounded. `at` is when the phone took it, never later than it arrived.
+is rounded. `at` is when the phone took it (with its time zone), taken as
+now if it is later than now.
 Not a confirmation: no `message_id`, and nothing is queued on the phone. A
 lost one is simply followed by the next; with no signal, the phone sends only
 its latest once it is back.
 
 | Answer | When |
 | --- | --- |
+| `403` | the caller hasn't `location:write` (a dispatcher, or a key made without it) |
+| `404` | no such run, or another driver's |
 | `409 run_not_started` | the run hasn't left: nothing is shared before Start |
 | `409 run_done`, `409 run_cancelled` | the run is finished or was cancelled: the phone stops |
 | `409 run_stale` | the run is still on the road from an earlier day (its `date` is before the server's day, in UTC: in Australia, from 10 or 11 am the day after) and was left open: the phone stops; finish it |
-| `422` | `accuracy_m` missing, or rougher than 1,000 m |
+| `422` on `latitude` / `longitude` | missing, or outside -90 to 90 / -180 to 180 |
+| `422` on `accuracy_m` | missing, below 0, or rougher than 1,000 m |
+| `422` on `at` | missing, without a time zone, more than 10 minutes ago (only the newest is ever sent), or more than a minute before the run left |
+| `422` on any other field | not one of the four: nothing else is taken |
 | `429 too_often` | another position for the run arrived less than 10 seconds ago |
+
+The 10 seconds hold however many are sent at once: positions for a run are
+taken one at a time (a lock per run), so two sent together can't both be
+kept. A `422` names the field in `errors`, as everywhere.
 
 ### GET /v1/positions?date=2026-10-14
 `location:read`. The latest position of each of that day's runs on the road,
