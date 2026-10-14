@@ -6,7 +6,7 @@ from sqlalchemy import text
 from tms.api import errors
 from tms.api.deps import DB
 from tms.api.routes import (
-    auth, consignments, deliveries, drivers, fleet, location, pod_files, printing, runs,
+    auth, consignments, deliveries, drivers, feed, fleet, location, pod_files, printing, runs,
     vehicles, wms_events,
 )
 
@@ -33,6 +33,7 @@ v1.include_router(deliveries.router)
 v1.include_router(pod_files.router)
 v1.include_router(fleet.router)
 v1.include_router(location.router)
+v1.include_router(feed.router)
 
 
 @v1.get("/health", tags=["system"])
