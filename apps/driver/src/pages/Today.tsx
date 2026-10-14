@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { api, ApiError, Unreachable } from "../api/client";
 import type { DriverRun, PrestartOut, RunStops, StartOut, VehicleChanged } from "../api/types";
 import { useSession } from "../auth/Session";
-import { currentRun, loadRun, plural, rememberCurrent, saveRun } from "../lib/run";
+import { currentRun, fromEarlierDay, loadRun, plural, rememberCurrent, saveRun } from "../lib/run";
 import { clock, dayLabel, isoDay } from "../lib/time";
 import { askForLocation } from "../lib/where";
 import { Icon } from "../ui/icons";
@@ -27,6 +27,10 @@ function state(r: DriverRun): string {
       + "Starting tells the office you've left, and loads the whole run onto this phone.";
   }
   if (r.status === "planned") return "Do the pre-start check of the truck, then start the run.";
+  if (r.status === "departed" && fromEarlierDay(r)) {
+    return `Left open from ${dayLabel(new Date(`${r.date}T00:00`))}: ${r.delivered + r.failed} of ${plural(r.stops, "stop")} done. `
+      + "Carry on to finish it. This phone doesn't share where it is for it.";
+  }
   if (r.status === "departed") return `On the road: ${r.delivered + r.failed} of ${plural(r.stops, "stop")} done.`;
   return `Finished: ${r.delivered} delivered, ${r.failed} coming back.`;
 }

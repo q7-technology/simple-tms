@@ -1,5 +1,6 @@
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { dayLabel, isoDay } from "../lib/time";
 import { json, onThePhone, renderApp, RUN, signedIn, stubApi } from "./harness";
 
 /** A phone that knows where it is (or won't say), counting what watches it. */
@@ -119,5 +120,34 @@ describe("the phone sharing where it is during the run", () => {
     stubApi((method, url) => (method === "POST" ? new Response(null, { status: 204 }) : url === "/v1/runs/7/stops" ? json(200, moved) : null));
     renderApp("/run/7/stop/32");
     expect(await screen.findByText("Ridge Auto Workshop")).toBeInTheDocument();
+  });
+
+  it("shares nothing for a run left open from an earlier day, and says why", async () => {
+    const watching = phone();
+    const yesterday = new Date(Date.now() - 86_400_000);
+    const old = { ...RUN, date: isoDay(yesterday) };
+    onThePhone(old);
+    const { calls } = stubApi((_m, url) => (url === "/v1/runs/7/stops" ? json(200, old) : null));
+    renderApp("/run/7");
+    expect(await screen.findByText(
+      `R-0007 is from ${dayLabel(yesterday)} and was never finished, so this phone isn't sharing where it is. `
+      + "Finish it once every stop is done.")).toBeInTheDocument();
+    expect(screen.getByText("Location off")).toBeInTheDocument();
+    // the driver can still carry on to finish it
+    expect(screen.getByRole("link", { name: /Start stop 1/ })).toBeInTheDocument();
+    expect(watching.started).toBe(0);
+    expect(calls.some((c) => c.url === "/v1/runs/7/position")).toBe(false);
+  });
+
+  it("stops when the API says the run was left open", async () => {
+    const watching = phone();
+    const { calls } = stubApi((method, url) => {
+      if (method === "POST") return json(409, { code: "run_stale", detail: "R-0007 was for 13 Oct 2026 and was left open" });
+      return url === "/v1/runs/7/stops" ? json(200, RUN) : null;
+    });
+    renderApp("/run/7");
+    await waitFor(() => expect(calls.filter((c) => c.url === "/v1/runs/7/position")).toHaveLength(1));
+    await waitFor(() => expect(screen.getByText("Location off")).toBeInTheDocument());
+    expect(watching.cleared).toBe(1);
   });
 });

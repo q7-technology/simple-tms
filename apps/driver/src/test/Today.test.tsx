@@ -1,6 +1,7 @@
 import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { loadRun } from "../lib/run";
+import { dayLabel, isoDay } from "../lib/time";
 import { json, KIM, MEL, onThePhone, renderApp, RUN, signedIn, stubApi, TODAY } from "./harness";
 
 describe("today's run", () => {
@@ -141,6 +142,18 @@ describe("today's run", () => {
     expect(await screen.findByText("1 confirmation wasn't taken. Open the run to see why.")).toBeInTheDocument();
     await act(async () => { await queue.submit({ ...FAIL, consignment_id: 32, path: "/v1/runs/7/stops/32/fail" }); });
     expect(await screen.findByText("2 confirmations weren't taken. Open the run to see why.")).toBeInTheDocument();
+  });
+
+  it("lists a run left open from an earlier day, to finish, without sharing", async () => {
+    const yesterday = new Date(Date.now() - 86_400_000);
+    const old = { ...TODAY, id: 5, run_no: "R-0005", date: isoDay(yesterday), status: "departed" as const, delivered: 1 };
+    stubApi((_method, url) => (url.startsWith("/v1/driver/runs") ? json(200, [old, TODAY]) : null));
+    renderApp("/");
+    const card = await screen.findByRole("region", { name: "Run R-0005" });
+    expect(card).toHaveTextContent(`R-0005 · from ${dayLabel(yesterday)}`);
+    expect(card).toHaveTextContent(
+      `Left open from ${dayLabel(yesterday)}: 1 of 2 stops done. Carry on to finish it. This phone doesn't share where it is for it.`);
+    expect(screen.getByRole("button", { name: /Carry on/ })).toBeInTheDocument();
   });
 
   it("says when there is no run today", async () => {

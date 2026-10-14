@@ -1,7 +1,8 @@
 import { Link, Navigate, useLocation, useParams } from "react-router-dom";
 import { useQueueItems, useSession } from "../auth/Session";
 import { addressLine, mapsLink } from "../lib/maps";
-import { finished, finishedByOffice, nextStop, outcomes, plural } from "../lib/run";
+import { finished, finishedByOffice, fromEarlierDay, nextStop, outcomes, plural } from "../lib/run";
+import { dayLabel } from "../lib/time";
 import { Icon } from "../ui/icons";
 import { Goal, OfflineBanner, Phone, RunTop, SharingNote, WaitingList } from "../ui/kit";
 import { useOnRun } from "./OnTheRun";
@@ -43,6 +44,10 @@ export function RunHome() {
       <div className="scroll">
         {note && <div className="msg a" role="status">{note}</div>}
         {byOffice && <div className="msg a" role="status">The office finished {run.run_no}.</div>}
+        {!over && fromEarlierDay(run) && (
+          <div className="msg a" role="status">
+            {`${run.run_no} is from ${dayLabel(new Date(`${run.date}T00:00`))} and was never finished, so this phone isn't sharing where it is. `
+              + "Finish it once every stop is done."}</div>)}
         {next && !over && (
           <section aria-label="Next stop" className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
             <div className="lbl">Stop {next.sequence} of {run.stops.length}</div>

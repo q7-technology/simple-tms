@@ -5,6 +5,7 @@
  * driver's id, so another driver signed in on the phone never sees it. */
 import type { Outcome, RunStops, StopDetail } from "../api/types";
 import type { QueueItem } from "./queue";
+import { isoDay } from "./time";
 
 const RUN = (driver: number, id: number) => `tms.driver.run.${driver}.${id}`;
 const TICKS = (driver: number, run: number, consignment: number) => `tms.driver.ticks.${driver}.${run}.${consignment}`;
@@ -110,6 +111,12 @@ export function nextStop(run: RunStops, done: Map<number, Outcome>): StopDetail 
 export function finished(run: RunStops, items: QueueItem[]): boolean {
   return run.status === "done"
     || items.some((i) => i.run_id === run.id && i.outcome === "finished" && i.status !== "failed");
+}
+
+/** A run left open from an earlier day (by the phone's calendar): the driver
+ * may still finish it, but the phone doesn't share where it is for it. */
+export function fromEarlierDay(run: { date: string }, today = isoDay(new Date())): boolean {
+  return run.date < today;
 }
 
 /** Finished by the office (Finish run on the desktop), not from this phone. */

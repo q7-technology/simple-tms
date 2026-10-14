@@ -436,6 +436,11 @@ stood in for by `fake-indexeddb`: `cd apps/driver && npm test`.
 - **The map's region is a picture.** Trucks on the home map are placed along
   drawn roads by how many stops they have done, not by where they are; **Where
   is it** shows true positions.
+- **A run left open stops sharing the day after.** A run the driver never
+  finished stops taking positions once its day is over by the server's clock
+  (UTC: mid-morning the next day in Australia), and the phone stops at its
+  own midnight. The map and **Plan runs** show it as "Still open from Tue 13
+  Oct" until someone finishes it.
 
 - **The office's Leaves now doesn't ask for a pre-start.** The driver app
   won't start a run until the truck's pre-start is in, but **Leaves now** on

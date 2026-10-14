@@ -3,7 +3,7 @@ import { Outlet, useParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
 import type { RunStops } from "../api/types";
 import { useQueueItems, useSession } from "../auth/Session";
-import { finished, loadRun, saveRun } from "../lib/run";
+import { finished, fromEarlierDay, loadRun, saveRun } from "../lib/run";
 import { useSharing, type Sharing } from "../lib/share";
 
 interface OnRun {
@@ -61,7 +61,8 @@ export function OnTheRun() {
     });
   }, [refresh, me]);
 
-  const active = !!run && run.status === "departed" && !finished(run, items);
+  // a run left open from an earlier day may still be finished, but is never shared
+  const active = !!run && run.status === "departed" && !finished(run, items) && !fromEarlierDay(run);
   const sharing = useSharing(runId, active, ended);
   return <OnRunCtx.Provider value={{ run, sharing }}><Outlet /></OnRunCtx.Provider>;
 }
