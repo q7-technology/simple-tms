@@ -12,10 +12,15 @@ export const VEHICLE_TYPES = ["van", "rigid", "ute"] as const;
 export type VehicleType = (typeof VEHICLE_TYPES)[number];
 export const typeName = (t: string) => t[0].toUpperCase() + t.slice(1);
 
-/** "1,200" and " 8.5 " as typed: spaces and thousands commas go. */
+/** "1,200" and " 8.5 " as typed: spaces go, and commas that group
+ * thousands. Any other comma stays, so "8,5" (a decimal comma) is refused
+ * by the check, never read as 85. */
 function digits(raw: string): string {
-  return raw.replace(/[\s,]/g, "");
+  const t = raw.replace(/\s/g, "");
+  return THOUSANDS.test(t) ? t.replace(/,/g, "") : t;
 }
+const THOUSANDS = /^\d{1,3}(,\d{3})+(\.\d*)?$/;
+const DECIMAL_COMMA = "Use a point for decimals, like 8.5: a comma only groups thousands, like 1,200.";
 
 /** As the API stores it: "abc 123" and "ABC123" are the same plate. */
 export function normalRego(raw: string): string {
@@ -41,6 +46,7 @@ export function amount(raw: string): string {
 export function amountProblem(raw: string, unit: "kg" | "m³"): string | null {
   const t = amount(raw);
   if (!t) return `Give the most it carries, in ${unit}.`;
+  if (/^[\d.,]+$/.test(t) && t.includes(",")) return DECIMAL_COMMA;
   const m = /^(\d+)(?:\.(\d+))?$/.exec(t);
   if (!m) return `A number, like ${unit === "kg" ? "1200" : "8.5"}.`;
   if ((m[2] ?? "").length > 3) return "At most 3 decimal places.";

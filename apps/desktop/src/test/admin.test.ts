@@ -35,6 +35,18 @@ describe("the admin forms' checks", () => {
     expect(amountProblem("1234567890", "kg")).toBe("That is more than any truck carries.");
   });
 
+  it("refuses a decimal comma rather than reading 8,5 as 85", () => {
+    const comma = "Use a point for decimals, like 8.5: a comma only groups thousands, like 1,200.";
+    expect(amountProblem("8,5", "m³")).toBe(comma);
+    expect(amountProblem("1200,5", "kg")).toBe(comma);
+    expect(amountProblem("12,50", "kg")).toBe(comma);
+    expect(amountProblem("1,200", "kg")).toBeNull();
+    expect(amountProblem("12,000.5", "kg")).toBeNull();
+    expect(amount("12,000.5")).toBe("12000.5");
+    expect(intervalProblem("1,5", 120, "months")).toBe("Whole months, or leave it blank.");
+    expect(intervalProblem("15,000", 1_000_000, "km")).toBeNull();
+  });
+
   it("leaves a service interval blank for none, else a whole number in range", () => {
     expect(interval("")).toBeNull();
     expect(interval("15,000")).toBe(15000);
