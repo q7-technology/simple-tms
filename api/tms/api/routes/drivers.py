@@ -55,8 +55,12 @@ def driver_out(d: Driver) -> DriverOut:
                      failed_attempts=d.failed_attempts, created_at=d.created_at)
 
 
-def _get(db, code: str) -> Driver:
-    d = db.execute(select(Driver).where(Driver.code == code.lower())).scalar_one_or_none()
+def _get(db, code: str, *, for_update: bool = False) -> Driver:
+    """for_update: the row is locked until the commit, so a change that sets
+    the lock or the PIN can't interleave with a sign-in counting a wrong PIN
+    (auth.py locks it the same way)."""
+    q = select(Driver).where(Driver.code == code.lower())
+    d = db.execute(q.with_for_update() if for_update else q).scalar_one_or_none()
     if d is None:
         raise NotFound(f"no driver {code}")
     return d
@@ -98,7 +102,7 @@ def get_driver(code: str, db: DB, who: Principal = require("fleet:read")):
 def update_driver(code: str, body: DriverPatch, db: DB, who: Principal = require("fleet:write")):
     """A new PIN ends the driver's sessions, and unlocks them: the lock is
     against guessing the old one."""
-    d = _get(db, code)
+    d = _get(db, code, for_update=True)
     if body.name is not None:
         d.name = body.name
     if body.pin is not None:
@@ -131,7 +135,7 @@ def reactivate_driver(code: str, db: DB, who: Principal = require("fleet:write")
 
 @router.post("/drivers/{code}/unlock", response_model=DriverOut)
 def unlock_driver(code: str, db: DB, who: Principal = require("fleet:write")):
-    d = _get(db, code)
+    d = _get(db, code, for_update=True)
     d.locked = False
     d.failed_attempts = 0
     db.commit()

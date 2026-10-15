@@ -1,3 +1,5 @@
+import pytest
+
 from conftest import bearer
 
 ALEX = {"code": "drv-01", "name": "Alex T.", "pin": "2468"}
@@ -229,3 +231,29 @@ def test_a_driver_signs_in_whatever_the_case_of_the_code(client, manager_headers
     for typed in ("DRV-01", "Drv-01", " drv-01 "):
         r = client.post("/v1/auth/driver-login", json={"code": typed, "pin": "2468"})
         assert r.status_code == 200, typed
+
+
+@pytest.mark.parametrize("change", [
+    lambda c, h: c.patch("/v1/drivers/drv-01", headers=h, json={"pin": "8642"}),
+    lambda c, h: c.post("/v1/drivers/drv-01/unlock", headers=h),
+], ids=["new pin", "unlock"])
+def test_a_lock_made_while_a_manager_unlocks_is_not_left_behind(
+        client, manager_headers, engine, change):
+    """The driver's last wrong PIN locks them while a manager gives a new PIN
+    or unlocks them: the manager's change waits for it and then unlocks,
+    rather than writing over a row it read before the lock."""
+    from sqlalchemy import text
+
+    from conftest import blocked_on_a_lock, fresh_client, in_background
+
+    make_driver(client, manager_headers)
+    with engine.connect() as sign_in:
+        sign_in.execute(text("select id from driver where code = 'drv-01' for update"))
+        future = in_background(lambda: change(fresh_client(), manager_headers))
+        assert blocked_on_a_lock(engine, future)
+        sign_in.execute(text(
+            "update driver set failed_attempts = 5, locked = true where code = 'drv-01'"))
+        sign_in.commit()
+    assert future.result(timeout=10).status_code == 200
+    out = client.get("/v1/drivers/drv-01", headers=manager_headers).json()
+    assert (out["locked"], out["failed_attempts"]) == (False, 0)
