@@ -228,6 +228,8 @@ def collect(db: Session, manifest_id: int, consignment_ids: list[int], by: str) 
         raise Conflict("stale", f"{m.number} changed while you were looking; it has been "
                                 "reloaded, so check it and try again")
     refuse_missing_con_notes(m)
+    for b in m.lines:
+        runs.refuse_if_not_back(db, b.consignment, "the carrier can take it")
     now = _now()
     for b in m.lines:
         c = b.consignment

@@ -70,3 +70,38 @@ def test_a_delivered_consignment_is_not_planned_again(client, db, dispatcher_hea
     r = assign(client, dispatcher_headers, other["id"], a.id)
     assert r.status_code == 409 and r.json()["code"] == "not_plannable"
     assert r.json()["detail"].endswith(" was delivered, so it can't be planned")
+
+
+def test_one_that_came_back_leaves_again_only_once_its_truck_is_back(client, db, dispatcher_headers):
+    """It can be planned at once, but it is on the truck until that run is
+    finished, and Simple WMS has to hear it came back before it hears it
+    went again."""
+    import uuid
+
+    from sqlalchemy import select
+
+    from tms.models import OutboundCall
+    run, (a, b), kim = on_the_road(client, db, dispatcher_headers)
+    delivered(client, kim, run["id"], a)
+    failed(client, kim, run["id"], b, reason="closed")
+    vehicle(db, rego="TMS018")
+    later = new_run(client, dispatcher_headers, rego="TMS018")
+    assert assign(client, dispatcher_headers, later["id"], b.id).status_code == 200
+
+    r = client.post(f"/v1/runs/{later['id']}/depart", headers=dispatcher_headers)
+    assert r.status_code == 409
+    assert r.json() == {"code": "not_back", "detail":
+                        f"Customer 1 ({b.wms_ref}) is still on {run['run_no']}: finish that run "
+                        "once the truck is back, then this one can leave"}
+    assert client.get(f"/v1/runs/{later['id']}", headers=dispatcher_headers).json()["status"] == "planned"
+    assert len(db.execute(select(OutboundCall)).scalars().all()) == 2
+
+    r = client.post(f"/v1/runs/{run['id']}/finish", headers=kim, json={"message_id": str(uuid.uuid4())})
+    assert r.status_code == 200
+    r = client.post(f"/v1/runs/{later['id']}/depart", headers=dispatcher_headers)
+    assert r.status_code == 200, r.text
+    db.expire_all()
+    calls = db.execute(select(OutboundCall).where(OutboundCall.consignment_id == b.id)
+                       .order_by(OutboundCall.id)).scalars().all()
+    assert [(c.kind, c.body["tracking_no"]) for c in calls] == [
+        ("ship", run["run_no"]), ("return", run["run_no"]), ("ship", later["run_no"])]

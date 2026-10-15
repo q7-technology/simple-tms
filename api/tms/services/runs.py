@@ -216,6 +216,18 @@ def _current_stop(db: Session, consignment_id: int) -> Stop | None:
         Stop.outcome.is_(None))).scalar_one_or_none()
 
 
+def refuse_if_not_back(db: Session, c: Consignment, then: str) -> None:
+    """One that couldn't be delivered is on its truck until that run is
+    finished: only then is it back at the depot, and Simple WMS told so. It
+    may be planned before that, but not leave."""
+    out_on = db.execute(select(Run).join(Stop, Stop.run_id == Run.id).where(
+        Stop.consignment_id == c.id, Stop.outcome == "failed", Run.status == "departed")
+        .limit(1)).scalar_one_or_none()
+    if out_on is not None:
+        raise Conflict("not_back", f"{c.customer} ({c.wms_ref}) is still on {out_on.number}: "
+                                   f"finish that run once the truck is back, then {then}")
+
+
 def take_off_run(db: Session, c: Consignment, by: str) -> None:
     """Off the planned run it is on, if any, with a history row; the stops
     left are numbered again. The caller holds the planning lock and says
@@ -333,6 +345,8 @@ def depart(db: Session, run_id: int, by: str, need_prestart: bool = False) -> Ru
     over = run_load(run)
     if over.state == "over":
         raise Conflict("over_capacity", f"{run.number}: {over.message}")
+    for stop in run.stops:
+        refuse_if_not_back(db, stop.consignment, "this one can leave")
     now = _now()
     for stop in run.stops:
         c = stop.consignment

@@ -162,35 +162,52 @@ def test_ship_calls_that_gave_up_are_tried_again_on_request(client, db, bay, dis
     assert all(c.next_attempt_at <= datetime.now(UTC) + timedelta(seconds=1) for c in _calls(db))
 
 
-def test_one_back_from_its_run_and_collected_stays_shipped_by_its_run_in_simple_wms(
+def test_one_back_from_its_run_goes_with_a_carrier_and_simple_wms_ships_it_again(
         client, db, manager_headers, dispatcher_headers, monkeypatch):
-    """Simple WMS heard it shipped when its run left; when the carrier takes
-    it after it came back, Simple WMS answers already_shipped and keeps Own
-    fleet and the run number. Done, and said so."""
-    from deliveries_samples import failed, on_the_road
+    """Shipped by its run, back when the run is finished, then collected by a
+    carrier: Simple WMS hears each, in that order, and ships it again with
+    the carrier's name and con note."""
+    from deliveries_samples import delivered, failed, on_the_road
     from tms.config import get_settings
     monkeypatch.setattr(get_settings(), "wms_url", "http://wms.test/")
     later = datetime.now(UTC) + timedelta(minutes=1)
     http = FakeHttp()
     run, (a, b), kim = on_the_road(client, db, dispatcher_headers)
-    assert worker.send_ship_calls(db, http.client, now=later) == 2
+    delivered(client, kim, run["id"], a)
+    failed(client, kim, run["id"], b, reason="closed")
+    client.post(f"/v1/runs/{run['id']}/finish", headers=kim, json={"message_id": str(uuid.uuid4())})
+    rx = new_carrier(client, manager_headers)
+    m = book(client, dispatcher_headers, rx["id"], b.id, con_note="RX-77310042").json()
+    assert collect(client, dispatcher_headers, m, [b.id]).status_code == 200
+
+    assert worker.send_ship_calls(db, http.client, now=later) == 4
+    sent = [(r.url.path, body["tracking_no"]) for r, body in zip(http.requests, http.bodies())
+            if r.url.path.startswith(f"/v1/deliveries/{b.wms_ref}/")]
+    assert sent == [(f"/v1/deliveries/{b.wms_ref}/ship", run["run_no"]),
+                    (f"/v1/deliveries/{b.wms_ref}/return", run["run_no"]),
+                    (f"/v1/deliveries/{b.wms_ref}/ship", "RX-77310042")]
+    assert http.bodies()[-1]["carrier"] == RIDGELINE
+    got = client.get(f"/v1/manifests/{m['id']}", headers=dispatcher_headers).json()
+    assert got["shipping"] == {"pending": 0, "done": 1, "failed": 0, "last_error": None}
+    http.client.close()
+
+
+def test_one_still_on_its_truck_isnt_collected_until_the_run_is_finished(
+        client, db, manager_headers, dispatcher_headers):
+    from deliveries_samples import delivered, failed, on_the_road
+    run, (a, b), kim = on_the_road(client, db, dispatcher_headers)
+    delivered(client, kim, run["id"], a)
     failed(client, kim, run["id"], b, reason="closed")
     rx = new_carrier(client, manager_headers)
     m = book(client, dispatcher_headers, rx["id"], b.id, con_note="RX-77310042").json()
-    assert m["already_shipped"] == []
-    collect(client, dispatcher_headers, m, [b.id])
-    http.answers.append((409, {"detail": f"{b.wms_ref} has already shipped",
-                               "code": "already_shipped"}))
-    assert worker.send_ship_calls(db, http.client, now=later) == 1
-    call = _calls(db)[-1]
-    assert (call.manifest_id, call.status, call.already_shipped) == (m["id"], "done", True)
-    assert not any(c.already_shipped for c in _calls(db)[:-1])
-    got = client.get(f"/v1/manifests/{m['id']}", headers=dispatcher_headers).json()
-    assert got["shipping"] == {"pending": 0, "done": 1, "failed": 0, "last_error": None}
-    assert got["already_shipped"] == [{"consignment_id": b.id, "wms_ref": b.wms_ref,
-                                       "customer": b.customer, "carrier": "Own fleet",
-                                       "tracking_no": run["run_no"]}]
-    http.client.close()
+    r = collect(client, dispatcher_headers, m, [b.id])
+    assert r.status_code == 409 and r.json()["code"] == "not_back"
+    assert f"is still on {run['run_no']}" in r.json()["detail"]
+    assert [c.kind for c in _calls(db)] == ["ship", "ship"]
+
+    client.post(f"/v1/runs/{run['id']}/finish", headers=dispatcher_headers,
+                json={"message_id": str(uuid.uuid4())})
+    assert collect(client, dispatcher_headers, m, [b.id]).status_code == 200
 
 
 def test_one_left_from_yesterday_and_collected_today_is_on_todays_bay(
