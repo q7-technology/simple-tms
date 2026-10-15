@@ -640,3 +640,16 @@ def test_a_pace_that_isnt_some_minutes_is_refused(pace, capsys):
         main(["seed-demo", f"--pace={pace}"])
     assert e.value.code == 2
     assert "argument --pace: minutes, more than 0" in capsys.readouterr().err
+
+
+def test_at_8_pm_utc_the_day_is_ballarats_next_day(db, client, wms, quick):
+    # 20:00 UTC is 6 or 7 am the next day in Ballarat: the demo day is Ballarat's
+    evening = AT.replace(hour=20)
+    made = demo.seed_demo(FakeWms(wms), at=evening, **quick)
+    ballarat = evening.astimezone(demo.DEPOT_TZ).date()
+    assert ballarat == evening.date() + timedelta(days=1)
+    assert made.day == ballarat
+    assert {r["run_no"]: r["status"] for r in made.runs.values()} == {
+        "R-0001": "done", "R-0002": "departed", "R-0003": "planned", "R-0004": "planned"}
+    assert demo.refs_for(evening)[0].startswith(f"DEMO-{ballarat:%y%m%d}-")
+    assert demo.summary(made)[0] == f"demo day for {ballarat:%a %d %b %Y}, Ballarat"
