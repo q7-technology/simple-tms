@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api/client";
 import type { Carrier, Page } from "../api/types";
 import { pickupClock } from "../lib/carriers";
@@ -80,6 +80,8 @@ export function YourCarriers({ say, onChanged }: { say: Say; onChanged: () => Pr
   // "new", a carrier's id being changed, or nothing open
   const [open, setOpen] = useState<"new" | number | null>(null);
   const [busy, setBusy] = useState(false);
+  // a refused Retire or Bring back, said under that carrier's row
+  const [refused, setRefused] = useState<{ id: number; text: string } | null>(null);
   const addButton = useRef<HTMLButtonElement>(null);
 
   const load = useCallback(async () => {
@@ -98,12 +100,13 @@ export function YourCarriers({ say, onChanged }: { say: Say; onChanged: () => Pr
 
   async function retire(c: Carrier) {
     if (c.active && !window.confirm(`Retire ${c.name}? It takes no new bookings. What is on its bay stays, to be collected.`)) return;
+    setRefused(null);
     setBusy(true);
     try {
       await api.post(`/v1/carriers/${c.id}/${c.active ? "deactivate" : "reactivate"}`);
       await done(c.active ? `${c.name} is retired.` : `${c.name} is back, and takes bookings.`);
     } catch (e) {
-      say({ tone: "r", text: said(e) });
+      setRefused({ id: c.id, text: said(e) });
     } finally {
       setBusy(false);
     }
@@ -129,7 +132,8 @@ export function YourCarriers({ say, onChanged }: { say: Say; onChanged: () => Pr
         <thead><tr><th>NAME</th><th>ACCOUNT</th><th>USUALLY CALLS</th><th>BOOKED</th><th>STATUS</th><th><span className="sr">Change</span></th></tr></thead>
         <tbody>
           {all.map((c) => (
-            <tr key={c.id}>
+            <Fragment key={c.id}>
+            <tr>
               <td><b>{c.name}</b></td>
               <td>{c.account ?? <span className="small">None</span>}</td>
               <td>{c.pickup_time ? pickupClock(c.pickup_time) : <span className="small">Not set</span>}</td>
@@ -139,8 +143,12 @@ export function YourCarriers({ say, onChanged }: { say: Say; onChanged: () => Pr
                 <button type="button" className="btn sm" aria-label={`Change ${c.name}`} aria-expanded={open === c.id}
                         onClick={() => setOpen(open === c.id ? null : c.id)}>Change</button>{" "}
                 <button type="button" className="btn sm" disabled={busy} aria-label={`${c.active ? "Retire" : "Bring back"} ${c.name}`}
+                        aria-describedby={refused?.id === c.id ? `carrier-${c.id}-err` : undefined}
                         onClick={() => void retire(c)}>{c.active ? "Retire" : "Bring back"}</button></td>
-            </tr>))}
+            </tr>
+            {refused?.id === c.id && (
+              <tr><td colSpan={6}><div id={`carrier-${c.id}-err`} className="msg r" role="alert">{refused.text}</div></td></tr>)}
+            </Fragment>))}
           {carriers?.length === 0 && <tr><td colSpan={6} className="small">No carriers yet. Add the ones you use with Add a carrier.</td></tr>}
         </tbody>
       </table></div>

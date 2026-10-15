@@ -104,9 +104,12 @@ function OneField({ title, label, button, hint, initial = "", numeric, check, se
 
 /** A fleet manager's controls for one driver. */
 function DriverAside({ d, onChanged }: { d: Driver; onChanged: (text: string) => Promise<void> }) {
-  const [error, setError] = useState<string | null>(null);
+  // a refusal, said beside the button that was pressed: unlock, deactivate or reactivate
+  const [error, setError] = useState<{ at: string; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const who = `${d.name} (${d.code})`;
+  const errorAt = (at: string) => error?.at === at ? error.text : null;
+  const errId = `driver-${d.code}-err`;
 
   async function act(path: string, done: string, ask?: string) {
     if (ask && !window.confirm(ask)) return;
@@ -116,7 +119,7 @@ function DriverAside({ d, onChanged }: { d: Driver; onChanged: (text: string) =>
       await api.post(`/v1/drivers/${d.code}/${path}`);
       await onChanged(done);
     } catch (e) {
-      setError(said(e));
+      setError({ at: path, text: said(e) });
     } finally {
       setBusy(false);
     }
@@ -132,11 +135,12 @@ function DriverAside({ d, onChanged }: { d: Driver; onChanged: (text: string) =>
           <span className={`pill p-${pill.tone}`}>{pill.text}</span></div>
         <div className="small">Signs in as <b>{d.code}</b></div>
       </div>
-      {error && <div className="msg r" role="alert">{error}</div>}
       {d.locked && (
         <div className="msg a" style={{ alignItems: "center", flexWrap: "wrap" }}>
           <span style={{ flex: 1 }}>Locked after {d.failed_attempts ?? 5} wrong PINs. Unlock keeps their PIN; a new PIN unlocks them too.</span>
-          <button type="button" className="btn sm" disabled={busy} onClick={() => void act("unlock", `${d.name} is unlocked.`)}>Unlock</button>
+          <button type="button" className="btn sm" disabled={busy} aria-describedby={errorAt("unlock") ? errId : undefined}
+                  onClick={() => void act("unlock", `${d.name} is unlocked.`)}>Unlock</button>
+          {errorAt("unlock") && <div id={errId} className="msg r" role="alert" style={{ flexBasis: "100%" }}>{errorAt("unlock")}</div>}
         </div>
       )}
       <OneField title="Name" label="Name" button="Save name" initial={d.name} check={(v) => nameProblem(v, 120)}
@@ -146,10 +150,13 @@ function DriverAside({ d, onChanged }: { d: Driver; onChanged: (text: string) =>
                 send={async (v) => { await api.patch(`/v1/drivers/${d.code}`, { pin: v }); await onChanged(`${d.name} has a new PIN${d.locked ? ", and is unlocked" : ""}.`); }} />
       <div className="acts">
         {d.active
-          ? <button type="button" className="btn sm" disabled={busy}
+          ? <button type="button" className="btn sm" disabled={busy} aria-describedby={errorAt("deactivate") ? errId : undefined}
                     onClick={() => void act("deactivate", `${who} is deactivated.`,
                                             `Deactivate ${who}? They can't sign in until they are reactivated. Their runs and deliveries stay theirs.`)}>Deactivate</button>
-          : <button type="button" className="btn sm" disabled={busy} onClick={() => void act("reactivate", `${who} is reactivated.`)}>Reactivate</button>}
+          : <button type="button" className="btn sm" disabled={busy} aria-describedby={errorAt("reactivate") ? errId : undefined}
+                    onClick={() => void act("reactivate", `${who} is reactivated.`)}>Reactivate</button>}
+        {(errorAt("deactivate") ?? errorAt("reactivate")) &&
+          <div id={errId} className="msg r" role="alert" style={{ flexBasis: "100%" }}>{errorAt("deactivate") ?? errorAt("reactivate")}</div>}
       </div>
     </aside>
   );

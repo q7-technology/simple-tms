@@ -103,7 +103,10 @@ describe("Fleet: drivers", () => {
 
     await user.click(within(aside).getByRole("button", { name: "Deactivate" }));
     expect(confirm).toHaveBeenCalledWith("Deactivate Kim (kim)? They can't sign in until they are reactivated. Their runs and deliveries stay theirs.");
-    expect(await within(aside).findByRole("alert")).toHaveTextContent("Kim (kim) is on R-0001 (on the road now). Deactivate them once that run is finished.");
+    const refused = "Kim (kim) is on R-0001 (on the road now). Deactivate them once that run is finished.";
+    const off = within(aside).getByRole("button", { name: "Deactivate" });
+    expect(await within(off.closest(".acts") as HTMLElement).findByRole("alert")).toHaveTextContent(refused);
+    expect(off).toHaveAccessibleDescription(refused);
     confirm.mockRestore();
   });
 });

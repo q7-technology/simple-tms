@@ -121,4 +121,19 @@ describe("Carriers: your carriers", () => {
     expect(calls.filter((c) => c.method === "POST").map((c) => c.url)).toEqual(["/v1/carriers/1/deactivate", "/v1/carriers/3/reactivate"]);
     confirm.mockRestore();
   });
+
+  it("says beside a carrier why it couldn't be retired", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    office({ "POST /v1/carriers/1/deactivate": () => json(404, { detail: "no carrier 1" }) });
+    renderApp("/carriers");
+    const user = userEvent.setup();
+    const list = await yours();
+    const retire = await within(list).findByRole("button", { name: `Retire ${RIDGELINE}` });
+    await user.click(retire);
+    const row = retire.closest("tr")!;
+    const said = row.nextElementSibling as HTMLElement;
+    expect(await within(said).findByRole("alert")).toHaveTextContent("no carrier 1");
+    expect(retire).toHaveAccessibleDescription(/no carrier 1/);
+    confirm.mockRestore();
+  });
 });

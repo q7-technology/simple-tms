@@ -137,8 +137,11 @@ describe("Fleet: changing a vehicle", () => {
     let { user, aside } = await open("TMS041");
     await user.click(within(aside).getByRole("button", { name: "Deactivate" }));
     expect(confirm).toHaveBeenCalledWith("Deactivate TMS041? It can't take a run until it is reactivated. Its checks and history stay.");
-    expect(await within(aside).findByRole("alert")).toHaveTextContent(
-      "TMS041 is on R-0001 (planned for 16 Oct 2026). Give that run another truck, or cancel it, first.");
+    const refused = "TMS041 is on R-0001 (planned for 16 Oct 2026). Give that run another truck, or cancel it, first.";
+    // beside the button, not at the top of the record
+    const button = within(aside).getByRole("button", { name: "Deactivate" });
+    expect(await within(button.closest(".acts") as HTMLElement).findByRole("alert")).toHaveTextContent(refused);
+    expect(button).toHaveAccessibleDescription(refused);
 
     ({ user, aside } = await open("TMS018"));
     await user.click(within(aside).getByRole("button", { name: "Deactivate" }));

@@ -94,6 +94,8 @@ function VehicleAside({ v, vehicles, driverName, onChanged }: {
   const [fixNote, setFixNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // a refused Deactivate or Reactivate, said beside its button
+  const [activeError, setActiveError] = useState<string | null>(null);
   // bumped after each record: Mark fixed leaves the check id it shows the
   // same, and a record can leave the truck's dates as they were
   const [recorded, setRecorded] = useState(0);
@@ -103,6 +105,7 @@ function VehicleAside({ v, vehicles, driverName, onChanged }: {
     let live = true;
     setCheck(null);
     setError(null);
+    setActiveError(null);
     if (checkId !== null) {
       api.get<PrestartDetail>(`/v1/prestarts/${checkId}`).then((c) => live && setCheck(c)).catch((e) => live && setError(said(e)));
     }
@@ -127,14 +130,14 @@ function VehicleAside({ v, vehicles, driverName, onChanged }: {
   async function switchActive() {
     const deactivating = v.active;
     if (deactivating && !window.confirm(`Deactivate ${v.rego}? It can't take a run until it is reactivated. Its checks and history stay.`)) return;
-    setError(null);
+    setActiveError(null);
     setBusy(true);
     try {
       await api.post(`/v1/vehicles/${v.rego}/${deactivating ? "deactivate" : "reactivate"}`);
       await onChanged({ tone: "g", text: deactivating ? `${v.rego} is deactivated.` : `${v.rego} is reactivated, and can take a run.` });
     } catch (e) {
       // on a run not finished: the API names each run
-      setError(said(e));
+      setActiveError(said(e));
     } finally {
       setBusy(false);
     }
@@ -220,7 +223,9 @@ function VehicleAside({ v, vehicles, driverName, onChanged }: {
           <div className="small">{vehicleLine(v)}</div>
           <div className="acts">
             <button type="button" className="btn sm" aria-expanded={changing} onClick={() => setChanging((c) => !c)}>Change type, limits or service</button>
-            <button type="button" className="btn sm" disabled={busy} onClick={() => void switchActive()}>{v.active ? "Deactivate" : "Reactivate"}</button>
+            <button type="button" className="btn sm" disabled={busy} aria-describedby={activeError ? "vehicle-active-err" : undefined}
+                    onClick={() => void switchActive()}>{v.active ? "Deactivate" : "Reactivate"}</button>
+            {activeError && <div id="vehicle-active-err" className="msg r" role="alert" style={{ flexBasis: "100%" }}>{activeError}</div>}
           </div>
           {changing && (
             <VehicleForm vehicle={v} vehicles={vehicles} onCancel={() => setChanging(false)}
