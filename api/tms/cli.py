@@ -94,14 +94,16 @@ def cmd_seed_demo(args) -> int:
               f"road drives for about {args.pace * 2.5:g} min")
         made = demo.seed_demo(wms, pace_minutes=args.pace, wait_seconds=args.wait,
                               progress=progress)
-    except Exception as e:
+    except (Exception, KeyboardInterrupt) as e:
         if isinstance(e, demo.SeedError):
             print(f"seed-demo: {e}", file=sys.stderr)
+        elif isinstance(e, KeyboardInterrupt):
+            print("seed-demo: stopped", file=sys.stderr)
         else:
             traceback.print_exc()
         if half_made := progress.half_made():
             print(half_made, file=sys.stderr)
-        return 1
+        return 130 if isinstance(e, KeyboardInterrupt) else 1
     for line in demo.summary(made):
         print(line)
     print(demo.PUBLIC)

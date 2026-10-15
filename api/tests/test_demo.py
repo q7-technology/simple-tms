@@ -524,6 +524,35 @@ def test_any_failure_partway_says_it_is_half_made(db, client, wms, quick, monkey
     assert "19, 2 of them packed): empty the Simple TMS database and pod_files" in err
 
 
+def test_ctrl_c_partway_says_it_is_half_made(db, client, wms, quick, monkeypatch, capsys):
+    class Interrupted(FakeWms):
+        def pick_and_pack(self, ref, drop, n):
+            if n == 5:
+                raise KeyboardInterrupt
+            super().pick_and_pack(ref, drop, n)
+
+    assert run_command(monkeypatch, Interrupted(wms), quick) == 130
+    err = capsys.readouterr().err
+    assert "seed-demo: stopped" in err
+    assert "19, 5 of them packed): empty the Simple TMS database and pod_files" in err
+
+
+def test_ctrl_c_while_reserving_cancels_what_it_made(db, quick):
+    wms, shelf, held, calls = stocked({"JKL012": 1000, "DEF456": 1000}, ["JKL012", "DEF456"])
+    create = wms.create
+
+    def interrupted(ref, drop, required_by, n):
+        if n == 3:
+            raise KeyboardInterrupt
+        return create(ref, drop, required_by, n)
+
+    wms.create = interrupted
+    with pytest.raises(demo.SeedError, match="stopped.\nSo it cancelled the 3 deliveries"):
+        demo.seed_demo(wms, at=AT, **quick)
+    assert held == {}
+    nothing_made_in_simple_tms(db)
+
+
 def test_a_day_refused_at_the_start_says_nothing_of_half_made(db, client, wms, quick, monkeypatch,
                                                               capsys):
     db.add(Vehicle(rego="ABC123", type="van", max_kg=1, max_m3=1, active=True))

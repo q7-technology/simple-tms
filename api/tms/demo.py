@@ -333,6 +333,8 @@ def reserve(wms: Wms, refs: list[str], today: date, progress: Progress) -> None:
                     "before it reserved. Name SKUs with stock there in --skus.")
     except SeedError as e:
         raise SeedError(f"{e}\n{undo(wms, made)}") from None
+    except KeyboardInterrupt:
+        raise SeedError(f"stopped.\n{undo(wms, made)}") from None
     except Exception as e:
         raise SeedError(f"{type(e).__name__}: {e}\n{undo(wms, made)}") from e
 
