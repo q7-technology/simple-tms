@@ -107,7 +107,19 @@ export interface Driver {
   code: string;
   name: string;
   active: boolean;
+  /** five wrong PINs lock a driver until a manager unlocks them or gives a new PIN */
+  locked?: boolean;
+  failed_attempts?: number;
+  created_at?: string;
 }
+
+/** A line of a pre-start checklist as it is sent (PUT /v1/checklists/{type}). */
+export interface ChecklistLine { label: string; critical: boolean }
+
+/** A live line (GET /v1/checklists): a line kept as it was keeps its id. */
+export interface ChecklistItem extends ChecklistLine { id: number }
+
+export type Checklists = Record<"van" | "rigid" | "ute", ChecklistItem[]>;
 
 /** A consignment as the plan shows it, on a run or in the tray. */
 export interface Card {

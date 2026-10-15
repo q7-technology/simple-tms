@@ -35,6 +35,15 @@ describe("ApiClient", () => {
 
   const refreshedWith = (i: number) => JSON.parse(calls[i].init.body as string).refresh_token;
 
+  it("puts a whole thing, as a checklist is sent", async () => {
+    client.setSession({ token: "tms_s.abc", refresh_token: "tms_r.xyz", expires_in: 900 });
+    answers.push(json(200, [{ id: 19, label: "Tail lift", critical: true }]));
+    await client.put("/v1/checklists/van", { items: [{ label: "Tail lift", critical: true }] });
+    expect(calls[0].url).toBe("/v1/checklists/van");
+    expect(calls[0].init.method).toBe("PUT");
+    expect(JSON.parse(calls[0].init.body as string)).toEqual({ items: [{ label: "Tail lift", critical: true }] });
+  });
+
   it("sends the bearer token and reads JSON", async () => {
     client.setSession({ token: "tms_s.abc", refresh_token: "tms_r.xyz", expires_in: 900 });
     answers.push(json(200, { items: [], total: 0 }));
