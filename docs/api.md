@@ -260,7 +260,8 @@ only. It comes with the first system that subscribes.
   of them.
 - `GET /v1/drivers/{code}`
 - `PATCH /v1/drivers/{code}` — `name` and/or a new `pin`. A new PIN ends the
-  driver's sessions.
+  driver's sessions (a phone on the road asks them to sign in again, and
+  keeps what it hadn't sent), and unlocks a locked driver.
 - `POST /v1/drivers/{code}/deactivate`, `/reactivate` — a deactivated driver
   can't sign in, and their sessions end. One with a run planned or on the
   road is `409 on_a_run`, as for a truck ("Kim (kim) is on R-0042 (on the

@@ -96,11 +96,15 @@ def get_driver(code: str, db: DB, who: Principal = require("fleet:read")):
 
 @router.patch("/drivers/{code}", response_model=DriverOut)
 def update_driver(code: str, body: DriverPatch, db: DB, who: Principal = require("fleet:write")):
+    """A new PIN ends the driver's sessions, and unlocks them: the lock is
+    against guessing the old one."""
     d = _get(db, code)
     if body.name is not None:
         d.name = body.name
     if body.pin is not None:
         d.pin_hash = hash_password(body.pin)
+        d.locked = False
+        d.failed_attempts = 0
     db.commit()
     return driver_out(d)
 

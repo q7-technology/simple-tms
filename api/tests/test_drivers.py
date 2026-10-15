@@ -135,6 +135,29 @@ def test_a_new_pin_ends_the_driver_sessions_signed_in_with_the_old_one(client, m
     assert client.get("/v1/auth/me", headers=bearer(new)).status_code == 200
 
 
+def test_a_new_pin_unlocks_a_locked_driver(client, manager_headers):
+    """Locked out, a driver has usually forgotten the PIN: the new one given
+    by a manager works straight away, and the count starts again."""
+    make_driver(client, manager_headers)
+    for _ in range(5):
+        client.post("/v1/auth/driver-login", json={"code": "drv-01", "pin": "0000"})
+    assert client.get("/v1/drivers/drv-01", headers=manager_headers).json()["locked"] is True
+
+    r = client.patch("/v1/drivers/drv-01", headers=manager_headers, json={"pin": "8642"})
+    assert r.status_code == 200
+    assert r.json()["locked"] is False and r.json()["failed_attempts"] == 0
+    r = client.post("/v1/auth/driver-login", json={"code": "drv-01", "pin": "8642"})
+    assert r.status_code == 200
+
+
+def test_a_new_name_leaves_a_lock_as_it_is(client, manager_headers):
+    make_driver(client, manager_headers)
+    for _ in range(5):
+        client.post("/v1/auth/driver-login", json={"code": "drv-01", "pin": "0000"})
+    r = client.patch("/v1/drivers/drv-01", headers=manager_headers, json={"name": "Alex Tran"})
+    assert r.json()["locked"] is True and r.json()["failed_attempts"] == 5
+
+
 def test_a_new_name_keeps_the_driver_signed_in(client, manager_headers):
     make_driver(client, manager_headers)
     token = client.post("/v1/auth/driver-login", json={"code": "drv-01", "pin": "2468"}).json()["token"]
