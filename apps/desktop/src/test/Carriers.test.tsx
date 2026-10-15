@@ -117,7 +117,7 @@ describe("Carriers", () => {
   it("puts only the new number in when a row that has a con note is picked and scanned", async () => {
     const { calls } = bay();
     renderApp("/carriers");
-    const box = await screen.findByRole("form", { name: "Add a con note" });
+    await screen.findByRole("form", { name: "Add a con note" });
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Con note for Hilltop Joinery" }));
     // the scanner types into the box it was focused on, and presses Enter
@@ -241,7 +241,7 @@ describe("Carriers", () => {
   });
 
   it("says plainly when nothing waits, and when there are no carriers yet", async () => {
-    stubApi((_m, url) => json(200, { items: [], total: 0 }));
+    stubApi(() => json(200, { items: [], total: 0 }));
     renderApp("/carriers");
     expect(await screen.findByText(/Nothing is waiting for a carrier/)).toBeInTheDocument();
     expect(await screen.findByText(/No carriers yet\. A fleet manager adds them/)).toBeInTheDocument();
