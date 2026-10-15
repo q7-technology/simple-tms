@@ -259,6 +259,9 @@ export function Fleet() {
   const [note, setNote] = useState<Note>(null);
   const [adding, setAdding] = useState(false);
   const [tab, setTab] = useState<Tab>("vehicles");
+  // once opened, the checklists stay drawn (hidden) while another tab is
+  // looked at, so changes not yet saved are still there on coming back
+  const [checklistsOpened, setChecklistsOpened] = useState(false);
   const tabs: [Tab, string][] = [["vehicles", "Vehicles"], ["drivers", "Drivers"],
                                  ...(manager ? [["checklists", "Pre-start checklists"] as [Tab, string]] : [])];
   const addButton = useRef<HTMLButtonElement>(null);
@@ -316,15 +319,16 @@ export function Fleet() {
       <div className="tabs" role="tablist" aria-label="Fleet">
         {tabs.map(([key, label]) => (
           <button key={key} type="button" className="tab" role="tab" id={`fleet-tab-${key}`} aria-selected={tab === key}
-                  aria-controls={`fleet-${key}`} onClick={() => { setTab(key); setNote(null); }}>{label}</button>))}
+                  aria-controls={`fleet-${key}`} onClick={() => { setTab(key); setNote(null); if (key === "checklists") setChecklistsOpened(true); }}>{label}</button>))}
       </div>
       {note && <div className={`msg ${note.tone}`} role={note.tone === "r" ? "alert" : "status"}>{note.text}</div>}
       {tab === "drivers" && (
         <div role="tabpanel" id="fleet-drivers" aria-labelledby="fleet-tab-drivers" className="tabpanel">
           <Drivers manager={manager} say={setNote} />
         </div>)}
-      {tab === "checklists" && manager && (
-        <div role="tabpanel" id="fleet-checklists" aria-labelledby="fleet-tab-checklists" className="tabpanel">
+      {(tab === "checklists" || checklistsOpened) && manager && (
+        <div role="tabpanel" id="fleet-checklists" aria-labelledby="fleet-tab-checklists" className="tabpanel"
+             hidden={tab !== "checklists"}>
           <Checklists say={setNote} />
         </div>)}
       {tab === "vehicles" && (

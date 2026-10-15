@@ -67,6 +67,20 @@ describe("Fleet: pre-start checklists", () => {
     expect(labels(van)).toEqual(VAN_LIST.map((l) => l.label));
   });
 
+  it("keeps changes not yet saved while another tab of Fleet is looked at", async () => {
+    const { calls } = fleetDepot();
+    renderApp("/fleet");
+    const { user, list } = await checklists();
+    await user.click(within(list).getByRole("button", { name: "Take out Damage" }));
+    await user.click(screen.getByRole("tab", { name: "Vehicles" }));
+    expect(screen.queryByRole("region", { name: "Van checklist" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Pre-start checklists" }));
+    const panel = screen.getByRole("tabpanel", { name: "Pre-start checklists" });
+    expect(labels(within(panel).getByRole("region", { name: "Van checklist" }))).toHaveLength(5);
+    expect(within(panel).getByRole("button", { name: /^Van/ })).toHaveTextContent("not saved");
+    expect(calls.filter((c) => c.url === "/v1/checklists")).toHaveLength(1);
+  });
+
   it("says beside a line what is wrong with it, and sends nothing", async () => {
     const { calls } = fleetDepot();
     renderApp("/fleet");
