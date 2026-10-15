@@ -81,8 +81,9 @@ def cmd_seed_demo(args) -> int:
         demo.check_empty()
         wms = demo.Wms(settings.wms_url, settings.wms_api_key, warehouse=args.warehouse,
                        operator=args.operator, skus=skus)
-        print(f"packing {len(demo.ALL)} deliveries in Simple WMS at {settings.wms_url}, "
-              f"then the day; the run on the road drives for about {args.pace * 2.5:g} min")
+        print(f"creating {len(demo.ALL)} deliveries in Simple WMS at {settings.wms_url}, and "
+              "packing them once the stock for all is reserved, then the day; the run on the "
+              f"road drives for about {args.pace * 2.5:g} min")
         made = demo.seed_demo(wms, pace_minutes=args.pace, wait_seconds=args.wait)
     except demo.SeedError as e:
         print(f"seed-demo: {e}", file=sys.stderr)

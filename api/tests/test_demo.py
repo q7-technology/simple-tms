@@ -52,7 +52,7 @@ def wms_over(handler) -> demo.Wms:
                     client=httpx.Client(transport=httpx.MockTransport(handler)))
 
 
-def test_a_delivery_is_created_picked_and_packed_carton_by_carton():
+def test_a_delivery_is_created_then_picked_and_packed_carton_by_carton():
     calls = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -70,7 +70,10 @@ def test_a_delivery_is_created_picked_and_packed_carton_by_carton():
         return httpx.Response(202, json={"status": "accepted"})
 
     drop = demo.ROAD[0]   # two cartons: a small carton and a satchel
-    wms_over(handler).pack("DEMO-261015-123000-01", drop, AT.date(), 0)
+    wms = wms_over(handler)
+    assert wms.create("DEMO-261015-123000-01", drop, AT.date(), 0) == []
+    assert len(calls) == 1
+    wms.pick_and_pack("DEMO-261015-123000-01", drop, 0)
 
     assert [(m, p) for m, p, _, _ in calls] == [
         ("POST", "/v1/deliveries"), ("GET", "/v1/tasks"), ("POST", "/v1/tasks/41/start"),
@@ -94,13 +97,80 @@ def test_a_delivery_is_created_picked_and_packed_carton_by_carton():
                                      "qty": "3", "uom": "EA"}]
 
 
-def test_a_delivery_simple_wms_cant_fill_stops_the_seed():
-    def handler(request):
-        return httpx.Response(202, json={"allocation": [
-            {"delivery_line": 10, "sku": "JKL012", "short": "2"}]})
+def stocked(stock: dict[str, int], skus: list[str]):
+    """A Simple WMS with this much on the shelf: creating a delivery reserves
+    what there is and says what is short, as its allocation does; cancelling
+    puts the reservation back; an unknown SKU is a 422 and nothing made."""
+    shelf, held, calls = dict(stock), {}, []
 
-    with pytest.raises(demo.SeedError, match=r"JKL012 \(2 short\).*--skus"):
-        wms_over(handler).pack("DEMO-261015-123000-01", demo.TRAY[1], AT.date(), 0)
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content) if request.content else None
+        calls.append((request.method, request.url.path))
+        if request.url.path == "/v1/deliveries":
+            for i, line in enumerate(body["lines"]):
+                if line["sku"] not in shelf:
+                    return httpx.Response(422, json={"errors": [
+                        {"field": f"lines.{i}.sku", "message": f"unknown sku {line['sku']}"}]})
+            rows, held[body["external_ref"]] = [], []
+            for line in body["lines"]:
+                take = min(line["qty"], shelf[line["sku"]])
+                shelf[line["sku"]] -= take
+                held[body["external_ref"]].append((line["sku"], take))
+                rows.append({"delivery_line": line["delivery_line"], "sku": line["sku"],
+                             "qty_ordered": str(line["qty"]), "qty_allocated": str(take),
+                             "uom": line["uom"], "short": str(line["qty"] - take)})
+            return httpx.Response(202, json={"status": "accepted", "allocation": rows})
+        if request.url.path.endswith("/cancel"):
+            for sku, take in held.pop(request.url.path.split("/")[3]):
+                shelf[sku] += take
+            return httpx.Response(202, json={"status": "accepted"})
+        return httpx.Response(500, json={"detail": f"not in this test: {request.url.path}"})
+
+    wms = demo.Wms("http://wms.test", "wms_k.secret", warehouse="BAL-WH01", operator="op-017",
+                   skus=[(sku, "EA") for sku in skus],
+                   client=httpx.Client(transport=httpx.MockTransport(handler)))
+    return wms, shelf, held, calls
+
+
+def nothing_made_in_simple_tms(db):
+    from tms.models import User
+
+    assert db.execute(select(func.count()).select_from(User)).scalar_one() == 0
+    assert db.execute(select(func.count()).select_from(Vehicle)).scalar_one() == 0
+
+
+def test_a_later_delivery_short_stops_the_seed_before_anything_is_picked(db, quick):
+    stock = {"JKL012": 1000, "DEF456": 12}
+    wms, shelf, held, calls = stocked(stock, ["JKL012", "DEF456"])
+
+    with pytest.raises(demo.SeedError) as e:
+        demo.seed_demo(wms, at=AT, **quick)
+
+    created = [p for m, p in calls if p == "/v1/deliveries"]
+    cancelled = [p for m, p in calls if p.endswith("/cancel")]
+    assert len(created) > 3                      # a later one was short
+    assert len(cancelled) == len(created)        # every one made is cancelled
+    assert not [p for m, p in calls if p.startswith("/v1/tasks")]   # nothing picked
+    assert held == {} and shelf == stock         # nothing left reserved
+    message = str(e.value)
+    assert "DEF456 is " in message and " short" in message and "--skus" in message
+    assert f"cancelled the {len(created)} deliveries it made" in message
+    nothing_made_in_simple_tms(db)
+
+
+def test_an_unknown_sku_stops_the_seed_and_cancels_what_it_made(db, quick):
+    # the fourth delivery is the first with the first SKU
+    wms, shelf, held, calls = stocked({"JKL012": 1000, "DEF456": 1000, "ABC123": 1000},
+                                      ["NOPE-1", "JKL012", "DEF456", "ABC123"])
+
+    with pytest.raises(demo.SeedError, match="unknown sku NOPE-1.*--skus") as e:
+        demo.seed_demo(wms, at=AT, **quick)
+
+    assert len([p for m, p in calls if p == "/v1/deliveries"]) == 4
+    assert len([p for m, p in calls if p.endswith("/cancel")]) == 3
+    assert held == {}
+    assert "cancelled the 3 deliveries it made" in str(e.value)
+    nothing_made_in_simple_tms(db)
 
 
 def test_simple_wms_refusing_says_what_it_said():
@@ -108,7 +178,7 @@ def test_simple_wms_refusing_says_what_it_said():
         return httpx.Response(403, json={"detail": "you do not have the tasks:write scope"})
 
     with pytest.raises(demo.SeedError, match="403.*tasks:write"):
-        wms_over(handler).pack("DEMO-261015-123000-01", demo.TRAY[1], AT.date(), 0)
+        wms_over(handler).create("DEMO-261015-123000-01", demo.TRAY[1], AT.date(), 0)
 
 
 def test_no_simple_wms_set_up_is_said_plainly():
@@ -122,10 +192,20 @@ class FakeWms:
     """Packs as Simple WMS would, then sends delivery.packed, signed, as its
     worker does; and answers Simple TMS's read of the delivery (the wms fixture)."""
 
-    def __init__(self, wms):
-        self.wms, self.client, self.packed = wms, fresh_client(), []
+    warehouse = "BAL-WH01"
 
-    def pack(self, ref, drop, required_by, n):
+    def __init__(self, wms):
+        self.wms, self.client, self.created, self.packed = wms, fresh_client(), {}, []
+
+    def create(self, ref, drop, required_by, n):
+        self.created[ref] = required_by
+        return []
+
+    def cancel(self, ref):
+        raise AssertionError(f"{ref} cancelled")
+
+    def pick_and_pack(self, ref, drop, n):
+        required_by = self.created[ref]
         self.packed.append(ref)
         self.wms.deliveries[ref] = {
             "wms_id": str(n), "external_ref": ref, "owner": "DEFAULT", "warehouse": "BAL-WH01",
@@ -261,7 +341,7 @@ def test_a_database_with_anything_in_it_is_refused(db, client, wms, quick):
     fake = FakeWms(wms)
     with pytest.raises(demo.SeedError, match="already here: vehicles"):
         demo.seed_demo(fake, at=AT, **quick)
-    assert fake.packed == []
+    assert fake.created == {} and fake.packed == []
 
 
 def test_a_second_demo_day_is_refused(db, client, wms, quick):
@@ -273,7 +353,12 @@ def test_a_second_demo_day_is_refused(db, client, wms, quick):
 
 def test_freight_that_never_arrives_is_said_plainly(db, client, wms, quick):
     class Silent:
-        def pack(self, *args):
+        warehouse = "BAL-WH01"
+
+        def create(self, *args):
+            return []
+
+        def pick_and_pack(self, *args):
             pass
 
     with pytest.raises(demo.SeedError, match="Simple WMS packed 19 deliveries but 0 reached"):
@@ -317,3 +402,4 @@ def test_the_command_refuses_a_database_in_use(db, admin, capsys):
     db.commit()
     assert main(["seed-demo"]) == 1
     assert "seed-demo: already here: vehicles" in capsys.readouterr().err
+

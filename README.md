@@ -168,7 +168,10 @@ given).
 
 `--skus` names Simple WMS SKUs with stock in `BAL-WH01` (`--warehouse`),
 picked and packed by `op-017` (`--operator`); the defaults suit a Simple WMS
-filled with `wms seed-demo`. It refuses a database with any trucks, drivers,
+filled with `wms seed-demo`. It creates all 19 deliveries before picking any,
+which reserves their stock: if a SKU is short or unknown, it cancels each one
+it made and stops, naming the SKU, with nothing picked and nothing made in
+Simple TMS. It refuses a database with any trucks, drivers,
 carriers, runs or consignments in it. It makes the desk users `dee`
 (dispatcher) and `sam` (manager) with the password `demo-password-1`; the
 drivers `tom`, `kim`, `ana` and `raj` sign in with PIN `2468`. It prints what

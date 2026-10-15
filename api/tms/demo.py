@@ -10,7 +10,9 @@ two desk users, which only the command line makes (as `tms create-user` does).
 The freight is real Simple WMS freight: each delivery is created, picked and
 packed through Simple WMS's API with the key in TMS_WMS_API_KEY, and becomes
 a consignment when Simple WMS sends its signed `delivery.packed`, as in
-production. Times are when it runs: the API takes nothing back-dated, so the
+production. All 19 are created first, which reserves their stock; if any is
+short, or names a SKU Simple WMS doesn't know, each one made is cancelled
+and the seed stops, before anything is picked or Simple TMS is touched. Times are when it runs: the API takes nothing back-dated, so the
 run on the road drives for a few minutes while the seed waits.
 
 Every business, name, number and picture is invented. The carriers say
@@ -20,6 +22,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from urllib.parse import quote
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -169,9 +172,9 @@ def iso(t: datetime) -> str:
 
 
 class Wms:
-    """Simple WMS through its API: a delivery created, picked and packed, as
-    the scanner would. Simple WMS then sends `delivery.packed` to its
-    subscribers, Simple TMS among them."""
+    """Simple WMS through its API: a delivery created (which reserves its
+    stock), then picked and packed as the scanner would, or cancelled. Simple
+    WMS then sends `delivery.packed` to its subscribers, Simple TMS among them."""
 
     def __init__(self, url: str, key: str, *, warehouse: str, operator: str,
                  skus: list[tuple[str, str]], client: httpx.Client | None = None):
@@ -187,6 +190,13 @@ class Wms:
             r = self.http.request(method, f"{self.url}/v1{path}", headers=self.headers, **kw)
         except httpx.HTTPError as e:
             raise SeedError(f"Simple WMS at {self.url} didn't answer: {e}") from None
+        if r.status_code == 422 and path == "/deliveries":
+            try:
+                said = "; ".join(e["message"] for e in r.json()["errors"])
+            except (ValueError, KeyError, TypeError):
+                said = r.text
+            raise SeedError(f"Simple WMS refused {kw['json']['external_ref']}: {said}. "
+                            f"Name SKUs it has, with stock at {self.warehouse}, in --skus.")
         if r.status_code >= 300:
             raise SeedError(f"Simple WMS: {method} {path} -> {r.status_code}: {r.text}")
         return r.json() if r.content else {}
@@ -194,26 +204,35 @@ class Wms:
     def _post(self, path: str, body: dict) -> dict:
         return self._call("POST", path, json={"message_id": str(uuid.uuid4()), **body})
 
-    def pack(self, ref: str, drop: Drop, required_by: date, n: int) -> None:
-        """One delivery with a line per carton, picked in full and packed a
-        carton per line."""
+    def lines(self, drop: Drop, n: int) -> list[dict]:
+        """A line per carton, the SKUs taken in turn."""
         lines = []
         for i, _ in enumerate(drop.cartons, start=1):
             sku, uom = self.skus[(n + i) % len(self.skus)]
             lines.append({"delivery_line": 10 * i, "sku": sku, "batch": None,
                           "qty": 1 + (n + i) % 3, "uom": uom})
+        return lines
+
+    def create(self, ref: str, drop: Drop, required_by: date, n: int) -> list[dict]:
+        """Create the delivery, which reserves its stock. Returns the lines
+        Simple WMS couldn't fill in full (each with its `sku` and `short`)."""
         reply = self._post("/deliveries", {
             "external_ref": ref, "warehouse": self.warehouse, "owner": "DEFAULT",
             "pick_mode": "single", "priority": "normal", "required_by": required_by.isoformat(),
             "ship_to": {"name": drop.customer, "address": drop.address, "suburb": drop.suburb,
                         "state": "VIC", "postcode": drop.postcode, "country": "AU",
                         "contact": drop.contact, "phone": f"03 5550 {1000 + n:04d}"},
-            "carrier_hint": None, "allow_short": False, "lines": lines})
-        short = [a for a in reply.get("allocation", []) if float(a.get("short") or 0) > 0]
-        if short:
-            names = ", ".join(f"{a['sku']} ({a['short']} short)" for a in short)
-            raise SeedError(f"Simple WMS hasn't the stock for {ref} at {self.warehouse}: {names}. "
-                            "Name SKUs with stock there in --skus.")
+            "carrier_hint": None, "allow_short": False, "lines": self.lines(drop, n)})
+        return [a for a in reply.get("allocation", []) if float(a.get("short") or 0) > 0]
+
+    def cancel(self, ref: str) -> None:
+        """Cancel, never delete: Simple WMS puts the reservation back."""
+        self._post(f"/deliveries/{quote(ref, safe='')}/cancel",
+                   {"operator": self.operator, "reason": "demo day stopped before picking"})
+
+    def pick_and_pack(self, ref: str, drop: Drop, n: int) -> None:
+        """Pick the delivery in full and pack it, a carton per line."""
+        lines = self.lines(drop, n)
         tasks = self._call("GET", "/tasks", params={"warehouse": self.warehouse,
                                                     "source_ref": ref, "type": "pick"})["items"]
         if not tasks:
@@ -229,12 +248,53 @@ class Wms:
             picked.setdefault(line["source_line"], []).append(
                 {"delivery_line": line["source_line"], "sku": line["sku"], "batch": line["batch"],
                  "qty": line["expected_qty"], "uom": line["uom"]})
-        self._post(f"/deliveries/{ref}/pack", {
+        self._post(f"/deliveries/{quote(ref, safe='')}/pack", {
             "warehouse": self.warehouse, "packed_by": self.operator, "complete": True,
             "packages": [{"package_no": i, "type": kind, "weight_kg": kg, "length_cm": dims[0],
                           "width_cm": dims[1], "height_cm": dims[2],
                           "lines": picked[line["delivery_line"]]}
                          for i, ((kind, kg, dims), line) in enumerate(zip(drop.cartons, lines), 1)]})
+
+
+def reserve(wms: Wms, refs: list[str], today: date) -> None:
+    """Create every delivery in Simple WMS before picking any, so the stock
+    for the whole day is reserved, or none of it: on a short line or an
+    unknown SKU, each delivery made is cancelled and the seed stops."""
+    tomorrow = today + timedelta(days=1)
+    made: list[str] = []
+    try:
+        for n, (ref, drop) in enumerate(zip(refs, ALL)):
+            short = wms.create(ref, drop, tomorrow if drop in TRAY else today, n)
+            made.append(ref)
+            if short:
+                names = ", ".join(f"{a['sku']} is {a['short']} short" for a in short)
+                raise SeedError(
+                    f"Simple WMS hasn't the stock for the demo day at {wms.warehouse}: {names} "
+                    f"on {ref}, delivery {n + 1} of {len(refs)}, counting what the deliveries "
+                    "before it reserved. Name SKUs with stock there in --skus.")
+    except SeedError as e:
+        raise SeedError(f"{e}\n{undo(wms, made)}") from None
+    except Exception as e:
+        raise SeedError(f"{type(e).__name__}: {e}\n{undo(wms, made)}") from e
+
+
+def undo(wms: Wms, made: list[str]) -> str:
+    """Cancel each delivery made, and say so."""
+    if not made:
+        return "Nothing was made in Simple WMS or Simple TMS."
+    left = []
+    for ref in reversed(made):
+        try:
+            wms.cancel(ref)
+        except Exception as e:  # noqa: BLE001: say which, and go on with the rest
+            left.append(f"{ref} ({e})")
+    if left:
+        return (f"Couldn't cancel {len(left)} of the {len(made)} deliveries it made in Simple WMS, "
+                f"so their stock is still reserved: cancel them there: {'; '.join(reversed(left))}. "
+                "Nothing was made in Simple TMS.")
+    return (f"So it cancelled the {len(made)} deliveries it made in Simple WMS "
+            f"({made[0]}{f' to {made[-1]}' if len(made) > 1 else ''}), and nothing is reserved "
+            "or picked. Nothing was made in Simple TMS.")
 
 
 @dataclass
@@ -304,10 +364,10 @@ class Seeder:
     # --- the freight, from Simple WMS ----------------------------------------
 
     def freight(self, refs: list[str]) -> dict[str, int]:
-        """Pack each delivery in Simple WMS, then wait for its consignment."""
-        tomorrow = self.today + timedelta(days=1)
+        """Pick and pack each delivery made in Simple WMS, then wait for its
+        consignment."""
         for n, (ref, drop) in enumerate(zip(refs, ALL)):
-            self.wms.pack(ref, drop, tomorrow if drop in TRAY else self.today, n)
+            self.wms.pick_and_pack(ref, drop, n)
         h = self.desk("dee")
         prefix = refs[0].rsplit("-", 1)[0]
         deadline = time.monotonic() + self.wait
@@ -536,12 +596,15 @@ def seed_demo(wms: Wms, *, at: datetime | None = None, sleep: Callable[[float], 
 
     check_empty()
     at = at or now()
+    today, refs = at.astimezone(DEPOT_TZ).date(), refs_for(at)
+    # the stock for the whole day, before anything is picked or made here
+    reserve(wms, refs, today)
     make_users()
     with TestClient(app) as client:
-        seeder = Seeder(client, wms, today=at.astimezone(DEPOT_TZ).date(), sleep=sleep,
+        seeder = Seeder(client, wms, today=today, sleep=sleep,
                         pace_minutes=pace_minutes, wait_seconds=wait_seconds,
                         position_gap=position_gap)
-        return seeder.run(refs_for(at))
+        return seeder.run(refs)
 
 
 def summary(made: Made) -> list[str]:
