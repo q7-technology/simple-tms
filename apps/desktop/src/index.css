@@ -233,8 +233,9 @@
   .tabs { display: flex; flex-wrap: wrap; gap: 6px; }
   .tab { height: 40px; padding: 0 14px; border-radius: 999px; cursor: pointer; font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; border: 1px solid var(--color-line); background: #fff; color: var(--color-ink); }
   .tab i { font-style: normal; min-width: 20px; padding: 1px 6px; border-radius: 999px; font-size: 12px; font-weight: 800; background: var(--color-tint); color: var(--color-green-dark); text-align: center; }
-  .tab[aria-selected="true"] { background: var(--color-green); border-color: var(--color-green); color: #fff; }
-  .tab[aria-selected="true"] i { background: rgba(255, 255, 255, 0.22); color: #fff; }
+  /* a tab of a tablist, or a button standing for one (the checklist's vehicle type) */
+  .tab[aria-selected="true"], .tab[aria-pressed="true"] { background: var(--color-green); border-color: var(--color-green); color: #fff; }
+  .tab[aria-selected="true"] i, .tab[aria-pressed="true"] i { background: rgba(255, 255, 255, 0.22); color: #fff; }
   .tab i.r { background: var(--color-red-bg); color: var(--color-red-ink); }
   .tab i.a { background: var(--color-amber-bg); color: var(--color-amber-ink); }
   .tl { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
