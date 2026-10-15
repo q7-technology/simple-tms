@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useOutletContext } from "react-router-dom";
+import { Checklists } from "../admin/Checklists";
 import { Drivers } from "../admin/Drivers";
 import { VehicleForm } from "../admin/VehicleForm";
 import { api, ApiError, Unreachable } from "../api/client";
@@ -258,7 +259,8 @@ export function Fleet() {
   const [note, setNote] = useState<Note>(null);
   const [adding, setAdding] = useState(false);
   const [tab, setTab] = useState<Tab>("vehicles");
-  const tabs: [Tab, string][] = [["vehicles", "Vehicles"], ["drivers", "Drivers"]];
+  const tabs: [Tab, string][] = [["vehicles", "Vehicles"], ["drivers", "Drivers"],
+                                 ...(manager ? [["checklists", "Pre-start checklists"] as [Tab, string]] : [])];
   const addButton = useRef<HTMLButtonElement>(null);
 
   const load = useCallback(async () => {
@@ -320,6 +322,10 @@ export function Fleet() {
       {tab === "drivers" && (
         <div role="tabpanel" id="fleet-drivers" aria-labelledby="fleet-tab-drivers" className="tabpanel">
           <Drivers manager={manager} say={setNote} />
+        </div>)}
+      {tab === "checklists" && manager && (
+        <div role="tabpanel" id="fleet-checklists" aria-labelledby="fleet-tab-checklists" className="tabpanel">
+          <Checklists say={setNote} />
         </div>)}
       {tab === "vehicles" && (
         <div role="tabpanel" id="fleet-vehicles" aria-labelledby="fleet-tab-vehicles" className="tabpanel">
