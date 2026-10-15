@@ -218,7 +218,7 @@ def _current_stop(db: Session, consignment_id: int) -> Stop | None:
 
 def refuse_if_not_back(db: Session, c: Consignment, then: str) -> None:
     """One that couldn't be delivered is on its truck until that run is
-    finished: only then is it back at the depot, and Simple WMS told so. It
+    finished: only then is it back at the depot, and Simple WMS to be told. It
     may be planned before that, but not leave."""
     out_on = db.execute(select(Run).join(Stop, Stop.run_id == Run.id).where(
         Stop.consignment_id == c.id, Stop.outcome == "failed", Run.status == "departed")

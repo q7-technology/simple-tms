@@ -596,7 +596,7 @@ stood in for by `fake-indexeddb`: `cd apps/driver && npm test`.
   driver couldn't deliver is back in the tray at once and can be planned,
   but it can't leave on another run, or go with a carrier, until the run it
   came back on is finished: only then is it off the truck, and Simple WMS
-  told. Finish the run from the office if the driver didn't.
+  to be told. Finish the run from the office if the driver didn't.
 - **All of it comes back.** A consignment is delivered whole or not at all,
   so Simple WMS is told every package came back.
 

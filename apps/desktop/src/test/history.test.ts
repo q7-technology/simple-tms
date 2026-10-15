@@ -15,7 +15,7 @@ describe("a consignment's history, in words", () => {
     expect(historyLine(row("failed", { reason: "wrong_address", by: "kim" })))
       .toEqual({ title: "Not delivered", more: "wrong address", from: "tms" });
     expect(historyLine(row("returned", { run: "R-0007", run_id: 7, by: "kim" })))
-      .toEqual({ title: "Back at the depot", more: "off R-0007 · Simple WMS told · kim", from: "tms" });
+      .toEqual({ title: "Back at the depot", more: "off R-0007 · Simple WMS to be told · kim", from: "tms" });
     expect(historyLine(row("booked", { carrier: "Valley Freight (sample)", manifest: "M-0003", by: "dee" })))
       .toEqual({ title: "Booked with Valley Freight (sample)", more: "M-0003 · dee", from: "tms" });
     expect(historyLine(row("unbooked", { carrier: "Valley Freight (sample)", by: "dee" })).title)

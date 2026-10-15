@@ -314,7 +314,7 @@ it: it comes back to the depot and waits in the tray to be planned again),
 carrier has it). The history has a row for each: `packed`, `assigned` and
 `unassigned` (with the run and who), `departed` (with the run, vehicle,
 driver and who), `delivered` and `failed` (see "The driver app"),
-`returned` (back at the depot when its run was finished, and Simple WMS told:
+`returned` (back at the depot when its run was finished, Simple WMS to be told:
 with the run and who; the status stays `failed`), `booked`
 and `unbooked` (with the carrier, the manifest and who), `con_note` (each con
 note set, with the one it replaced in `was`, the carrier and who) and
