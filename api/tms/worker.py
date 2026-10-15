@@ -70,7 +70,7 @@ def _ship_one(session: Session, http: httpx.Client, now: datetime | None) -> boo
     row = _claim(session, OutboundCall, now or clock(), _in_turn())
     if row is None:
         return False
-    answer = wms_client.ship(http, row.path, row.body)
+    answer = wms_client.ship(http, row.path, row.body, row.kind)
     # after the answer, not before: a slow call would date it in the past
     answered = now or clock()
     row.attempts += 1

@@ -107,9 +107,10 @@ class ShipAnswer:
 _ALREADY = {"already_shipped", "already_returned"}
 
 
-def ship(http: httpx.Client, path: str, body: dict) -> ShipAnswer:
-    """Make one call, a ship or a return: POST {TMS_WMS_URL}{path} with our
-    key. A `409 already_shipped` or `409 already_returned` is done too."""
+def ship(http: httpx.Client, path: str, body: dict, kind: str = "ship") -> ShipAnswer:
+    """Make one call, a ship or a return (`kind`): POST {TMS_WMS_URL}{path}
+    with our key. A `409 already_shipped` or `409 already_returned` is done
+    too."""
     settings = get_settings()
     url = settings.wms_url.rstrip("/") + path
     try:
@@ -129,5 +130,8 @@ def ship(http: httpx.Client, path: str, body: dict) -> ShipAnswer:
         log.info("%s: Simple WMS says %s; taken as done", path, code)
         return ShipAnswer(done=True, already_shipped=code == "already_shipped")
     if resp.status_code in _SHIP_REFUSALS:
-        log.error("HTTP %s on %s. %s", resp.status_code, path, _SHIP_REFUSALS[resp.status_code])
+        why = _SHIP_REFUSALS[resp.status_code]
+        if resp.status_code == 404 and kind == "return":
+            why += ", or this Simple WMS has no return endpoint yet"
+        log.error("HTTP %s on %s. %s", resp.status_code, path, why)
     return ShipAnswer(done=False, error=f"HTTP {resp.status_code}: {resp.text[:200]}")

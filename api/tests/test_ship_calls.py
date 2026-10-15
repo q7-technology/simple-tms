@@ -154,6 +154,26 @@ def test_a_key_without_the_scope_is_logged_as_an_error_and_retried(db, http, dep
     assert _call(db).status == "pending"
 
 
+def test_a_404_on_a_return_says_simple_wms_may_have_no_return_endpoint(
+        db, http, departed, caplog):
+    """An older Simple WMS answers 404 to a path it doesn't have."""
+    row = _call(db)
+    row.kind, row.path = "return", "/v1/deliveries/0080034519/return"
+    db.commit()
+    http.answers.append((404, {"detail": "Not Found"}))
+    with caplog.at_level(logging.ERROR, logger="tms.wms"):
+        worker.send_ship_calls(db, http.client, now=T0)
+    assert "no return endpoint yet" in caplog.text
+
+
+def test_a_404_on_a_ship_says_nothing_of_a_return_endpoint(db, http, departed, caplog):
+    http.answers.append((404, {"detail": "no such delivery"}))
+    with caplog.at_level(logging.ERROR, logger="tms.wms"):
+        worker.send_ship_calls(db, http.client, now=T0)
+    assert "no such delivery for that owner" in caplog.text
+    assert "return endpoint" not in caplog.text
+
+
 def test_without_simple_wms_set_up_the_calls_wait_untried(db, http, departed, monkeypatch):
     from tms.config import get_settings
     monkeypatch.setattr(get_settings(), "wms_url", "")
