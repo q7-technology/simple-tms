@@ -309,7 +309,7 @@ class Seeder:
         for n, (ref, drop) in enumerate(zip(refs, ALL)):
             self.wms.pack(ref, drop, tomorrow if drop in TRAY else self.today, n)
         h = self.desk("dee")
-        prefix = refs[0][:-2]
+        prefix = refs[0].rsplit("-", 1)[0]
         deadline = time.monotonic() + self.wait
         while True:
             items = self.call("GET", "/consignments", h, params={"q": prefix, "limit": 100})["items"]
@@ -435,7 +435,7 @@ class Seeder:
         self.fleet()
         ids = self.freight(refs)
         by_drop = {drop: ids[ref] for ref, drop in zip(refs, ALL)}
-        stamp = refs[0][3:-2]
+        stamp = refs[0].rsplit("-", 1)[0].removeprefix("DEMO-")
 
         # the day's runs, planned first thing: R-0001 to R-0004
         r1 = self.plan("TMS-033", "tom", [by_drop[d] for d in MORNING])
@@ -456,14 +456,14 @@ class Seeder:
 
         # Valley Freight called at 11
         manifests["valley"] = self.book("Valley Freight (sample)", [by_drop[d] for d in VALLEY],
-                                        f"VF-{stamp}", collect=True)
+                                        f"VF-{stamp}-", collect=True)
 
         # the ute failed its pre-start: grounded, its run waiting for another truck
         self.prestart(r4, "raj", 30988, fail="Lights")
 
         # Ridgeline's pickup at 3:30: on the bay, con notes in, manifest printed
         manifests["ridgeline"] = self.book("Ridgeline Express (sample)",
-                                           [by_drop[d] for d in RIDGELINE], f"RX-{stamp}",
+                                           [by_drop[d] for d in RIDGELINE], f"RX-{stamp}-",
                                            collect=False)
 
         # the run on the road: out, two delivered, on its way to the third
@@ -487,11 +487,16 @@ class Seeder:
                     vehicles=vehicles)
 
 
+def stamp_for(at: datetime) -> str:
+    """The depot's date and time to the second: 261015-123000."""
+    return at.astimezone(DEPOT_TZ).strftime("%y%m%d-%H%M%S")
+
+
 def refs_for(at: datetime) -> list[str]:
-    """Simple WMS delivery numbers, new each minute, so a second demo day
-    against the same Simple WMS doesn't reuse the first's."""
-    stamp = (int(at.timestamp()) // 60) % 100000
-    return [f"008{stamp:05d}{n:02d}" for n in range(1, len(ALL) + 1)]
+    """Simple WMS delivery refs, DEMO-261015-123000-01 and on: never a real
+    order's number (SAP's are digits), and new each second, so a demo day
+    after a reset, against the same Simple WMS, doesn't reuse an earlier one's."""
+    return [f"DEMO-{stamp_for(at)}-{n:02d}" for n in range(1, len(ALL) + 1)]
 
 
 def check_empty() -> None:

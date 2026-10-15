@@ -70,12 +70,12 @@ def test_a_delivery_is_created_picked_and_packed_carton_by_carton():
         return httpx.Response(202, json={"status": "accepted"})
 
     drop = demo.ROAD[0]   # two cartons: a small carton and a satchel
-    wms_over(handler).pack("0081234501", drop, AT.date(), 0)
+    wms_over(handler).pack("DEMO-261015-123000-01", drop, AT.date(), 0)
 
     assert [(m, p) for m, p, _, _ in calls] == [
         ("POST", "/v1/deliveries"), ("GET", "/v1/tasks"), ("POST", "/v1/tasks/41/start"),
         ("POST", "/v1/tasks/41/lines/1/confirm"), ("POST", "/v1/tasks/41/lines/2/confirm"),
-        ("POST", "/v1/deliveries/0081234501/pack")]
+        ("POST", "/v1/deliveries/DEMO-261015-123000-01/pack")]
     assert {auth for *_, auth in calls} == {"Bearer wms_k.secret"}
     created = calls[0][2]
     assert created["ship_to"]["name"] == "Gold Hill Pharmacy"
@@ -100,7 +100,7 @@ def test_a_delivery_simple_wms_cant_fill_stops_the_seed():
             {"delivery_line": 10, "sku": "JKL012", "short": "2"}]})
 
     with pytest.raises(demo.SeedError, match=r"JKL012 \(2 short\).*--skus"):
-        wms_over(handler).pack("0081234501", demo.TRAY[1], AT.date(), 0)
+        wms_over(handler).pack("DEMO-261015-123000-01", demo.TRAY[1], AT.date(), 0)
 
 
 def test_simple_wms_refusing_says_what_it_said():
@@ -108,7 +108,7 @@ def test_simple_wms_refusing_says_what_it_said():
         return httpx.Response(403, json={"detail": "you do not have the tasks:write scope"})
 
     with pytest.raises(demo.SeedError, match="403.*tasks:write"):
-        wms_over(handler).pack("0081234501", demo.TRAY[1], AT.date(), 0)
+        wms_over(handler).pack("DEMO-261015-123000-01", demo.TRAY[1], AT.date(), 0)
 
 
 def test_no_simple_wms_set_up_is_said_plainly():
@@ -280,11 +280,14 @@ def test_freight_that_never_arrives_is_said_plainly(db, client, wms, quick):
         demo.seed_demo(Silent(), at=AT, **{**quick, "wait_seconds": 0})
 
 
-def test_refs_are_new_each_minute():
-    one, two = demo.refs_for(AT), demo.refs_for(AT + timedelta(minutes=1))
+def test_refs_are_plainly_the_demo_and_new_each_second():
+    one = demo.refs_for(AT)
     assert len(one) == 19 and len(set(one)) == 19
-    assert all(len(r) == 10 and r.startswith("008") for r in one)
-    assert not set(one) & set(two)
+    # 01:30 UTC is 12:30 pm in Ballarat; never an SAP delivery number
+    stamp = AT.astimezone(demo.DEPOT_TZ).strftime("%y%m%d-%H%M%S")
+    assert one[0] == f"DEMO-{stamp}-01" and one[-1] == f"DEMO-{stamp}-19"
+    for later in (timedelta(seconds=1), timedelta(minutes=1), timedelta(days=1), timedelta(days=100)):
+        assert not set(one) & set(demo.refs_for(AT + later))
 
 
 # --- the command ---------------------------------------------------------------------
