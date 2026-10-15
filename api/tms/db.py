@@ -3,12 +3,12 @@ from functools import lru_cache
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from tms.config import get_settings
+from tms.config import file_settings
 
 
 @lru_cache
 def get_engine():
-    return create_engine(get_settings().database_url, pool_pre_ping=True)
+    return create_engine(file_settings().database_url, pool_pre_ping=True)
 
 
 @lru_cache

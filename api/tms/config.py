@@ -1,7 +1,6 @@
-from functools import lru_cache
-
 import re
-
+import time
+from functools import lru_cache
 from urllib.parse import urlsplit
 
 from pydantic import Field, field_validator, model_validator
@@ -29,7 +28,7 @@ class Settings(BaseSettings):
     wms_url: str = ""
     wms_api_key: str = ""
     # Shorter than the WMS worker's own 10 s wait, so it hears our answer.
-    wms_timeout_seconds: float = 5.0
+    wms_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
 
     # Platen, or any print service that takes the same job: its intake
     # address (https://<platen>/intake/jobs), a Platen key, and the printer
@@ -66,8 +65,8 @@ class Settings(BaseSettings):
     eta_minutes_per_stop: int = Field(default=20, ge=1, le=600)
 
     # The worker that sends the ship calls and print jobs.
-    worker_poll_seconds: float = 5.0
-    worker_http_timeout_seconds: float = 10.0
+    worker_poll_seconds: float = Field(default=5.0, ge=1, le=300)
+    worker_http_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
 
     @property
     def manifest_printer_or_default(self) -> str:
@@ -80,6 +79,15 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"TMS_SECRET_KEY must be at least {MIN_SECRET_KEY} random characters, not the "
                 "example; make one with: openssl rand -hex 32")
+        return value
+
+    @field_validator("wms_url", "platen_url")
+    @classmethod
+    def _an_address(cls, value: str, info) -> str:
+        value = value.strip()
+        if value and not re.match(r"^https?://[^\s/?#]+", value):
+            raise ValueError(f"TMS_{info.field_name.upper()} must be an http:// or https:// "
+                             "address, or empty")
         return value
 
     @field_validator("map_tile_url")
@@ -120,5 +128,39 @@ class Settings(BaseSettings):
 
 
 @lru_cache
-def get_settings() -> Settings:
+def file_settings() -> Settings:
+    """What .env (the environment) says, read once at start. The database's
+    address and the session key come from here and nowhere else."""
     return Settings()
+
+
+# How often the API and the worker look again for settings an admin has
+# changed on screen: each process takes a change within this many seconds,
+# without a restart.
+REFRESH_SECONDS = 5.0
+_now = time.monotonic
+_effective: Settings | None = None
+_read_at = 0.0
+
+
+def get_settings() -> Settings:
+    """The settings in force: .env's, with any an admin has given on screen
+    in their place (services/runtime_settings.py), read again at most every
+    REFRESH_SECONDS. With none given on screen it is file_settings() itself.
+    If the database can't be read, the last settings read stay in force."""
+    global _effective, _read_at
+    now = _now()
+    if _effective is None or now - _read_at >= REFRESH_SECONDS:
+        # here, not at the top: the database is reached through file_settings()
+        from tms.services import runtime_settings
+
+        _effective = runtime_settings.load(file_settings()) or _effective or file_settings()
+        _read_at = now
+    return _effective
+
+
+def forget_settings() -> None:
+    """Read them again on the next get_settings(): after a change on screen,
+    so the process that made it has it at once."""
+    global _effective
+    _effective = None

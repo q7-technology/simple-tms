@@ -50,8 +50,21 @@ def engine():
     cfg.set_main_option("sqlalchemy.url", TEST_DATABASE_URL)
     cfg.attributes["configure_logger"] = False
     command.upgrade(cfg, "head")
+    fresh_settings()
     yield engine
     engine.dispose()
+
+
+def fresh_settings():
+    """Settings read again from .env and the (empty) database, before a test
+    starts rather than in the middle of one, where it would add a query to
+    those counted. Read again only when told (forget_settings) in tests:
+    test_settings.py shows the timed re-read on its own."""
+    from tms import config
+
+    config.REFRESH_SECONDS = float("inf")
+    config.forget_settings()
+    config.get_settings()
 
 
 @pytest.fixture
@@ -67,6 +80,7 @@ def db(engine):
             # TRUNCATE is not UPDATE or DELETE, so the append-only trigger lets it by
             conn.execute(text(f"truncate {tables} restart identity cascade"))
             seed_checklists(conn)
+    fresh_settings()
 
 
 # The checklist migration 0005 gives a fresh install, put back after each

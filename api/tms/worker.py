@@ -105,6 +105,12 @@ def _ships_set_up() -> bool:
     return bool(settings.wms_url and settings.wms_api_key)
 
 
+def poll_seconds() -> float:
+    """How long to wait when there was nothing to do: read each time, so a
+    change an admin makes on screen takes without a restart."""
+    return get_settings().worker_poll_seconds
+
+
 def _printing_set_up() -> bool:
     return bool(get_settings().platen_url)
 
@@ -196,11 +202,10 @@ def run_once(session: Session, http: httpx.Client, now: datetime | None = None,
 def main() -> None:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    settings = get_settings()
     make_session = get_sessionmaker()
     with make_session() as session:
         wait_for_schema(session)
-    log.info("worker started, polling every %ss", settings.worker_poll_seconds)
+    log.info("worker started, polling every %ss", poll_seconds())
     forgot_at: float | None = None
     with httpx.Client() as http:
         while True:
@@ -218,7 +223,7 @@ def main() -> None:
                 log.exception("worker loop error")
                 done = 0
             if done == 0:
-                time.sleep(settings.worker_poll_seconds)
+                time.sleep(poll_seconds())
 
 
 if __name__ == "__main__":

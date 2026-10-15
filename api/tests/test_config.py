@@ -92,3 +92,21 @@ def test_manifests_go_to_the_run_sheet_printer_unless_told():
     assert s.manifest_printer == "" and s.manifest_printer_or_default == "office"
     s = Settings(secret_key=KEY, run_sheet_printer="office", manifest_printer="bay")
     assert s.manifest_printer_or_default == "bay"
+
+
+@pytest.mark.parametrize("field", ["wms_url", "platen_url"])
+@pytest.mark.parametrize("url", ["wms.example.com", "ftp://wms.example.com", "https://"])
+def test_an_address_that_isnt_http_refuses_to_start(field, url):
+    with pytest.raises(ValidationError, match=f"TMS_{field.upper()} must be an http:// or https:// address"):
+        Settings(secret_key=KEY, **{field: url})
+
+
+def test_an_address_is_kept_without_spaces_around_it():
+    assert Settings(secret_key=KEY, wms_url=" http://wms.test/ ").wms_url == "http://wms.test/"
+
+
+@pytest.mark.parametrize("field, value", [("worker_poll_seconds", 0), ("worker_poll_seconds", 301),
+                                          ("worker_http_timeout_seconds", 0), ("wms_timeout_seconds", 61)])
+def test_a_wait_out_of_range_refuses_to_start(field, value):
+    with pytest.raises(ValidationError, match=field):
+        Settings(secret_key=KEY, **{field: value})

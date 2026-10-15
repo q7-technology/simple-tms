@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from tms.config import get_settings
+from tms.config import file_settings
 from tms.models import Driver, User, UserSession
 from tms.services import access
 
@@ -52,7 +52,7 @@ def _unb64(text: str) -> bytes:
 
 
 def _sign(payload: str) -> str:
-    key = get_settings().secret_key.encode()
+    key = file_settings().secret_key.encode()
     return _b64(hmac.new(key, payload.encode(), hashlib.sha256).digest())
 
 
