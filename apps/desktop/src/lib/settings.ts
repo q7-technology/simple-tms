@@ -33,6 +33,10 @@ export const GROUPS: { title: string; names: string[] }[] = [
   { title: "The worker", names: ["worker_poll_seconds", "worker_http_timeout_seconds"] },
 ];
 
+/** An address and the key sent to it, a pair as the API keeps them: putting
+ * the address back to .env's puts a key given here back too. */
+export const KEY_FOR: Record<string, string> = { wms_url: "wms_api_key", platen_url: "platen_key" };
+
 /** What a setting shows in its box: its value in force, or nothing for a secret. */
 export const shown = (s: SettingRow) => (s.kind === "secret" || s.value === null ? "" : String(s.value));
 

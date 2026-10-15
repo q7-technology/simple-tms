@@ -50,8 +50,12 @@ FILE_ONLY = {
                        "Content-Security-Policy",
     "map_attribution": "it is HTML the desktop shows as it is, and belongs with the tile URL",
 }
-# an address and the key that is sent to it: a new address needs its key
-# given again with it, so a key on file is never sent somewhere it wasn't given for
+# An address and the key that is sent to it, kept as a pair: the key in force
+# was always given for the address in force. Both are .env's, or the key was
+# given here with the address or after it. So a new address needs its key
+# given again with it; putting the address back to .env's puts the key back
+# too (unless a new key is given with it); and the key alone goes back to
+# .env's only while .env's address is in force.
 KEY_FOR = {"wms_url": "wms_api_key", "platen_url": "platen_key"}
 NAMES = {"wms_url": "Simple WMS", "platen_url": "Platen"}
 MIN_WEBHOOK_SECRET, MAX_WEBHOOK_SECRET = 16, 128
@@ -120,6 +124,13 @@ def change(db: Session, changes: dict[str, object], by: str) -> None:
     db.execute(text("select pg_advisory_xact_lock(:k)"), {"k": SETTINGS_LOCK})
     rows = {r.name: r for r in db.execute(select(Setting)).scalars()}
     wanted = _stored((n, r.value) for n, r in rows.items())
+    before = dict(wanted)
+    changes = dict(changes)
+    for address, key in KEY_FOR.items():
+        # the address back to .env's: its key given here goes back with it
+        if address in changes and changes[address] is None and address in before \
+                and key not in changes and key in before:
+            changes[key] = None
     for name, value in changes.items():
         if value is None:
             wanted.pop(name, None)
@@ -131,12 +142,16 @@ def change(db: Session, changes: dict[str, object], by: str) -> None:
             errors.append({"field": name, "message": f"{MIN_WEBHOOK_SECRET} to {MAX_WEBHOOK_SECRET} "
                                                      "characters, the same as Simple WMS's"})
         wanted[name] = typed
-    current = load(base) or base
     for address, key in KEY_FOR.items():
         new = changes.get(address)
-        if new is not None and str(new).strip() != getattr(current, address) and changes.get(key) is None:
+        was = before.get(address, getattr(base, address)).strip()
+        if new is not None and str(new).strip() != was and changes.get(key) is None:
             errors.append({"field": key, "message": f"Type the {NAMES[address]} key again with a new "
                                                     "address: a key on file is only sent where it was given for"})
+        elif key in changes and changes[key] is None and \
+                wanted.get(address, getattr(base, address)).strip() != getattr(base, address):
+            errors.append({"field": key, "message": f"Reset the {NAMES[address]} address too, or give a "
+                                                    "new key: .env's key only goes to .env's address."})
     try:
         checked = Settings.model_validate({**base.model_dump(), **wanted})
     except ValidationError as e:

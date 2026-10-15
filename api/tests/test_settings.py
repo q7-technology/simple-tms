@@ -144,6 +144,66 @@ def test_a_new_address_needs_its_key_given_with_it(client, admin_headers):
     assert _patch(client, admin_headers, {"platen_url": None}).status_code == 200
 
 
+PAIRS = [("wms_url", "wms_api_key", "Simple WMS"), ("platen_url", "platen_key", "Platen")]
+
+
+def _history(client, headers):
+    return [(h["name"], h["action"]) for h in client.get("/v1/settings/history", headers=headers).json()]
+
+
+@pytest.mark.parametrize("address, key, says", PAIRS)
+def test_a_key_isnt_put_back_to_envs_while_its_address_is_one_given_here(client, admin_headers,
+                                                                        address, key, says):
+    """.env's key would go to the address given on screen: refused."""
+    env = config.file_settings()
+    assert _patch(client, admin_headers, {address: "https://elsewhere.example/v1", key: KEY}).status_code == 200
+    r = _patch(client, admin_headers, {key: None})
+    assert r.status_code == 422
+    assert r.json()["errors"] == [{"field": key, "message":
+        f"Reset the {says} address too, or give a new key: .env's key only goes to .env's address."}]
+    assert (getattr(get_settings(), address), getattr(get_settings(), key)) == ("https://elsewhere.example/v1", KEY)
+
+    # with the address in the same save, both are .env's
+    assert _patch(client, admin_headers, {address: None, key: None}).status_code == 200
+    assert (getattr(get_settings(), address), getattr(get_settings(), key)) == (
+        getattr(env, address), getattr(env, key))
+
+
+@pytest.mark.parametrize("address, key, says", PAIRS)
+def test_an_address_put_back_to_envs_takes_its_key_with_it(client, admin_headers, address, key, says):
+    """The key given here would go to .env's address: it goes back too, and
+    the record says both."""
+    env = config.file_settings()
+    assert _patch(client, admin_headers, {address: "https://elsewhere.example/v1", key: KEY}).status_code == 200
+    r = _patch(client, admin_headers, {address: None})
+    assert r.status_code == 200, r.text
+    assert (_one(r.json(), address)["on_screen"], _one(r.json(), key)["on_screen"]) == (False, False)
+    assert (getattr(get_settings(), address), getattr(get_settings(), key)) == (
+        getattr(env, address), getattr(env, key))
+    assert _history(client, admin_headers)[:2] == [(key, "reset"), (address, "reset")]
+
+
+@pytest.mark.parametrize("address, key, says", PAIRS)
+def test_a_key_given_with_envs_address_is_kept_and_put_back_freely(client, admin_headers, address, key,
+                                                                   says):
+    """A key given here while .env's address is in force was given for it."""
+    env = config.file_settings()
+    # with the address put back in the same save: the new key is for .env's address
+    assert _patch(client, admin_headers, {address: "https://elsewhere.example/v1", key: "first-key"}).status_code == 200
+    assert _patch(client, admin_headers, {address: None, key: KEY}).status_code == 200
+    assert (getattr(get_settings(), address), getattr(get_settings(), key)) == (getattr(env, address), KEY)
+    # and with .env's address in force, the key alone goes back
+    assert _patch(client, admin_headers, {key: None}).status_code == 200
+    assert getattr(get_settings(), key) == getattr(env, key)
+
+
+def test_a_key_goes_back_while_the_address_given_here_is_envs_own(client, admin_headers):
+    env = config.file_settings()
+    assert _patch(client, admin_headers, {"wms_url": env.wms_url, "wms_api_key": KEY}).status_code == 200
+    assert _patch(client, admin_headers, {"wms_api_key": None}).status_code == 200
+    assert get_settings().wms_api_key == env.wms_api_key
+
+
 def test_the_worker_takes_a_change_made_elsewhere_without_a_restart(db, monkeypatch):
     """The API saves it in another process; the worker reads it again within
     REFRESH_SECONDS, and not before (one query each time, not one a call)."""

@@ -4,7 +4,7 @@ import type { SettingChange, SettingRow } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { apiProblems, said, type Problems } from "../lib/admin";
 import { when } from "../lib/fleet";
-import { changesFor, COPY, GROUPS, shown } from "../lib/settings";
+import { changesFor, COPY, GROUPS, KEY_FOR, shown } from "../lib/settings";
 import { Drawer } from "../ui/Drawer";
 import { Field, focusFirstProblem } from "../ui/Field";
 
@@ -25,7 +25,22 @@ function Group({ title, rows, onSaved, onReset }: {
   const [problems, setProblems] = useState<Problems>({});
   const [trouble, setTrouble] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // a refused Use .env's, said beside its button
+  const [refused, setRefused] = useState<{ at: string; text: string } | null>(null);
   const form = useRef<HTMLFormElement>(null);
+
+  async function reset(s: SettingRow) {
+    setRefused(null);
+    setBusy(true);
+    try {
+      await onReset(s);
+    } catch (err) {
+      const theirs = apiProblems(err);
+      setRefused({ at: s.name, text: (theirs && (theirs[s.name] ?? Object.values(theirs)[0])) || said(err) });
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -56,6 +71,10 @@ function Group({ title, rows, onSaved, onReset }: {
       {rows.map((s) => {
         const copy = COPY[s.name] ?? { label: s.env };
         const secret = s.kind === "secret";
+        const key = rows.find((k) => k.name === KEY_FOR[s.name]);
+        const withKey = s.on_screen && key?.on_screen ? key : null;
+        const errId = `setting-${s.name}-refused`;
+        const why = refused?.at === s.name ? refused.text : null;
         return (
           <div key={s.name} className="acts" style={{ alignItems: "flex-end" }}>
             <div style={{ flex: "1 1 280px" }}>
@@ -64,11 +83,13 @@ function Group({ title, rows, onSaved, onReset }: {
                      inputMode={copy.numeric ? "decimal" : undefined} spellCheck={false}
                      placeholder={secret ? (s.is_set ? "Set: type a new one to replace it" : "Not set") : undefined}
                      onChange={(e) => setDrafts((d) => ({ ...d, [s.name]: e.target.value }))}
-                     hint={<>{copy.hint ? `${copy.hint} ` : ""}{secret ? "Never shown again. " : ""}{source(s)}</>} />
+                     hint={<>{copy.hint ? `${copy.hint} ` : ""}{secret ? "Never shown again. " : ""}{source(s)}
+                       {withKey ? ` Use .env's puts the ${COPY[withKey.name]?.label ?? withKey.env} back too.` : ""}</>} />
             </div>
             {s.on_screen && (
               <button type="button" className="btn sm" disabled={busy} aria-label={`Use .env's ${copy.label.toLowerCase()}`}
-                      onClick={() => void onReset(s)}>Use .env's</button>)}
+                      aria-describedby={why ? errId : undefined} onClick={() => void reset(s)}>Use .env's</button>)}
+            {why && <div id={errId} className="msg r" role="alert" style={{ flexBasis: "100%" }}>{why}</div>}
           </div>
         );
       })}
@@ -112,13 +133,13 @@ export function Settings() {
     await load().catch(() => undefined);
   }
 
+  /** Throws a refusal, for the group to say beside the button. */
   async function reset(s: SettingRow) {
-    try {
-      await saved(await api.patch<SettingRow[]>("/v1/settings", { [s.name]: null }));
-      setNote({ tone: "g", text: `${COPY[s.name]?.label ?? s.env} is .env's again.` });
-    } catch (e) {
-      setNote({ tone: "r", text: said(e) });
-    }
+    const label = (r: SettingRow) => COPY[r.name]?.label ?? r.env;
+    const key = all.find((k) => k.name === KEY_FOR[s.name] && k.on_screen);
+    setNote(null);
+    await saved(await api.patch<SettingRow[]>("/v1/settings", { [s.name]: null }));
+    setNote({ tone: "g", text: key ? `${label(s)} and ${label(key)} are .env's again.` : `${label(s)} is .env's again.` });
   }
 
   const all = rows ?? [];

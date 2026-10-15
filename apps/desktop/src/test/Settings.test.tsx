@@ -112,6 +112,36 @@ describe("Settings", () => {
     expect(calls.find((c) => c.method === "PATCH")!.body).toEqual({ run_sheet_printer: null });
   });
 
+  describe("an address and its key, given here", () => {
+    const here = { on_screen: true, changed_by: "leighton", changed_at: new Date().toISOString() };
+    const PAIRED = SETTINGS.map((s) => s.name === "wms_url" ? { ...s, value: "https://elsewhere.example", default: "https://wms.example.com", ...here }
+      : s.name === "wms_api_key" ? { ...s, ...here } : s);
+    const paired = (answers: Record<string, (c: Call) => Response>) => office({ "GET /v1/settings": () => json(200, PAIRED), ...answers });
+
+    it("says beside the key's button why .env's key can't go to this address", async () => {
+      const says = "Reset the Simple WMS address too, or give a new key: .env's key only goes to .env's address.";
+      paired({ "PATCH /v1/settings": () => json(422, { errors: [{ field: "wms_api_key", message: says }] }) });
+      renderApp("/settings");
+      const user = userEvent.setup();
+      const button = await screen.findByRole("button", { name: "Use .env's simple wms key" });
+      await user.click(button);
+      await waitFor(() => expect(button).toHaveAccessibleDescription(says));
+      expect(screen.getByText(says)).toHaveAttribute("role", "alert");
+      expect(screen.queryByText(/is \.env's again/)).not.toBeInTheDocument();
+    });
+
+    it("puts the key back with the address, and says so", async () => {
+      const { calls } = paired({ "PATCH /v1/settings": () => json(200, SETTINGS) });
+      renderApp("/settings");
+      const user = userEvent.setup();
+      const wms = await screen.findByRole("form", { name: "Simple WMS" });
+      expect(within(wms).getByLabelText("Simple WMS address")).toHaveAccessibleDescription(/Use \.env's puts the Simple WMS key back too\./);
+      await user.click(within(wms).getByRole("button", { name: "Use .env's simple wms address" }));
+      expect(await screen.findByText("Simple WMS address and Simple WMS key are .env's again.")).toBeInTheDocument();
+      expect(calls.find((c) => c.method === "PATCH")!.body).toEqual({ wms_url: null });
+    });
+  });
+
   it("tells anyone else it is for an admin, and asks the API nothing", async () => {
     const { calls } = office({}, MANAGER);
     renderApp("/settings");

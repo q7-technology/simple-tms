@@ -1081,7 +1081,11 @@ URL's own origin, so the map's three stay together in `.env`. (The ports,
   characters, as Simple WMS's subscriber secret is. A new `wms_url` or
   `platen_url` needs its key (`wms_api_key`, `platen_key`) given again in
   the same request (`422` on the key otherwise), so a key on file is never
-  sent to an address it wasn't given for. Answers as `GET`.
+  sent to an address it wasn't given for. For the same reason, `null` for
+  the address puts a key given here back to `.env`'s too (both are
+  recorded), unless a new key is given with it; and `null` for the key
+  alone is refused (`422` on the key) while the address in force is one
+  given here that isn't `.env`'s. Answers as `GET`.
 - `GET /v1/settings/history?limit=50` (`settings:read`) — each change, newest
   first: `[{ "id", "name", "env", "action": "set" | "reset", "value",
   "secret", "changed_by", "changed_at" }]`. A secret's `value` is always

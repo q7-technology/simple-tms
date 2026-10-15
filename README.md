@@ -102,6 +102,10 @@ printers, the Simple WMS and Platen addresses and keys, waits, how long
 positions are kept and the ETA's first guess. `.env` gives each its default
 and **Use .env's** puts one back; the API and the worker take a change within
 5 seconds. Keys and secrets can be replaced there but are never shown again.
+An address and its key go together, so a key is only ever sent where it was
+given for: a new address needs its key typed with it, **Use .env's** on the
+address puts the key back too, and the key alone goes back to `.env`'s only
+while `.env`'s address is in force.
 The database, `TMS_SECRET_KEY`, the proof-of-delivery folder, the map tiles
 (Caddy builds the desktop's Content-Security-Policy from them when it
 starts), the ports and the domain stay in `.env` only. Each change is
