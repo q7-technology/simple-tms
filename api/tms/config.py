@@ -151,14 +151,17 @@ def get_settings() -> Settings:
     REFRESH_SECONDS. With none given on screen it is file_settings() itself.
     If the database can't be read, the last settings read stay in force."""
     global _effective, _read_at
+    # a local copy: forget_settings() in another thread may set _effective
+    # to None at any moment, and this must never return None
+    current = _effective
     now = _now()
-    if _effective is None or now - _read_at >= REFRESH_SECONDS:
+    if current is None or now - _read_at >= REFRESH_SECONDS:
         # here, not at the top: the database is reached through file_settings()
         from tms.services import runtime_settings
 
-        _effective = runtime_settings.load(file_settings()) or _effective or file_settings()
-        _read_at = now
-    return _effective
+        current = runtime_settings.load(file_settings()) or current or file_settings()
+        _effective, _read_at = current, now
+    return current
 
 
 def forget_settings() -> None:

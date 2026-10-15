@@ -243,3 +243,27 @@ def test_a_database_that_cant_be_read_leaves_the_settings_in_force(monkeypatch):
     monkeypatch.setattr("tms.db.get_engine", down)
     config.forget_settings()
     assert get_settings() is config.file_settings()
+
+
+def test_settings_forgotten_by_another_thread_mid_read_are_still_returned():
+    """A save in another thread forgets them (forget_settings) just as this
+    one returns them: what it read is returned, never None."""
+    import linecache
+    import sys
+
+    code = config.get_settings.__code__
+
+    def tracer(frame, event, arg):
+        if frame.f_code is not code:
+            return None
+        if event == "line" and linecache.getline(code.co_filename, frame.f_lineno).strip().startswith("return"):
+            config.forget_settings()
+        return tracer
+
+    config.forget_settings()
+    sys.settrace(tracer)
+    try:
+        got = get_settings()
+    finally:
+        sys.settrace(None)
+    assert got is config.file_settings()
