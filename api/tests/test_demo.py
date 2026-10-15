@@ -511,13 +511,18 @@ def test_a_day_refused_at_the_start_says_nothing_of_half_made(db, client, wms, q
 
 
 class Answers:
-    """Simple TMS's API as the seed sees it: a reply for each path."""
+    """Simple TMS's API as the seed sees it: a reply for each path, or a list
+    of them in turn. Each request takes `takes` seconds on the clock."""
 
-    def __init__(self, replies):
-        self.replies = replies
+    def __init__(self, replies, clock=None, takes=0.0):
+        self.replies, self.clock, self.takes, self.sent = replies, clock, takes, []
 
     def request(self, method, url, **kw):
-        return self.replies[url]
+        self.sent.append((method, url))
+        if self.clock is not None:
+            self.clock[0] += self.takes
+        reply = self.replies[url]
+        return reply.pop(0) if isinstance(reply, list) else reply
 
 
 def seeder_over(replies):
@@ -558,3 +563,39 @@ def test_a_delivery_that_wont_cancel_is_named():
     assert made == ["DEMO-1-02"]
     assert said.startswith("Couldn't cancel 1 of the 3 deliveries it made in Simple WMS, so their "
                            "stock is still reserved: cancel them there: DEMO-1-02 (Simple WMS at")
+
+
+def driving(replies, takes):
+    """A seeder whose clock moves as it sleeps and as each request takes."""
+    clock, slept = [0.0], []
+
+    def sleep(seconds):
+        slept.append(seconds)
+        clock[0] += seconds
+
+    api = Answers({"/v1/auth/driver-login": httpx.Response(200, json={"token": "t"}), **replies},
+                  clock, takes)
+    seeder = demo.Seeder(api, None, today=AT.date(), sleep=sleep, pace_minutes=0, wait_seconds=0,
+                         position_gap=10, clock=lambda: clock[0])
+    return seeder, api, slept
+
+
+def test_positions_are_spaced_from_when_the_last_was_taken():
+    seeder, api, slept = driving({"/v1/runs/7/position": httpx.Response(204)}, takes=4)
+    seeder.drive({"id": 7}, "kim", [("-37.1", "143.1"), ("-37.2", "143.2")], 0)
+    # the first took 4 s to land: the next waits the full 10 s from then
+    assert slept == [10]
+
+
+def test_a_position_too_soon_is_sent_again_once_after_a_wait():
+    too_soon = httpx.Response(429, json={"detail": "one position every 10 seconds is plenty",
+                                         "code": "too_often"})
+    seeder, api, slept = driving({"/v1/runs/7/position": [too_soon, httpx.Response(204)]},
+                                 takes=0)
+    seeder.drive({"id": 7}, "kim", [("-37.1", "143.1")], 0)
+    assert slept == [demo.TOO_OFTEN_WAIT]
+    assert [url for _, url in api.sent].count("/v1/runs/7/position") == 2
+
+    seeder, api, slept = driving({"/v1/runs/7/position": [too_soon, too_soon]}, takes=0)
+    with pytest.raises(demo.SeedError, match="429.*too_often"):
+        seeder.drive({"id": 7}, "kim", [("-37.1", "143.1")], 0)

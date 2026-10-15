@@ -159,6 +159,10 @@ ROUTE = [
 ]
 
 
+# seconds to wait before sending a position again that came too soon
+TOO_OFTEN_WAIT = 5
+
+
 class SeedError(Exception):
     pass
 
@@ -367,8 +371,8 @@ class Made:
 class Seeder:
     def __init__(self, client, wms, *, today: date, sleep: Callable[[float], None],
                  pace_minutes: float, wait_seconds: float, position_gap: float,
-                 progress: Progress | None = None):
-        self.c, self.wms, self.today = client, wms, today
+                 progress: Progress | None = None, clock: Callable[[], float] = time.monotonic):
+        self.c, self.wms, self.today, self.clock = client, wms, today, clock
         self.progress = progress or Progress()
         self.sleep, self.pace, self.wait, self.gap = sleep, pace_minutes, wait_seconds, position_gap
         self.drivers: dict[str, dict] = {}
@@ -524,10 +528,24 @@ class Seeder:
         gap = max(self.gap, minutes * 60 / len(leg))
         for lat, lng in leg:
             if run["id"] in self.last_position:
-                self.sleep(max(0.0, gap - (time.monotonic() - self.last_position[run["id"]])))
-            self.last_position[run["id"]] = time.monotonic()
-            self.call("POST", f"/runs/{run['id']}/position", self.driver(code), json={
+                self.sleep(max(0.0, gap - (self.clock() - self.last_position[run["id"]])))
+            self.position(run, code, lat, lng)
+            # from when it landed: the API spaces them by when it took them
+            self.last_position[run["id"]] = self.clock()
+
+    def position(self, run: dict, code: str, lat: str, lng: str) -> None:
+        """One position; if the API says it is too soon after the last, once
+        more after a wait, as the phone would."""
+        path = f"/runs/{run['id']}/position"
+        for last_try in (False, True):
+            r = self.c.request("POST", f"/v1{path}", headers=self.driver(code), json={
                 "at": iso(now()), "latitude": lat, "longitude": lng, "accuracy_m": "8"})
+            if r.status_code in (200, 201, 202, 204):
+                return
+            if (r.status_code != 429 or last_try
+                    or body_of(r, f"POST {path}").get("code") != "too_often"):
+                raise SeedError(f"POST {path} -> {r.status_code}: {r.text}")
+            self.sleep(TOO_OFTEN_WAIT)
 
     # --- carriers, by the dispatcher -------------------------------------------
 
