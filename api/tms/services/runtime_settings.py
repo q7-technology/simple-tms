@@ -86,15 +86,24 @@ def load(base: Settings) -> Settings | None:
             given = _stored(conn.execute(select(Setting.name, Setting.value)).all())
     except SQLAlchemyError:
         return None
+    fitted = _fitted(base, given)
+    if fitted is None:
+        # .env changed under them: never say the values (a secret may be one)
+        log.warning("settings given on screen don't fit .env any more; .env's are in force "
+                    "until an admin saves them again")
+        return base
+    return fitted
+
+
+def _fitted(base: Settings, given: dict[str, str]) -> Settings | None:
+    """.env's with those given on screen in their place, or None if they
+    don't pass config.py's rules together: then all are set aside."""
     if not given:
         return base
     try:
         return Settings.model_validate({**base.model_dump(), **given})
     except ValidationError:
-        # .env changed under them: never say the values (a secret may be one)
-        log.warning("settings given on screen don't fit .env any more; .env's are in force "
-                    "until an admin saves them again")
-        return base
+        return None
 
 
 def _problems(e: ValidationError, names) -> list[dict]:
@@ -182,10 +191,13 @@ def committed() -> None:
 
 def view(db: Session) -> list[dict]:
     """Every TMS_* setting, as the Settings drawer shows it. A secret's
-    value, and the database's address and session key, are never in it."""
+    value, and the database's address and session key, are never in it.
+    `set_aside` marks a value given on screen that isn't in force, because
+    those given on screen don't fit .env any more (load())."""
     base = file_settings()
-    now = load(base) or base
     rows = {r.name: r for r in db.execute(select(Setting)).scalars()}
+    fitted = _fitted(base, _stored((n, r.value) for n, r in rows.items()))
+    now = fitted or base
     out = []
     for name in (*ON_SCREEN, *SECRETS, *FILE_ONLY):
         row = rows.get(name)
@@ -201,5 +213,6 @@ def view(db: Session) -> list[dict]:
             "changed_by": row.changed_by if row else None,
             "changed_at": row.changed_at if row else None,
             "why_file_only": FILE_ONLY.get(name),
+            "set_aside": on_screen and fitted is None,
         })
     return out

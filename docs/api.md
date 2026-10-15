@@ -1068,11 +1068,15 @@ URL's own origin, so the map's three stay together in `.env`. (The ports,
   ```json
   [{ "name": "run_sheet_printer", "env": "TMS_RUN_SHEET_PRINTER", "kind": "screen",
      "value": "Office 2", "default": "dispatch", "is_set": true, "on_screen": true,
-     "changed_by": "leighton", "changed_at": "…", "why_file_only": null }]
+     "changed_by": "leighton", "changed_at": "…", "why_file_only": null,
+     "set_aside": false }]
   ```
   `value` is what is in force and `default` what `.env` says; both are
   `null` for a secret, and `value` for `database_url` and `secret_key`.
-  `is_set` says whether a secret has a value at all.
+  `is_set` says whether a secret has a value at all. `set_aside` is `true`
+  on each one given here when those given here no longer pass `config.py`'s
+  rules together (`.env` changed under them): then all are set aside and
+  `.env`'s are in force until they are saved again or put back.
 - `PATCH /v1/settings` (`settings:write`) — `{ "run_sheet_printer": "Office 2",
   "platen_key": null }`: each named setting given a value, or `null` for
   `.env`'s again. They are checked together with `config.py`'s own rules and

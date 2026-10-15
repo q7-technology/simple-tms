@@ -268,6 +268,8 @@ export interface SettingRow {
   changed_by: string | null;
   changed_at: string | null;
   why_file_only: string | null;
+  /** given here but not in force: those given here don't fit .env any more */
+  set_aside: boolean;
 }
 
 /** One change to a setting (GET /v1/settings/history): a secret's value never. */

@@ -31,6 +31,9 @@ class SettingOut(BaseModel):
     changed_by: str | None
     changed_at: datetime | None
     why_file_only: str | None
+    # given on screen but not in force: those given on screen don't fit
+    # .env any more, so .env's are, until an admin saves them again
+    set_aside: bool
 
 
 class ChangeOut(BaseModel):

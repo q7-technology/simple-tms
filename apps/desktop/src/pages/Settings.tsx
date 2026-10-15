@@ -12,6 +12,7 @@ type Note = { tone: "r" | "g"; text: string } | null;
 
 function source(s: SettingRow): string {
   if (!s.on_screen) return `From .env (${s.env}).`;
+  if (s.set_aside) return `Set here by ${s.changed_by}, ${when(s.changed_at!)}, but set aside: .env's is in force.`;
   const was = s.kind === "secret" ? "" : ` .env says ${s.default === "" || s.default === null ? "nothing" : String(s.default)}.`;
   return `Set here by ${s.changed_by}, ${when(s.changed_at!)}.${was}`;
 }
@@ -154,6 +155,8 @@ export function Settings() {
     }>
       {!admin && <div className="msg a" role="status">Settings are for an admin.</div>}
       {note && <div className={`msg ${note.tone}`} role={note.tone === "r" ? "alert" : "status"}>{note.text}</div>}
+      {all.some((s) => s.set_aside) && (
+        <div className="msg a" role="alert">The values set here don't fit .env any more, so .env's are in force. Give each one set aside a new value, or use .env's.</div>)}
       {rows && GROUPS.map((g) => (
         <Group key={g.title} title={g.title} rows={g.names.map((n) => all.find((s) => s.name === n)).filter((s): s is SettingRow => !!s)}
                onSaved={(fresh) => void saved(fresh)} onReset={reset} />))}

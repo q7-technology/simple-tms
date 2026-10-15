@@ -9,7 +9,7 @@ const ADMIN = { ...MANAGER, id: 3, name: "leighton", display_name: "Leighton", r
 const row = (name: string, kind: SettingRow["kind"], value: SettingRow["value"], over: Partial<SettingRow> = {}): SettingRow => ({
   name, env: `TMS_${name.toUpperCase()}`, kind, value, default: kind === "screen" ? value : null,
   is_set: kind === "secret" ? false : value !== "" && value !== null, on_screen: false, changed_by: null, changed_at: null,
-  why_file_only: null, ...over,
+  why_file_only: null, set_aside: false, ...over,
 });
 
 const SETTINGS: SettingRow[] = [
@@ -140,6 +140,15 @@ describe("Settings", () => {
       expect(await screen.findByText("Simple WMS address and Simple WMS key are .env's again.")).toBeInTheDocument();
       expect(calls.find((c) => c.method === "PATCH")!.body).toEqual({ wms_url: null });
     });
+  });
+
+  it("warns when the values given here are set aside, and says so on each", async () => {
+    const aside = SETTINGS.map((s) => s.name === "run_sheet_printer" ? { ...s, value: "dispatch", set_aside: true } : s);
+    office({ "GET /v1/settings": () => json(200, aside) });
+    renderApp("/settings");
+    expect(await screen.findByText(
+      "The values set here don't fit .env any more, so .env's are in force. Give each one set aside a new value, or use .env's.")).toHaveAttribute("role", "alert");
+    expect(screen.getByLabelText("Run sheet printer")).toHaveAccessibleDescription(/Set here by leighton, .*, but set aside: \.env's is in force\./);
   });
 
   it("tells anyone else it is for an admin, and asks the API nothing", async () => {

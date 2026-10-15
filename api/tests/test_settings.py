@@ -46,7 +46,7 @@ def test_each_is_listed_with_its_kind_and_no_secret_is_shown(client, admin_heade
     assert printer | {"changed_at": None} == {
         "name": "run_sheet_printer", "env": "TMS_RUN_SHEET_PRINTER", "kind": "screen",
         "value": "dispatch", "default": "dispatch", "is_set": True, "on_screen": False,
-        "changed_by": None, "changed_at": None, "why_file_only": None}
+        "changed_by": None, "changed_at": None, "why_file_only": None, "set_aside": False}
     key = _one(out, "wms_api_key")
     assert (key["kind"], key["value"], key["default"], key["is_set"]) == ("secret", None, None, True)
     for name in ("database_url", "secret_key"):
@@ -232,6 +232,21 @@ def test_values_on_screen_that_no_longer_fit_env_are_set_aside(db, caplog):
     with caplog.at_level(logging.WARNING, logger="tms.settings"):
         assert get_settings().eta_minutes_per_stop == 20
     assert "don't fit .env any more" in caplog.text
+
+
+def test_the_drawer_is_told_which_values_given_here_are_set_aside(client, db, admin_headers):
+    db.add_all([Setting(name="eta_minutes_per_stop", value="0", changed_by="leighton",
+                        changed_at=datetime.now(UTC)),
+                Setting(name="run_sheet_printer", value="Office 2", changed_by="leighton",
+                        changed_at=datetime.now(UTC))])
+    db.commit()
+    config.forget_settings()
+    out = client.get("/v1/settings", headers=admin_headers).json()
+    assert {s["name"] for s in out if s["set_aside"]} == {"eta_minutes_per_stop", "run_sheet_printer"}
+    assert _one(out, "run_sheet_printer")["value"] == "dispatch"
+    # saved again, they fit and are in force
+    r = _patch(client, admin_headers, {"eta_minutes_per_stop": 30})
+    assert r.status_code == 200 and not any(s["set_aside"] for s in r.json())
 
 
 def test_a_database_that_cant_be_read_leaves_the_settings_in_force(monkeypatch):
