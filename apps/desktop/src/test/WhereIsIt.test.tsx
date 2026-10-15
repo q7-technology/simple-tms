@@ -25,7 +25,11 @@ function stub(tiles: object) {
 }
 
 describe("where is it", () => {
-  beforeEach(() => { slippy.mounted = []; slippy.shown = []; slippy.gone = 0; });
+  beforeEach(() => {
+    slippy.mounted = []; slippy.shown = []; slippy.gone = 0;
+    // heard from "40 s ago" when the row is drawn: set just before each test, not at load, so a slow run doesn't read 41
+    KIM.received_at = MEL.received_at = new Date(Date.now() - 39_700).toISOString();
+  });
   afterEach(() => vi.unstubAllGlobals());
 
   it("lists each truck on the road with when it was last heard from, with no map when no tiles are set up", async () => {
