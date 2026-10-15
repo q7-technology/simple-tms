@@ -178,6 +178,8 @@ def test_one_back_from_its_run_goes_with_a_carrier_and_simple_wms_ships_it_again
     client.post(f"/v1/runs/{run['id']}/finish", headers=kim, json={"message_id": str(uuid.uuid4())})
     rx = new_carrier(client, manager_headers)
     m = book(client, dispatcher_headers, rx["id"], b.id, con_note="RX-77310042").json()
+    # nothing for the dispatcher to explain any more: Simple WMS takes it back
+    assert "already_shipped" not in m
     assert collect(client, dispatcher_headers, m, [b.id]).status_code == 200
 
     assert worker.send_ship_calls(db, http.client, now=later) == 4

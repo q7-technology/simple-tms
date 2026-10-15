@@ -16,7 +16,7 @@ from tms.api.routes.runs import (
     RunSheetOut, ShippingOut, StopConsignment, shipping_out, stop_consignment,
 )
 from tms.api.schemas import Dec, Page
-from tms.models import Booking, Consignment, Manifest, OutboundCall, PrintJob
+from tms.models import Booking, Manifest, OutboundCall, PrintJob
 from tms.services import carriers
 from tms.services.envelope import handle
 from tms.services.load import consignment_totals, total
@@ -35,17 +35,6 @@ class TotalsOut(BaseModel):
     packages: int
     cartons: int
     weight_kg: Dec
-
-
-class AlreadyShippedOut(BaseModel):
-    """A consignment Simple WMS had shipped already when the carrier took it
-    (it came back from its run): Simple WMS kept what it had, this carrier
-    and tracking number, as far as Simple TMS told it (null if not known)."""
-    consignment_id: int
-    wms_ref: str
-    customer: str
-    carrier: str | None
-    tracking_no: str | None
 
 
 class ManifestOut(BaseModel):
@@ -67,27 +56,6 @@ class ManifestOut(BaseModel):
     print_job: RunSheetOut | None
     # the ship calls to Simple WMS once it is collected
     shipping: ShippingOut
-    # what Simple WMS answered already_shipped for, keeping its run's
-    already_shipped: list[AlreadyShippedOut]
-
-
-def already_shipped(db, manifest_id: int) -> list[AlreadyShippedOut]:
-    """Each ship call of the manifest that Simple WMS answered already_shipped,
-    with what Simple TMS first told it shipped that consignment (its run)."""
-    out = []
-    for call, c in db.execute(
-            select(OutboundCall, Consignment).join(Consignment)
-            .where(OutboundCall.manifest_id == manifest_id, OutboundCall.already_shipped)
-            .order_by(OutboundCall.id)).all():
-        first = db.execute(select(OutboundCall).where(
-            OutboundCall.consignment_id == c.id, OutboundCall.id != call.id,
-            OutboundCall.status == "done", OutboundCall.already_shipped.is_(False))
-            .order_by(OutboundCall.done_at, OutboundCall.id).limit(1)).scalar_one_or_none()
-        out.append(AlreadyShippedOut(
-            consignment_id=c.id, wms_ref=c.wms_ref, customer=c.customer,
-            carrier=first.body.get("carrier") if first else None,
-            tracking_no=first.body.get("tracking_no") if first else None))
-    return out
 
 
 def manifest_out(db, m: Manifest) -> ManifestOut:
@@ -107,7 +75,7 @@ def manifest_out(db, m: Manifest) -> ManifestOut:
         print_job=None if job is None else RunSheetOut(
             job_id=job.job_id, status=job.status, printer=job.printer,
             last_error=job.last_error, created_at=job.created_at, printed_at=job.printed_at),
-        shipping=shipping_out(db, OutboundCall.manifest_id == m.id), already_shipped=already_shipped(db, m.id))
+        shipping=shipping_out(db, OutboundCall.manifest_id == m.id))
 
 
 def _fresh(db, manifest_id: int) -> ManifestOut:
