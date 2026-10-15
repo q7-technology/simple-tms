@@ -322,6 +322,8 @@ def depart(db: Session, run_id: int, by: str, need_prestart: bool = False) -> Ru
         raise Conflict("run_empty", f"{run.number} has no stops")
     if not run.vehicle.active:
         raise Conflict("vehicle_unavailable", f"{run.vehicle.rego} is deactivated")
+    if not run.driver.active:
+        raise Conflict("driver_unavailable", f"{run.driver.name} ({run.driver.code}) is deactivated")
     # a grounded or overdue truck says so, rather than asking for a check;
     # judged for the day it actually leaves, if that is after the run's own
     fleet.refuse_if_blocked(db, run.vehicle, max(run.day, fleet.today()))

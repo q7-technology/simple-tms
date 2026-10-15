@@ -5,7 +5,7 @@ import uuid
 from sqlalchemy import select
 
 from runs_samples import assign, consignment, driver, new_run, vehicle
-from tms.models import OutboundCall
+from tms.models import Driver, OutboundCall
 
 
 def _loaded_run(client, db, headers, kg="100"):
@@ -98,3 +98,15 @@ def test_two_departs_at_once_queue_one_set_of_ship_calls(client, db, dispatcher_
     assert all_at_once(4, depart) == [200] * 4
     calls = db.execute(select(OutboundCall)).scalars().all()
     assert sorted(c.consignment_id for c in calls) == sorted([a.id, b.id])
+
+
+def test_a_run_whose_driver_is_deactivated_doesnt_leave(client, db, dispatcher_headers):
+    """The API won't deactivate a driver with a run planned, but one
+    deactivated before that rule, or in the database, is still refused."""
+    run, *_ = _loaded_run(client, db, dispatcher_headers)
+    db.execute(select(Driver).where(Driver.code == "kim")).scalar_one().active = False
+    db.commit()
+    r = client.post(f"/v1/runs/{run['id']}/depart", headers=dispatcher_headers)
+    assert r.status_code == 409
+    assert (r.json()["code"], r.json()["detail"]) == ("driver_unavailable", "Kim (kim) is deactivated")
+    assert db.execute(select(OutboundCall)).first() is None

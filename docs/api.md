@@ -470,6 +470,7 @@ The truck has left. Each consignment becomes `departed` (history `departed`
 with the run, vehicle, driver and who), and a ship call to Simple WMS is
 queued for each, all in one go. Departing a departed run changes nothing and
 queues nothing more. Refused with `409`: `run_empty`, `vehicle_unavailable`,
+`driver_unavailable` (the run's driver has been deactivated),
 `over_capacity` (the detail is the run number and the load's message:
 "R-0007: 280 kg too heavy. Move a stop to another run before printing the run
 sheet."), `vehicle_grounded`, `vehicle_overdue`, `run_not_planned` for a
