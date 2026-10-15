@@ -53,6 +53,9 @@ are at `/docs`.
 | a driver | `fleet:read`, `deliveries:read`, `deliveries:write`, `location:write` (on their own runs only) |
 | an API key | what it was made with: some of `printing:write`, `runs:read`, `runs:write`, `consignments:read`, `fleet:read`, `deliveries:read`, `deliveries:write`, `location:read`, `location:write` |
 
+`settings:read` and `settings:write` (the Settings drawer, below) come only
+with `*`: an admin's. No key is ever made with them.
+
 `location:read` is where the trucks on the road are: personal information
 about the drivers, so a key has it only when it is named. `location:write`
 is sending where a run is; a key has it only when it is named, too.
@@ -1040,6 +1043,49 @@ Anything else is a `422`, nothing is kept, and Simple WMS shows the event as
 failed, with the reason, once its retries run out.
 A delivery has at most one consignment per owner, however many events arrive
 for it, and at once. Transfers are not consignments yet.
+
+## Settings
+
+An admin changes some of `.env`'s `TMS_*` settings on screen, without
+editing `.env` or restarting anything. `.env` gives each its default; a
+value given here is used in its place by the API and the worker (each reads
+them again within 5 seconds) until it is put back to `.env`'s. Three kinds:
+
+| Kind | Settings | On screen |
+| --- | --- | --- |
+| `screen` | `wms_url`, `wms_timeout_seconds`, `platen_url`, `run_sheet_printer`, `manifest_printer`, `position_retention_days`, `eta_minutes_per_stop`, `worker_poll_seconds`, `worker_http_timeout_seconds` | shown and changed |
+| `secret` | `wms_api_key`, `wms_webhook_secret`, `platen_key` | replaced, never shown again |
+| `file` | `database_url`, `secret_key`, `pod_dir`, `map_tile_url`, `map_tile_origin`, `map_attribution` | `.env` only |
+
+A `file` one could lock everyone out, break the app or weaken security, or is
+read by something else when it starts: Caddy builds the desktop's
+Content-Security-Policy from `TMS_MAP_TILE_ORIGIN`, which must be the tile
+URL's own origin, so the map's three stay together in `.env`. (The ports,
+`TMS_DOMAIN` and `POSTGRES_*` are Compose's and Caddy's, not the API's.)
+
+- `GET /v1/settings` (`settings:read`) — every setting:
+  ```json
+  [{ "name": "run_sheet_printer", "env": "TMS_RUN_SHEET_PRINTER", "kind": "screen",
+     "value": "Office 2", "default": "dispatch", "is_set": true, "on_screen": true,
+     "changed_by": "leighton", "changed_at": "…", "why_file_only": null }]
+  ```
+  `value` is what is in force and `default` what `.env` says; both are
+  `null` for a secret, and `value` for `database_url` and `secret_key`.
+  `is_set` says whether a secret has a value at all.
+- `PATCH /v1/settings` (`settings:write`) — `{ "run_sheet_printer": "Office 2",
+  "platen_key": null }`: each named setting given a value, or `null` for
+  `.env`'s again. They are checked together with `config.py`'s own rules and
+  kept all or none: `422` with a field error on each that is wrong, a `file`
+  one ("TMS_SECRET_KEY is set in .env only: …"), or a name that isn't a
+  setting. A secret can't be blank; `wms_webhook_secret` is 16 to 128
+  characters, as Simple WMS's subscriber secret is. A new `wms_url` or
+  `platen_url` needs its key (`wms_api_key`, `platen_key`) given again in
+  the same request (`422` on the key otherwise), so a key on file is never
+  sent to an address it wasn't given for. Answers as `GET`.
+- `GET /v1/settings/history?limit=50` (`settings:read`) — each change, newest
+  first: `[{ "id", "name", "env", "action": "set" | "reset", "value",
+  "secret", "changed_by", "changed_at" }]`. A secret's `value` is always
+  `null`: only its current value is kept, and only to be used.
 
 ## API keys
 

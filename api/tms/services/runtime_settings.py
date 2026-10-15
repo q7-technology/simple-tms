@@ -25,10 +25,12 @@ import logging
 from datetime import UTC, datetime
 
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
-from tms.config import Settings
+from tms.api.errors import FieldErrors
+from tms.config import Settings, file_settings, forget_settings
 from tms.models import Setting, SettingChange
 
 log = logging.getLogger("tms.settings")
@@ -48,6 +50,13 @@ FILE_ONLY = {
                        "Content-Security-Policy",
     "map_attribution": "it is HTML the desktop shows as it is, and belongs with the tile URL",
 }
+# an address and the key that is sent to it: a new address needs its key
+# given again with it, so a key on file is never sent somewhere it wasn't given for
+KEY_FOR = {"wms_url": "wms_api_key", "platen_url": "platen_key"}
+NAMES = {"wms_url": "Simple WMS", "platen_url": "Platen"}
+MIN_WEBHOOK_SECRET, MAX_WEBHOOK_SECRET = 16, 128
+# two admins saving at once take turns
+SETTINGS_LOCK = 7_302_202
 
 
 def env_name(name: str) -> str:
@@ -82,3 +91,100 @@ def load(base: Settings) -> Settings | None:
         log.warning("settings given on screen don't fit .env any more; .env's are in force "
                     "until an admin saves them again")
         return base
+
+
+def _problems(e: ValidationError, names) -> list[dict]:
+    out = []
+    for err in e.errors():
+        field = str(err["loc"][0]) if err.get("loc") else "body"
+        msg = err["msg"].removeprefix("Value error, ")
+        out.append({"field": field if field in names else "body", "message": msg})
+    return out
+
+
+def change(db: Session, changes: dict[str, object], by: str) -> None:
+    """Each named setting given a value (kept in place of .env's) or None
+    (.env's again), checked together with config.py's rules: all of them, or
+    none (422 with a field error on each that is wrong)."""
+    base = file_settings()
+    errors = []
+    for name in changes:
+        if name in FILE_ONLY:
+            errors.append({"field": name, "message": f"{env_name(name)} is set in .env only: "
+                                                     f"{FILE_ONLY[name]}"})
+        elif kind(name) == "file":
+            errors.append({"field": name, "message": "not a setting Simple TMS has"})
+    if errors:
+        raise FieldErrors(errors)
+
+    db.execute(text("select pg_advisory_xact_lock(:k)"), {"k": SETTINGS_LOCK})
+    rows = {r.name: r for r in db.execute(select(Setting)).scalars()}
+    wanted = _stored((n, r.value) for n, r in rows.items())
+    for name, value in changes.items():
+        if value is None:
+            wanted.pop(name, None)
+            continue
+        typed = str(value).strip()
+        if name in SECRETS and not typed:
+            errors.append({"field": name, "message": "Type the new value, or use .env's"})
+        elif name == "wms_webhook_secret" and not (MIN_WEBHOOK_SECRET <= len(typed) <= MAX_WEBHOOK_SECRET):
+            errors.append({"field": name, "message": f"{MIN_WEBHOOK_SECRET} to {MAX_WEBHOOK_SECRET} "
+                                                     "characters, the same as Simple WMS's"})
+        wanted[name] = typed
+    current = load(base) or base
+    for address, key in KEY_FOR.items():
+        new = changes.get(address)
+        if new is not None and str(new).strip() != getattr(current, address) and changes.get(key) is None:
+            errors.append({"field": key, "message": f"Type the {NAMES[address]} key again with a new "
+                                                    "address: a key on file is only sent where it was given for"})
+    try:
+        checked = Settings.model_validate({**base.model_dump(), **wanted})
+    except ValidationError as e:
+        errors += _problems(e, set(changes))
+    if errors:
+        raise FieldErrors(errors)
+
+    now = datetime.now(UTC)
+    for name, value in changes.items():
+        kept = None if value is None else str(getattr(checked, name))
+        row = rows.get(name)
+        if row is None:
+            row = Setting(name=name)
+            db.add(row)
+        row.value, row.changed_by, row.changed_at = kept, by, now
+        secret = name in SECRETS
+        db.add(SettingChange(name=name, action="reset" if kept is None else "set",
+                             value=None if secret else kept, secret=secret, changed_by=by,
+                             changed_at=now))
+    db.flush()
+
+
+def committed() -> None:
+    """After a change is committed: this process uses it at once (the
+    others within config.REFRESH_SECONDS)."""
+    forget_settings()
+
+
+def view(db: Session) -> list[dict]:
+    """Every TMS_* setting, as the Settings drawer shows it. A secret's
+    value, and the database's address and session key, are never in it."""
+    base = file_settings()
+    now = load(base) or base
+    rows = {r.name: r for r in db.execute(select(Setting)).scalars()}
+    out = []
+    for name in (*ON_SCREEN, *SECRETS, *FILE_ONLY):
+        row = rows.get(name)
+        on_screen = row is not None and row.value is not None
+        k = kind(name)
+        hidden = k == "secret" or name in ("database_url", "secret_key")
+        out.append({
+            "name": name, "env": env_name(name), "kind": k,
+            "value": None if hidden else getattr(now, name),
+            "default": None if hidden or k == "file" else getattr(base, name),
+            "is_set": bool(str(getattr(now, name)).strip()),
+            "on_screen": on_screen,
+            "changed_by": row.changed_by if row else None,
+            "changed_at": row.changed_at if row else None,
+            "why_file_only": FILE_ONLY.get(name),
+        })
+    return out

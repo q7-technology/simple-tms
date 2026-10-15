@@ -15,6 +15,14 @@ class FieldError(Exception):
         super().__init__(f"{field}: {message}")
 
 
+class FieldErrors(Exception):
+    """Several fields wrong at once, each with what is wrong with it."""
+
+    def __init__(self, errors: list[dict]):
+        self.errors = errors
+        super().__init__("; ".join(f"{e['field']}: {e['message']}" for e in errors))
+
+
 class NotFound(Exception):
     def __init__(self, message: str = "not found"):
         self.message = message
@@ -78,6 +86,10 @@ def install(app: FastAPI) -> None:
         return JSONResponse(
             status_code=422, content={"errors": [{"field": exc.field, "message": exc.message}]}
         )
+
+    @app.exception_handler(FieldErrors)
+    async def _fields(request: Request, exc: FieldErrors):
+        return JSONResponse(status_code=422, content={"errors": exc.errors})
 
     @app.exception_handler(NotFound)
     async def _not_found(request: Request, exc: NotFound):
