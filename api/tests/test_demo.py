@@ -632,3 +632,11 @@ def test_the_fresh_checklist_is_the_one_a_fresh_database_gets():
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
     assert migration.DEFAULT_CHECKLIST == demo.FRESH_CHECKLIST
+
+
+@pytest.mark.parametrize("pace", ["0", "-1", "nan", "soon"])
+def test_a_pace_that_isnt_some_minutes_is_refused(pace, capsys):
+    with pytest.raises(SystemExit) as e:
+        main(["seed-demo", f"--pace={pace}"])
+    assert e.value.code == 2
+    assert "argument --pace: minutes, more than 0" in capsys.readouterr().err

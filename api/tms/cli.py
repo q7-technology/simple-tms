@@ -108,6 +108,17 @@ def cmd_seed_demo(args) -> int:
     return 0
 
 
+def minutes(text: str) -> float:
+    """--pace: some minutes, more than none."""
+    try:
+        value = float(text)
+    except ValueError:
+        value = 0.0
+    if not value > 0 or value == float("inf"):
+        raise argparse.ArgumentTypeError(f"minutes, more than 0 (not {text})")
+    return value
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="tms")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -136,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
                         "(EA unless given), comma separated; the default is wms seed-demo's")
     p.add_argument("--warehouse", default="BAL-WH01", help="the Simple WMS warehouse it ships from")
     p.add_argument("--operator", default="op-017", help="the Simple WMS operator who picks and packs")
-    p.add_argument("--pace", type=float, default=3,
+    p.add_argument("--pace", type=minutes, default=3,
                    help="minutes the run on the road takes to each of its first two stops")
     p.add_argument("--wait", type=float, default=120,
                    help="seconds to wait for Simple WMS's delivery.packed events")
