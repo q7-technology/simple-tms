@@ -4,12 +4,16 @@ import json
 import struct
 import uuid
 import zlib
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
+from sqlalchemy import func, select
 
+from conftest import WEBHOOK_SECRET, fresh_client
 from tms import demo, demo_pictures
+from tms.models import Consignment, OutboundCall, PodFile, PrintJob, Vehicle
+from wms_samples import post_event
 
 # 01:30 UTC is 12:30 pm in Ballarat: the same day by both clocks
 AT = datetime.now(UTC).replace(hour=1, minute=30, second=0, microsecond=0)
@@ -109,3 +113,174 @@ def test_simple_wms_refusing_says_what_it_said():
 def test_no_simple_wms_set_up_is_said_plainly():
     with pytest.raises(demo.SeedError, match="TMS_WMS_URL and TMS_WMS_API_KEY"):
         demo.Wms("", "", warehouse="BAL-WH01", operator="op-017", skus=[("JKL012", "EA")])
+
+
+# --- the day ---------------------------------------------------------------------
+
+class FakeWms:
+    """Packs as Simple WMS would, then sends delivery.packed, signed, as its
+    worker does; and answers Simple TMS's read of the delivery (the wms fixture)."""
+
+    def __init__(self, wms):
+        self.wms, self.client, self.packed = wms, fresh_client(), []
+
+    def pack(self, ref, drop, required_by, n):
+        self.packed.append(ref)
+        self.wms.deliveries[ref] = {
+            "wms_id": str(n), "external_ref": ref, "owner": "DEFAULT", "warehouse": "BAL-WH01",
+            "status": "packed", "required_by": required_by.isoformat(),
+            "ship_to": {"name": drop.customer, "address": drop.address, "suburb": drop.suburb,
+                        "state": "VIC", "postcode": drop.postcode, "country": "AU",
+                        "contact": drop.contact, "phone": f"03 5550 {1000 + n:04d}"},
+            "lines": [], "packages": []}
+        event = {"event_id": str(uuid.uuid4()), "event_type": "delivery.packed",
+                 "occurred_at": "2026-10-15T01:00:00Z", "warehouse": "BAL-WH01",
+                 "owner": "DEFAULT", "external_ref": ref, "data": {"delivery_ref": ref, "packages": [
+                     {"package_no": i, "type": kind, "weight_kg": kg, "length_cm": dims[0],
+                      "width_cm": dims[1], "height_cm": dims[2], "sscc": None, "container_id": None,
+                      "contents": []} for i, (kind, kg, dims) in enumerate(drop.cartons, 1)]}}
+        r = post_event(self.client, event, WEBHOOK_SECRET)
+        assert r.json()["status"] == "created", r.text
+
+
+@pytest.fixture
+def quick(monkeypatch):
+    """No waiting: positions may come as fast as the seed sends them."""
+    from tms.services import location
+
+    monkeypatch.setattr(location, "MIN_GAP", timedelta(0))
+    return {"sleep": lambda s: None, "pace_minutes": 0, "wait_seconds": 5, "position_gap": 0}
+
+
+@pytest.fixture
+def printing(monkeypatch):
+    from tms.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "platen_url", "http://127.0.0.1:9/intake/jobs")
+
+
+def seeded(wms, quick, client):
+    made = demo.seed_demo(FakeWms(wms), at=AT, **quick)
+    token = client.post("/v1/auth/login", json={"username": "dee", "password": demo.PASSWORD}).json()
+    return made, {"Authorization": f"Bearer {token['token']}"}
+
+
+def test_the_demo_day_is_a_depot_partway_through_its_day(db, client, wms, quick, printing):
+    made, h = seeded(wms, quick, client)
+    day = made.day.isoformat()
+
+    statuses = dict(db.execute(select(Consignment.status, func.count())
+                               .group_by(Consignment.status)).all())
+    assert statuses == {"delivered": 5, "failed": 1, "departed": 3, "assigned": 3,
+                        "collected": 2, "booked": 3, "packed": 2}
+
+    runs = {r["run_no"]: r for r in client.get(f"/v1/runs?date={day}", headers=h).json()["items"]}
+    assert {n: (r["status"], r["vehicle"]["rego"], r["driver"]["code"], len(r["stops"]))
+            for n, r in runs.items()} == {
+        "R-0001": ("done", "TMS-033", "tom", 4), "R-0002": ("departed", "TMS-041", "kim", 5),
+        "R-0003": ("planned", "TMS-052", "ana", 3), "R-0004": ("planned", "TMS-027", "raj", 0)}
+    assert [s["outcome"] for s in runs["R-0001"]["stops"]] == ["delivered"] * 3 + ["failed"]
+    assert runs["R-0001"]["stops"][3]["reason"] == "closed"
+    assert [s["outcome"] for s in runs["R-0002"]["stops"]] == ["delivered"] * 2 + [None] * 3
+    assert runs["R-0002"]["estimate"]["basis"] == "average"
+    assert runs["R-0003"]["load"]["state"] == "near"
+    assert runs["R-0004"]["vehicle"]["blocked"]["code"] == "vehicle_grounded"
+
+    trucks = {v["rego"]: v["state"] for v in
+              client.get(f"/v1/vehicles?date={day}", headers=h).json()["items"]}
+    assert trucks == {"TMS-027": "grounded", "TMS-033": "ok", "TMS-041": "ok", "TMS-052": "due"}
+    assert made.vehicles == trucks
+
+    where = client.get(f"/v1/positions?date={day}", headers=h).json()["items"]
+    assert [(p["run_no"], p["latitude"]) for p in where] == [("R-0002", "-37.5931")]
+
+    manifests = client.get(f"/v1/manifests?date={day}", headers=h).json()["items"]
+    assert [(m["carrier"]["name"], m["status"], m["totals"]["consignments"], m["needs_con_note"],
+             m["print_job"]["status"]) for m in manifests] == [
+        ("Valley Freight (sample)", "collected", 2, 0, "pending"),
+        ("Ridgeline Express (sample)", "open", 3, 0, "pending")]
+
+    jobs = db.execute(select(PrintJob.template, func.count()).group_by(PrintJob.template)).all()
+    assert dict(jobs) == {"run-sheet": 3, "carrier-manifest": 2}
+
+    kinds = {i["kind"] for i in client.get("/v1/feed?limit=100", headers=h).json()["items"]}
+    assert kinds >= {"packed", "left", "delivered", "failed", "finished", "con_note",
+                     "collected", "prestart"}
+
+    pictures = dict(db.execute(select(PodFile.kind, func.count()).group_by(PodFile.kind)).all())
+    # signatures: Nina, Owen, Priya, Callum; photos: 2 + 1 on the morning run, 1 today, the tail light
+    assert pictures == {"signature": 4, "photo": 5}
+
+    tray = client.get("/v1/consignments?status=packed,failed", headers=h).json()["items"]
+    assert sorted(c["customer"] for c in tray) == [
+        "Alfredton Dental Studio", "Ironbark Cafe", "Learmonth Feed and Grain"]
+    assert (made.tray, made.came_back, made.printed) == (3, 1, True)
+
+    # the history says who did what
+    found = client.get("/v1/consignments?q=Gold Hill", headers=h).json()["items"][0]
+    history = client.get(f"/v1/consignments/{found['id']}", headers=h).json()["history"]
+    assert [(e["kind"], e["detail"].get("by")) for e in history] == [
+        ("packed", None), ("assigned", "dee"), ("departed", "kim"), ("delivered", "kim")]
+    assert history[-1]["detail"]["signed_name"] == "Priya"
+
+    # what came back is off the truck, and Simple WMS is to be told: the ship
+    # calls of the two runs that left and the Valley pickup, and Ironbark's return
+    calls = dict(db.execute(select(OutboundCall.kind, func.count())
+                            .group_by(OutboundCall.kind)).all())
+    assert calls == {"ship": 11, "return": 1}
+    found = client.get("/v1/consignments?q=Ironbark", headers=h).json()["items"][0]
+    history = client.get(f"/v1/consignments/{found['id']}", headers=h).json()["history"]
+    assert [(e["kind"], e["detail"].get("by")) for e in history][-2:] == [
+        ("failed", "tom"), ("returned", "tom")]
+
+    # the summary says what was made, and no key
+    lines = demo.summary(made)
+    text = "\n".join(lines)
+    assert "fleet: 4 trucks (TMS-027 grounded, TMS-033 ok, TMS-041 ok, TMS-052 due)" in text
+    assert "R-0001 TMS-033 Tom: finished, 3 delivered, 1 came back" in lines
+    assert "R-0002 TMS-041 Kim: on the road, 2 of 5 delivered" in lines
+    assert "R-0003 TMS-052 Ana: planned, 3 stops, load near" in lines
+    assert lines[6].startswith("R-0004 TMS-027 Raj: planned, no stops: TMS-027 is grounded")
+    assert "M-0001 Valley Freight (sample): collected, 2 with con notes" in lines
+    assert "M-0002 Ridgeline Express (sample): on the carrier bay, 3 with con notes" in lines
+    assert "tray: 3 to plan (1 came back)" in lines
+    assert "wms_test-key-for-the-tms" not in text and "tms_k." not in text
+
+
+def test_without_printing_nothing_is_printed_and_it_says_so(db, client, wms, quick):
+    made, _ = seeded(wms, quick, client)
+    assert made.printed is False
+    assert db.execute(select(func.count()).select_from(PrintJob)).scalar_one() == 0
+    assert "nothing printed: printing isn't set up (TMS_PLATEN_URL)" in demo.summary(made)
+
+
+def test_a_database_with_anything_in_it_is_refused(db, client, wms, quick):
+    db.add(Vehicle(rego="ABC123", type="van", max_kg=1, max_m3=1, active=True))
+    db.commit()
+    fake = FakeWms(wms)
+    with pytest.raises(demo.SeedError, match="already here: vehicles"):
+        demo.seed_demo(fake, at=AT, **quick)
+    assert fake.packed == []
+
+
+def test_a_second_demo_day_is_refused(db, client, wms, quick):
+    demo.seed_demo(FakeWms(wms), at=AT, **quick)
+    with pytest.raises(demo.SeedError, match="already here: vehicles, drivers, carriers, runs, "
+                                             "consignments, user dee, user sam"):
+        demo.seed_demo(FakeWms(wms), at=AT, **quick)
+
+
+def test_freight_that_never_arrives_is_said_plainly(db, client, wms, quick):
+    class Silent:
+        def pack(self, *args):
+            pass
+
+    with pytest.raises(demo.SeedError, match="Simple WMS packed 19 deliveries but 0 reached"):
+        demo.seed_demo(Silent(), at=AT, **{**quick, "wait_seconds": 0})
+
+
+def test_refs_are_new_each_minute():
+    one, two = demo.refs_for(AT), demo.refs_for(AT + timedelta(minutes=1))
+    assert len(one) == 19 and len(set(one)) == 19
+    assert all(len(r) == 10 and r.startswith("008") for r in one)
+    assert not set(one) & set(two)
