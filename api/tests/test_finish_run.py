@@ -151,3 +151,18 @@ def test_a_run_counts_what_it_handed_back_apart_from_what_it_shipped(client, db,
     # Try again starts both kinds again
     lane = client.post(f"/v1/runs/{run['id']}/retry-ship", headers=dispatcher_headers).json()
     assert lane["returns"] == {"pending": 1, "done": 0, "failed": 0, "last_error": None}
+
+
+def test_one_planned_again_before_the_finish_stays_on_its_new_run(client, db, dispatcher_headers):
+    """Finishing doesn't touch the status: one planned again while its truck
+    was still out is `assigned`, not `failed`, once the run is finished."""
+    from runs_samples import assign, new_run, vehicle
+    run, (a, b), kim = on_the_road(client, db, dispatcher_headers)
+    delivered(client, kim, run["id"], a)
+    failed(client, kim, run["id"], b)
+    vehicle(db, rego="TMS018")
+    later = new_run(client, dispatcher_headers, rego="TMS018")
+    assert assign(client, dispatcher_headers, later["id"], b.id).status_code == 200
+    assert _finish(client, kim, run["id"]).status_code == 200
+    out = client.get(f"/v1/consignments/{b.id}", headers=dispatcher_headers).json()
+    assert out["status"] == "assigned" and out["history"][-1]["kind"] == "returned"

@@ -201,7 +201,8 @@ def _came_back(db: Session, run: Run, by: str, now: datetime) -> None:
     depot: each such consignment gets a `returned` history row, and a return
     call to Simple WMS waits in the queue for it, in the same transaction,
     so none is lost and none is made twice. Its tracking number is the run's,
-    the shipment that came back. It stays `failed`, in the tray."""
+    the shipment that came back. Its status isn't changed: `failed`, in the
+    tray, or `assigned` if it was planned again while the truck was out."""
     for stop, pod in db.execute(
             select(Stop, Pod).join(Pod, Pod.stop_id == Stop.id)
             .where(Stop.run_id == run.id, Stop.removed_at.is_(None), Stop.outcome == "failed")
