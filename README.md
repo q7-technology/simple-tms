@@ -330,6 +330,9 @@ warehouse in Simple WMS needs a zone of kind `returns` (its Locations
 screen): without one, Simple WMS refuses the return and **Plan runs** says
 so beside **Try again**. A consignment's calls go in the order they were
 made, so Simple WMS never hears it went again before it hears it came back.
+A call that gave up holds the later ones for its consignment: **Plan runs**
+and **Carriers** say which call ("Waiting on R-0007's return to Simple WMS,
+which failed: …"), and **Try again** on either starts that call again too.
 
 ## Connecting Platen
 
@@ -433,6 +436,20 @@ by can now stop them starting. Check these before upgrading:
 If one is wrong, `docker compose logs api` shows a validation error that
 names the setting (`worker_poll_seconds` for `TMS_WORKER_POLL_SECONDS`) and
 says what it must be. Put it right in `.env` and `docker compose up -d`.
+
+**From a version before what comes back is handed back to Simple WMS**, a
+consignment's calls to Simple WMS go in order, so one that has given up
+holds every later call for that consignment. Before upgrading, look for
+calls that gave up:
+
+```
+docker compose exec db psql -U tms tms -c "select c.wms_ref, o.kind, o.last_error
+  from outbound_call o join consignment c on c.id = o.consignment_id
+  where o.status = 'failed' order by o.id"
+```
+
+Put each right (**Try again** on its run or manifest), or sort it out in
+Simple WMS, so it doesn't hold that consignment's next call.
 
 ## Run the API outside Docker
 
@@ -599,6 +616,10 @@ stood in for by `fake-indexeddb`: `cd apps/driver && npm test`.
   to be told. Finish the run from the office if the driver didn't.
 - **All of it comes back.** A consignment is delivered whole or not at all,
   so Simple WMS is told every package came back.
+- **A call that can never go through holds the rest.** If Simple WMS
+  refuses a call for good (it answers `not_that_shipment`, say), **Try
+  again** fails again, and every later call for that consignment waits
+  behind it until someone sorts the delivery out in Simple WMS.
 
 ## Stack
 
