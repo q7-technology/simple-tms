@@ -14,6 +14,7 @@ from tms.api.errors import FieldError, NotFound, violated_constraint
 from tms.api.schemas import Page
 from tms.models import Driver
 from tms.services.access import hash_password
+from tms.services.runs import lock_planning, refuse_if_on_a_run
 
 router = APIRouter(tags=["drivers"])
 
@@ -106,8 +107,11 @@ def update_driver(code: str, body: DriverPatch, db: DB, who: Principal = require
 
 @router.post("/drivers/{code}/deactivate", response_model=DriverOut)
 def deactivate_driver(code: str, db: DB, who: Principal = require("fleet:write")):
-    """Deactivated, never deleted: their runs and deliveries stay theirs."""
+    """Deactivated, never deleted: their runs and deliveries stay theirs. Not
+    while they have a run planned or on the road (409 on_a_run)."""
+    lock_planning(db)
     d = _get(db, code)
+    refuse_if_on_a_run(db, driver=d)
     d.active = False
     db.commit()
     return driver_out(d)

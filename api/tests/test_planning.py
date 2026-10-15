@@ -4,7 +4,7 @@ from sqlalchemy import func, select
 
 from conftest import all_at_once, fresh_client
 from runs_samples import assign, consignment, driver, new_run, order, vehicle
-from tms.models import Stop
+from tms.models import Stop, Vehicle
 
 
 def _depot(client, db, headers, n=3):
@@ -159,8 +159,11 @@ def test_an_unknown_consignment_is_named(client, db, dispatcher_headers):
 
 
 def test_a_run_on_a_deactivated_truck_takes_no_more_stops(client, db, manager_headers):
+    """The API won't deactivate a truck with a run planned (409 on_a_run), but
+    one deactivated before that rule, or in the database, is still refused."""
     run, _, (a, *_) = _depot(client, db, manager_headers)
-    client.post("/v1/vehicles/TMS041/deactivate", headers=manager_headers)
+    db.execute(select(Vehicle).where(Vehicle.rego == "TMS041")).scalar_one().active = False
+    db.commit()
     r = assign(client, manager_headers, run["id"], a.id)
     assert r.status_code == 409 and r.json()["code"] == "vehicle_unavailable"
 

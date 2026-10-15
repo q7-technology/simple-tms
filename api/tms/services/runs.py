@@ -89,6 +89,36 @@ def _truck_free(db: Session, vehicle: Vehicle, day: date, other_than: int | None
         raise FieldError("vehicle", f"{vehicle.rego} already has {taken.number} on {day}")
 
 
+# a run its truck and driver are still needed for: not left yet, or on the road
+LIVE = ("planned", "departed")
+
+
+def refuse_if_on_a_run(db: Session, *, vehicle: Vehicle | None = None,
+                       driver: Driver | None = None) -> None:
+    """A truck or a driver with a run not finished isn't deactivated: a
+    planned run could no longer leave, and a driver on the road would be
+    signed out with deliveries still to send. Every such run is named, so
+    the office knows what to change first. The caller holds the planning lock."""
+    q = select(Run).where(Run.status.in_(LIVE))
+    q = q.where(Run.vehicle_id == vehicle.id) if vehicle else q.where(Run.driver_id == driver.id)
+    runs = db.execute(q.order_by(Run.day, Run.id)).scalars().all()
+    if not runs:
+        return
+    who = vehicle.rego if vehicle else f"{driver.name} ({driver.code})"
+    where = ", ".join(f"{r.number} (" + ("on the road now" if r.status == "departed"
+                                         else f"planned for {fleet.long_date(r.day)}") + ")"
+                      for r in runs)
+    one = len(runs) == 1
+    that = "that run" if one else "those runs"
+    if any(r.status == "departed" for r in runs):
+        then = (f"Deactivate {'it' if vehicle else 'them'} once {that} "
+                f"{'is' if one else 'are'} finished.")
+    else:
+        then = (f"Give {that} another {'truck' if vehicle else 'driver'}, "
+                f"or cancel {'it' if one else 'them'}, first.")
+    raise Conflict("on_a_run", f"{who} is on {where}. {then}")
+
+
 def create(db: Session, *, day: date, rego: str, driver_code: str, by: str) -> Run:
     lock_planning(db)
     vehicle, driver = _vehicle(db, rego), _driver(db, driver_code)

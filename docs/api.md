@@ -128,7 +128,11 @@ password, at least 12 characters, is asked for, or given with `--password`).
 - `PATCH /v1/vehicles/{rego}` — any of `type`, `max_kg`, `max_m3`,
   `service_every_months`, `service_every_km`. A field left out is kept;
   `null` clears a service interval. The rego does not change.
-- `POST /v1/vehicles/{rego}/deactivate`, `/reactivate`
+- `POST /v1/vehicles/{rego}/deactivate`, `/reactivate` — a deactivated truck
+  takes no run. One with a run planned or on the road is `409 on_a_run`,
+  naming each run ("TMS041 is on R-0042 (planned for 16 Oct 2026). Give that
+  run another truck, or cancel it, first."; on the road: "Deactivate it once
+  that run is finished."). A finished or cancelled run doesn't hold it.
 
 `POST` and `PATCH` also take `service_every_months` (1 to 120) and
 `service_every_km` (1 to 1,000,000): how often it is serviced, whichever
@@ -257,7 +261,10 @@ only. It comes with the first system that subscribes.
 - `GET /v1/drivers/{code}`
 - `PATCH /v1/drivers/{code}` — `name` and/or a new `pin`. A new PIN ends the
   driver's sessions.
-- `POST /v1/drivers/{code}/deactivate`, `/reactivate`
+- `POST /v1/drivers/{code}/deactivate`, `/reactivate` — a deactivated driver
+  can't sign in, and their sessions end. One with a run planned or on the
+  road is `409 on_a_run`, as for a truck ("Kim (kim) is on R-0042 (on the
+  road now). Deactivate them once that run is finished.").
 - `POST /v1/drivers/{code}/unlock` — clears a PIN lock and the count.
 
 Each driver: `{ "id", "code", "name", "active", "locked", "failed_attempts", "created_at" }`.

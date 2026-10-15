@@ -17,7 +17,7 @@ from tms.api.errors import Conflict, FieldError, NotFound, violated_constraint
 from tms.api.schemas import Dec, Page
 from tms.models import Vehicle
 from tms.services import fleet
-from tms.services.runs import lock_planning
+from tms.services.runs import lock_planning, refuse_if_on_a_run
 
 router = APIRouter(tags=["vehicles"])
 
@@ -231,8 +231,11 @@ def update_vehicle(rego: str, body: VehiclePatch, db: DB, who: Principal = requi
 
 @router.post("/vehicles/{rego}/deactivate", response_model=VehicleOut)
 def deactivate_vehicle(rego: str, db: DB, who: Principal = require("fleet:write")):
-    """Off the road for good, or sold. Its history stays."""
+    """Off the road for good, or sold. Its history stays. Not while it has a
+    run planned or on the road (409 on_a_run)."""
+    lock_planning(db)
     v = _get(db, rego)
+    refuse_if_on_a_run(db, vehicle=v)
     v.active = False
     db.commit()
     return vehicle_out(db, v)
