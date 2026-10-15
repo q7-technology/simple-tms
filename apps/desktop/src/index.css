@@ -209,6 +209,17 @@
   .grp tr.sel td { background: #F1F8F4; }
   .grp tr.sel .rowbtn { border-color: var(--color-green); background: var(--color-tint); }
 
+  /* the admin forms: no drawn design, so the drawers' own fields and boxes */
+  .tools { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .adminform { padding: 16px; border-radius: 16px; border: 1px solid var(--color-card-line); background: #fff; display: flex; flex-direction: column; gap: 12px; }
+  .adminform .row { display: flex; flex-wrap: wrap; gap: 12px; }
+  .adminform .row > .fld { flex: 1 1 160px; }
+  .acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .fld { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 700; min-width: 0; }
+  .fld .small { font-weight: 400; }
+  .ferr { font-size: 12px; font-weight: 700; color: var(--color-red-ink); }
+  .field[aria-invalid="true"] { border-color: var(--color-red); box-shadow: 0 0 0 1px var(--color-red); }
+
   /* the Consignments drawer (Consignments.html) */
   .p-blue { background: #E4EEF9; color: #235596; }
   .tabs { display: flex; flex-wrap: wrap; gap: 6px; }

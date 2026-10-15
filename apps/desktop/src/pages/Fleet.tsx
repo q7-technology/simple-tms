@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useOutletContext } from "react-router-dom";
+import { VehicleForm } from "../admin/VehicleForm";
 import { api, ApiError, Unreachable } from "../api/client";
 import type { HistoryItem, Page, PrestartDetail, Run, Vehicle } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
@@ -200,6 +201,8 @@ function VehicleAside({ v, driverName, onChanged }: { v: Vehicle; driverName: st
  * grounded one, and what a fleet manager records. */
 export function Fleet() {
   const { reloadCounts } = useOutletContext<{ reloadCounts: () => void }>();
+  const { can } = useAuth();
+  const manager = can("fleet:write");
   // the day asked about, worked out again on each load: a drawer left open
   // past midnight asks about the new day
   const [today, setToday] = useState(() => isoDay(new Date()));
@@ -208,6 +211,8 @@ export function Fleet() {
   const [q, setQ] = useState("");
   const [chosen, setChosen] = useState<string | null>(null);
   const [note, setNote] = useState<Note>(null);
+  const [adding, setAdding] = useState(false);
+  const addButton = useRef<HTMLButtonElement>(null);
 
   const load = useCallback(async () => {
     const day = isoDay(new Date());
@@ -232,6 +237,11 @@ export function Fleet() {
     reloadCounts();
   }
 
+  function closeAdd() {
+    setAdding(false);
+    setTimeout(() => addButton.current?.focus(), 0);
+  }
+
   const runOf = (rego: string) => runs.find((r) => r.vehicle.rego === rego && r.status !== "cancelled");
   const all = vehicles ?? [];
   const shown = all.filter((v) => {
@@ -254,9 +264,17 @@ export function Fleet() {
         <div className="sub">Your trucks, pre-start checks, and when rego and service fall due.</div>
       </div>
     }>
-      <label className="search" style={{ maxWidth: 420 }}><Icon name="search" />
-        <span className="sr">Search vehicles</span>
-        <input type="search" placeholder="Rego or driver" value={q} onChange={(e) => setQ(e.target.value)} /></label>
+      <div className="tools">
+        <label className="search" style={{ flex: "0 1 420px" }}><Icon name="search" />
+          <span className="sr">Search vehicles</span>
+          <input type="search" placeholder="Rego or driver" value={q} onChange={(e) => setQ(e.target.value)} /></label>
+        {manager && (
+          <button ref={addButton} type="button" className="btn primary" aria-expanded={adding} onClick={() => setAdding((a) => !a)}>
+            <Icon name="plus" size={16} width={2.6} />Add a vehicle</button>)}
+      </div>
+      {adding && (
+        <VehicleForm vehicles={all} onCancel={closeAdd}
+                     onDone={async (text, rego) => { closeAdd(); setChosen(rego); await changed({ tone: "g", text }); }} />)}
       {note && <div className={`msg ${note.tone}`} role={note.tone === "r" ? "alert" : "status"}>{note.text}</div>}
       <div className="stats">
         <div className="stat"><div className="eyebrow">VEHICLES</div><div className="v num">{active.length}</div>
@@ -292,7 +310,8 @@ export function Fleet() {
                   </tr>
                 );
               })}
-              {vehicles?.length === 0 && <tr><td colSpan={7} className="small">No vehicles yet. Add them with POST /v1/vehicles.</td></tr>}
+              {vehicles?.length === 0 && (
+                <tr><td colSpan={7} className="small">{manager ? "No vehicles yet. Add your trucks with Add a vehicle." : "No vehicles yet. A fleet manager adds them here."}</td></tr>)}
             </tbody>
           </table>
         </div>
