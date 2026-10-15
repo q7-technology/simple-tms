@@ -173,12 +173,25 @@ def test_an_unknown_sku_stops_the_seed_and_cancels_what_it_made(db, quick):
     nothing_made_in_simple_tms(db)
 
 
-def test_simple_wms_refusing_says_what_it_said():
+def test_simple_wms_refusing_says_what_it_said_but_never_the_key():
     def handler(request):
-        return httpx.Response(403, json={"detail": "you do not have the tasks:write scope"})
+        # a proxy that echoes what it was sent, key and all
+        return httpx.Response(403, json={"detail": "you do not have the tasks:write scope",
+                                         "sent": request.headers["Authorization"]})
 
-    with pytest.raises(demo.SeedError, match="403.*tasks:write"):
+    with pytest.raises(demo.SeedError, match="403.*tasks:write") as e:
         wms_over(handler).create("DEMO-261015-123000-01", demo.TRAY[1], AT.date(), 0)
+    assert "wms_k.secret" not in str(e.value)
+    assert "Bearer ***" in str(e.value)
+
+
+def test_simple_wms_not_answering_says_so_but_never_the_key():
+    # the real class, its own client, and nothing listening
+    wms = demo.Wms("http://127.0.0.1:9", "wms_k.secret", warehouse="BAL-WH01", operator="op-017",
+                   skus=[("JKL012", "EA")])
+    with pytest.raises(demo.SeedError, match="Simple WMS at http://127.0.0.1:9 didn't answer") as e:
+        wms.create("DEMO-261015-123000-01", demo.TRAY[1], AT.date(), 0)
+    assert "wms_k.secret" not in str(e.value)
 
 
 def test_no_simple_wms_set_up_is_said_plainly():
@@ -403,7 +416,19 @@ def test_the_command_refuses_a_database_in_use(db, admin, capsys):
     db.add(Vehicle(rego="ABC123", type="van", max_kg=1, max_m3=1, active=True))
     db.commit()
     assert main(["seed-demo", "--yes"]) == 1
-    assert "seed-demo: already here: vehicles" in capsys.readouterr().err
+    said = capsys.readouterr()
+    assert "seed-demo: already here: vehicles" in said.err
+    assert "wms_test-key-for-the-tms" not in said.out + said.err
+
+
+def test_the_command_with_simple_wms_away_says_so_and_never_the_key(db, capsys):
+    # the real Wms, at the test settings' address, where nothing listens
+    assert main(["seed-demo", "--yes"]) == 1
+    said = capsys.readouterr()
+    assert "seed-demo: Simple WMS at http://127.0.0.1:9 didn't answer" in said.err
+    assert "Nothing was made in Simple WMS or Simple TMS." in said.err
+    assert "part of a demo day" not in said.err
+    assert "wms_test-key-for-the-tms" not in said.out + said.err
 
 
 def test_the_command_says_what_it_will_do_and_does_nothing_without_yes(db, monkeypatch, capsys):

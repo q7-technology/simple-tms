@@ -225,8 +225,17 @@ class Wms:
         self.url, self.warehouse, self.operator, self.skus = url.rstrip("/"), warehouse, operator, skus
         self.http = client or httpx.Client(timeout=30)
         self.headers = {"Authorization": f"Bearer {key}"}
+        self._key = key
 
     def _call(self, method: str, path: str, **kw) -> dict:
+        """The JSON Simple WMS answers, or a SeedError that never holds the
+        key, even if what Simple WMS (or a proxy) said back does."""
+        try:
+            return self._answer(method, path, **kw)
+        except SeedError as e:
+            raise SeedError(str(e).replace(self._key, "***")) from None
+
+    def _answer(self, method: str, path: str, **kw) -> dict:
         try:
             r = self.http.request(method, f"{self.url}/v1{path}", headers=self.headers, **kw)
         except httpx.HTTPError as e:
