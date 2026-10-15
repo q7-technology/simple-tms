@@ -5,6 +5,7 @@ import { api, ApiError, Unreachable } from "../api/client";
 import type { HistoryItem, Page, PrestartDetail, Run, Vehicle } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { clock, dayLabel, isoDay } from "../lib/days";
+import { plain, toMicro } from "../lib/decimal";
 import { checkCell, km, longDate, regoCell, serviceCell, statusPill, when, type Cell } from "../lib/fleet";
 import { Drawer } from "../ui/Drawer";
 import { Icon } from "../ui/icons";
@@ -41,6 +42,14 @@ function historyLine(h: HistoryItem): string {
   return [KIND[h.kind], what, h.note].filter(Boolean).join(" · ");
 }
 
+/** "Rigid · up to 4,500 kg and 22 m³ · serviced every 6 months or 15,000 km" */
+function vehicleLine(v: Vehicle): string {
+  const every = [v.service_every_months && `${v.service_every_months} months`,
+                 v.service_every_km && `${km(v.service_every_km)} km`].filter(Boolean).join(" or ");
+  return [`${v.type[0].toUpperCase() + v.type.slice(1)}`, `up to ${plain(toMicro(v.max_kg))} kg and ${plain(toMicro(v.max_m3))} m³`,
+          every ? `serviced every ${every}` : "no service schedule"].join(" · ");
+}
+
 /** One small form: a few fields and a note, sent as a new record. */
 function RecordForm({ title, button, fields, send }: {
   title: string; button: string; fields: { name: string; label: string; type: "date" | "number"; required?: boolean }[];
@@ -72,7 +81,9 @@ function RecordForm({ title, button, fields, send }: {
 
 /** The aside: the check that grounded the truck (or its last one), Mark
  * fixed, what a fleet manager records, and the truck's history. */
-function VehicleAside({ v, driverName, onChanged }: { v: Vehicle; driverName: string | null; onChanged: (note: Note) => Promise<void> }) {
+function VehicleAside({ v, vehicles, driverName, onChanged }: {
+  v: Vehicle; vehicles: Vehicle[]; driverName: string | null; onChanged: (note: Note) => Promise<void>;
+}) {
   const { can } = useAuth();
   const manager = can("fleet:write");
   const checkId = v.grounded?.check_id ?? v.last_prestart?.id ?? null;
@@ -84,6 +95,7 @@ function VehicleAside({ v, driverName, onChanged }: { v: Vehicle; driverName: st
   // bumped after each record: Mark fixed leaves the check id it shows the
   // same, and a record can leave the truck's dates as they were
   const [recorded, setRecorded] = useState(0);
+  const [changing, setChanging] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -110,6 +122,22 @@ function VehicleAside({ v, driverName, onChanged }: { v: Vehicle; driverName: st
     }
   }
 
+  async function switchActive() {
+    const deactivating = v.active;
+    if (deactivating && !window.confirm(`Deactivate ${v.rego}? It can't take a run until it is reactivated. Its checks and history stay.`)) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await api.post(`/v1/vehicles/${v.rego}/${deactivating ? "deactivate" : "reactivate"}`);
+      await onChanged({ tone: "g", text: deactivating ? `${v.rego} is deactivated.` : `${v.rego} is reactivated, and can take a run.` });
+    } catch (e) {
+      // on a run not finished: the API names each run
+      setError(said(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function fix(e: FormEvent) {
     e.preventDefault();
     if (!check || !fixNote.trim()) return;
@@ -129,7 +157,8 @@ function VehicleAside({ v, driverName, onChanged }: { v: Vehicle; driverName: st
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontSize: 22, fontWeight: 800 }}>{v.rego}</span>
           {v.state === "grounded" && <span className="pill p-red">Grounded</span>}
-          {v.state === "overdue" && <span className="pill p-red">Overdue</span>}</div>
+          {v.state === "overdue" && <span className="pill p-red">Overdue</span>}
+          {!v.active && <span className="pill p-grey">Deactivated</span>}</div>
         {check && (
           <div style={{ fontSize: 13, color: "var(--color-ink-2)", textTransform: "none" }}>
             {[v.type[0].toUpperCase() + v.type.slice(1), who, `${dayLabel(new Date(check.at))}, ${clock(new Date(check.at))}`,
@@ -181,6 +210,19 @@ function VehicleAside({ v, driverName, onChanged }: { v: Vehicle; driverName: st
           <RecordForm title="The odometer put right" button="Record the reading"
                       fields={[{ name: "odometer_km", label: "Reading (km)", type: "number", required: true }]}
                       send={(f) => record("odometer", { odometer_km: Number(f.odometer_km), note: f.note }, `${v.rego}'s odometer is put right.`)} />
+        </div>
+      )}
+      {manager && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div className="eyebrow">VEHICLE</div>
+          <div className="small">{vehicleLine(v)}</div>
+          <div className="acts">
+            <button type="button" className="btn sm" aria-expanded={changing} onClick={() => setChanging((c) => !c)}>Change type, limits or service</button>
+            <button type="button" className="btn sm" disabled={busy} onClick={() => void switchActive()}>{v.active ? "Deactivate" : "Reactivate"}</button>
+          </div>
+          {changing && (
+            <VehicleForm vehicle={v} vehicles={vehicles} onCancel={() => setChanging(false)}
+                         onDone={async (text) => { setChanging(false); await onChanged({ tone: "g", text }); }} />)}
         </div>
       )}
       {history.length > 0 && (
@@ -316,7 +358,7 @@ export function Fleet() {
           </table>
         </div>
         {/* stay on the truck it changed: once fixed, it's no longer the grounded one shown by default */}
-        {selected && <VehicleAside key={selected.rego} v={selected} driverName={runOf(selected.rego)?.driver.name ?? null}
+        {selected && <VehicleAside key={selected.rego} v={selected} vehicles={all} driverName={runOf(selected.rego)?.driver.name ?? null}
                                    onChanged={(n) => { setChosen(selected.rego); return changed(n); }} />}
       </div>
       <div className="small">Amber 30 days or 1,000 km before it's due, red once it's overdue. A grounded or overdue truck can't take a run.
