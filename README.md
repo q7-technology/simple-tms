@@ -141,6 +141,40 @@ regulate tracking employees (for example the NSW Workplace Surveillance Act,
 which asks for notice to staff before tracking starts): check your own
 obligations, tell your drivers, and set the retention period to suit.
 
+## A demo day
+
+`tms seed-demo` fills an empty Simple TMS with a working day at a made-up
+Ballarat depot, for trying it out, showing it or taking screenshots: four
+trucks (a ute grounded by its pre-start, a van's service due soon), four
+drivers, two sample carriers, a run finished this morning with a stop that
+came back, a run on the road with its truck's position, a van nearly full for
+this afternoon, one carrier pickup collected and another on the carrier bay,
+and three consignments in the tray. Every business, person, phone number and
+picture in it is invented.
+
+It works through the API as the people who would do it, so every rule
+applies and the history says who did what. The freight is real Simple WMS
+freight: it creates, picks and packs 19 deliveries in Simple WMS with
+`TMS_WMS_API_KEY`, or the key in **Settings** (it already has
+`tasks:write`), and waits for each `delivery.packed`, so Simple WMS must be
+connected (see "Connecting Simple WMS") with its worker running. The stop
+that came back is returned to Simple WMS when its run is finished, so the
+warehouse needs its `returns` zone. Times are when it runs, as the API takes
+nothing back-dated: the run on the road drives for about 7 minutes, sending
+its position as the driver's phone would (`--pace`, minutes a stop, 3 unless
+given).
+
+    docker compose exec api tms seed-demo --skus JKL012,FG-900
+
+`--skus` names Simple WMS SKUs with stock in `BAL-WH01` (`--warehouse`),
+picked and packed by `op-017` (`--operator`); the defaults suit a Simple WMS
+filled with `wms seed-demo`. It refuses a database with any trucks, drivers,
+carriers, runs or consignments in it. It makes the desk users `dee`
+(dispatcher) and `sam` (manager) with the password `demo-password-1`; the
+drivers `tom`, `kim`, `ana` and `raj` sign in with PIN `2468`. It prints what
+it made and never a key. With printing set up, the run sheets and manifests
+go to Platen. To start again, empty the database and the `pod_files` volume.
+
 ## Map tiles
 
 **Where is it** draws a real map from raster map tiles. Simple TMS doesn't
