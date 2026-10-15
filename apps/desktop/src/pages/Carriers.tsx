@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { useOutletContext } from "react-router-dom";
 import { api, ApiError, Unreachable } from "../api/client";
 import type { Carrier, Manifest, Page } from "../api/types";
+import { YourCarriers } from "../admin/YourCarriers";
+import { useAuth } from "../auth/AuthContext";
 import { bayStats, conNoteProblem, nextNeedingConNote, normalConNote, pickupLine, type Needing } from "../lib/carriers";
 import { clock, dayLabel, fromIso, isoDay } from "../lib/days";
 import { plain, toMicro } from "../lib/decimal";
@@ -31,6 +33,7 @@ function printLine(m: Manifest): Note {
  * Mark collected once the carrier has been. */
 export function Carriers() {
   const { reloadCounts } = useOutletContext<{ reloadCounts: () => void }>();
+  const manager = useAuth().can("fleet:write");
   const today = isoDay(new Date());
   const [manifests, setManifests] = useState<Manifest[] | null>(null);
   const [carriers, setCarriers] = useState<Carrier[]>([]);
@@ -213,7 +216,8 @@ export function Carriers() {
       {manifests && all.length === 0 && (
         <div className="small">Nothing is waiting for a carrier. Send a consignment with a carrier from Plan runs.</div>)}
       {manifests && carriers.length === 0 && (
-        <div className="msg a" role="status">No carriers yet. A fleet manager adds them through the API (POST /v1/carriers; see docs/api.md).</div>)}
+        <div className="msg a" role="status">{manager ? "No carriers yet. Add the ones you use under Your carriers, below."
+          : "No carriers yet. A fleet manager adds them here, in Carriers."}</div>)}
 
       {all.map((m) => {
         const isOpen = m.status === "open";
@@ -276,6 +280,8 @@ export function Carriers() {
           </section>
         );
       })}
+
+      {manager && <YourCarriers say={setNote} onChanged={load} />}
 
       <div className="small">Manifests print on the dispatch printer through Platen. Carrier bookings are by hand in this version: no carrier connections yet.</div>
     </Drawer>
