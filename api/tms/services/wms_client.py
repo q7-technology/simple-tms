@@ -1,5 +1,6 @@
 """The calls Simple TMS makes to Simple WMS: read a delivery when it is packed,
-and say it shipped when its run departs."""
+say it shipped when its run departs or a carrier collects it, and say it came
+back when its run is finished without delivering it."""
 from __future__ import annotations
 
 import logging
@@ -92,20 +93,23 @@ _SHIP_REFUSALS = {
 
 @dataclass(frozen=True)
 class ShipAnswer:
-    """How a ship call went. `done`: Simple WMS took it, or says the delivery
-    had already shipped (`already_shipped`), which no retry will change.
+    """How a call went. `done`: Simple WMS took it, or says it had it already
+    (`already_shipped`, `already_returned`), which no retry will change.
     Otherwise `error` says why not, for last_error; never the key."""
     done: bool
     already_shipped: bool = False
     error: str | None = None
 
 
+# Simple WMS had it already: a retry after a reply that was lost, once Simple
+# WMS has stopped remembering the message_id (24 hours). The calls go in
+# order, so it can only be this call's own work.
+_ALREADY = {"already_shipped", "already_returned"}
+
+
 def ship(http: httpx.Client, path: str, body: dict) -> ShipAnswer:
-    """Make one ship call: POST {TMS_WMS_URL}{path} with our key. A `409
-    already_shipped` is done too: a retry after a reply that was lost, once
-    its message_id window has passed; or a consignment that came back from
-    its run and then went with a carrier, which Simple WMS keeps as shipped
-    by the run. Either way, Simple WMS keeps what it had."""
+    """Make one call, a ship or a return: POST {TMS_WMS_URL}{path} with our
+    key. A `409 already_shipped` or `409 already_returned` is done too."""
     settings = get_settings()
     url = settings.wms_url.rstrip("/") + path
     try:
@@ -121,9 +125,9 @@ def ship(http: httpx.Client, path: str, body: dict) -> ShipAnswer:
         code = resp.json().get("code")
     except (ValueError, AttributeError):
         code = None
-    if resp.status_code == 409 and code == "already_shipped":
-        log.info("%s: Simple WMS says it had already shipped; taken as done", path)
-        return ShipAnswer(done=True, already_shipped=True)
+    if resp.status_code == 409 and code in _ALREADY:
+        log.info("%s: Simple WMS says %s; taken as done", path, code)
+        return ShipAnswer(done=True, already_shipped=code == "already_shipped")
     if resp.status_code in _SHIP_REFUSALS:
         log.error("HTTP %s on %s. %s", resp.status_code, path, _SHIP_REFUSALS[resp.status_code])
     return ShipAnswer(done=False, error=f"HTTP {resp.status_code}: {resp.text[:200]}")

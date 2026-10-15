@@ -84,10 +84,34 @@ def test_a_network_error_is_retried_like_a_refusal(db, http, departed):
 
 
 def test_already_shipped_in_simple_wms_counts_as_done(db, http, departed):
+    """Simple WMS did it, and the answer was lost: a retry after it stopped
+    remembering the message_id (24 hours) hears this instead of the reply."""
     http.answers.append((409, {"detail": "0080034519 has already shipped",
                                "code": "already_shipped"}))
     worker.send_ship_calls(db, http.client, now=T0)
     assert (_call(db).status, _call(db).already_shipped) == ("done", True)
+
+
+def test_already_returned_in_simple_wms_counts_as_done(db, http, departed):
+    row = _call(db)
+    row.kind, row.path = "return", "/v1/deliveries/0080034519/return"
+    db.commit()
+    http.answers.append((409, {"detail": "0080034519 has already come back",
+                               "code": "already_returned"}))
+    worker.send_ship_calls(db, http.client, now=T0)
+    assert (_call(db).status, _call(db).last_error) == ("done", None)
+
+
+def test_a_return_simple_wms_refuses_is_retried(db, http, departed):
+    """No returns zone in Simple WMS yet, say: it is put right there, and
+    the next try goes through."""
+    row = _call(db)
+    row.kind, row.path = "return", "/v1/deliveries/0080034519/return"
+    db.commit()
+    http.answers.append((422, {"errors": [{"field": "warehouse", "message": "BAL-WH01 has no returns zone"}]}))
+    worker.send_ship_calls(db, http.client, now=T0)
+    row = _call(db)
+    assert row.status == "pending" and "no returns zone" in row.last_error
 
 
 def test_a_consignment_s_calls_go_in_the_order_they_were_queued(db, http, departed):
