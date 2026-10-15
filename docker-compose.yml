@@ -1,3 +1,29 @@
+# Every TMS_* setting api/tms/config.py reads, the same for the api and the
+# worker: each reads them all, and the Settings drawer shows what the api
+# sees. One left out of .env comes through empty, which config.py takes as
+# its own default.
+x-tms-settings: &tms-settings
+  TMS_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-tms}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-tms}
+  TMS_SECRET_KEY: ${TMS_SECRET_KEY:?set TMS_SECRET_KEY in .env}
+  TMS_WMS_WEBHOOK_SECRET: ${TMS_WMS_WEBHOOK_SECRET:-}
+  TMS_WMS_URL: ${TMS_WMS_URL:-}
+  TMS_WMS_API_KEY: ${TMS_WMS_API_KEY:-}
+  TMS_WMS_TIMEOUT_SECONDS: ${TMS_WMS_TIMEOUT_SECONDS:-}
+  TMS_PLATEN_URL: ${TMS_PLATEN_URL:-}
+  TMS_PLATEN_KEY: ${TMS_PLATEN_KEY:-}
+  TMS_RUN_SHEET_PRINTER: ${TMS_RUN_SHEET_PRINTER:-}
+  TMS_MANIFEST_PRINTER: ${TMS_MANIFEST_PRINTER:-}
+  # where the pod_files volume is mounted in the api: not one for .env
+  TMS_POD_DIR: /data/pod
+  TMS_POSITION_RETENTION_DAYS: ${TMS_POSITION_RETENTION_DAYS:-}
+  TMS_MAP_TILE_URL: ${TMS_MAP_TILE_URL:-}
+  TMS_MAP_ATTRIBUTION: ${TMS_MAP_ATTRIBUTION:-}
+  # checked against TMS_MAP_TILE_URL; Caddy puts it in the desktop's CSP
+  TMS_MAP_TILE_ORIGIN: ${TMS_MAP_TILE_ORIGIN:-}
+  TMS_ETA_MINUTES_PER_STOP: ${TMS_ETA_MINUTES_PER_STOP:-}
+  TMS_WORKER_POLL_SECONDS: ${TMS_WORKER_POLL_SECONDS:-}
+  TMS_WORKER_HTTP_TIMEOUT_SECONDS: ${TMS_WORKER_HTTP_TIMEOUT_SECONDS:-}
+
 services:
   db:
     image: postgres:16
@@ -22,19 +48,7 @@ services:
     restart: unless-stopped
     command: sh -c "alembic upgrade head && uvicorn tms.api.app:app --host 0.0.0.0 --port 8000"
     environment:
-      TMS_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-tms}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-tms}
-      TMS_SECRET_KEY: ${TMS_SECRET_KEY:?set TMS_SECRET_KEY in .env}
-      TMS_WMS_WEBHOOK_SECRET: ${TMS_WMS_WEBHOOK_SECRET:-}
-      TMS_WMS_URL: ${TMS_WMS_URL:-}
-      TMS_WMS_API_KEY: ${TMS_WMS_API_KEY:-}
-      TMS_PLATEN_URL: ${TMS_PLATEN_URL:-}
-      TMS_RUN_SHEET_PRINTER: ${TMS_RUN_SHEET_PRINTER:-dispatch}
-      TMS_MANIFEST_PRINTER: ${TMS_MANIFEST_PRINTER:-}
-      TMS_MAP_TILE_URL: ${TMS_MAP_TILE_URL:-}
-      TMS_MAP_ATTRIBUTION: ${TMS_MAP_ATTRIBUTION:-}
-      # checked against TMS_MAP_TILE_URL; Caddy puts it in the desktop's CSP
-      TMS_MAP_TILE_ORIGIN: ${TMS_MAP_TILE_ORIGIN:-}
-      TMS_ETA_MINUTES_PER_STOP: ${TMS_ETA_MINUTES_PER_STOP:-20}
+      <<: *tms-settings
     volumes:
       # signatures and photos for proof of delivery (TMS_POD_DIR)
       - pod_files:/data/pod
@@ -63,14 +77,7 @@ services:
     restart: unless-stopped
     command: python -m tms.worker
     environment:
-      TMS_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-tms}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-tms}
-      TMS_SECRET_KEY: ${TMS_SECRET_KEY:?set TMS_SECRET_KEY in .env}
-      TMS_WMS_URL: ${TMS_WMS_URL:-}
-      TMS_WMS_API_KEY: ${TMS_WMS_API_KEY:-}
-      TMS_PLATEN_URL: ${TMS_PLATEN_URL:-}
-      TMS_PLATEN_KEY: ${TMS_PLATEN_KEY:-}
-      TMS_RUN_SHEET_PRINTER: ${TMS_RUN_SHEET_PRINTER:-dispatch}
-      TMS_POSITION_RETENTION_DAYS: ${TMS_POSITION_RETENTION_DAYS:-90}
+      <<: *tms-settings
     depends_on:
       db:
         condition: service_healthy

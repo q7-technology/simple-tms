@@ -110,3 +110,40 @@ def test_an_address_is_kept_without_spaces_around_it():
 def test_a_wait_out_of_range_refuses_to_start(field, value):
     with pytest.raises(ValidationError, match=field):
         Settings(secret_key=KEY, **{field: value})
+
+
+def test_a_setting_left_empty_in_env_is_its_default(monkeypatch):
+    """Compose passes every TMS_* setting to the api and the worker, as
+    `${TMS_X:-}`: one left out of .env comes through as "", and must mean
+    config.py's default, not a value that can't be read."""
+    for name in ("WMS_TIMEOUT_SECONDS", "WORKER_POLL_SECONDS", "WORKER_HTTP_TIMEOUT_SECONDS",
+                 "POSITION_RETENTION_DAYS", "ETA_MINUTES_PER_STOP", "RUN_SHEET_PRINTER",
+                 "POD_DIR", "PLATEN_KEY", "MANIFEST_PRINTER"):
+        monkeypatch.setenv(f"TMS_{name}", "")
+    s = Settings(secret_key=KEY)
+    assert (s.wms_timeout_seconds, s.worker_poll_seconds, s.worker_http_timeout_seconds) == (
+        5.0, 5.0, 10.0)
+    assert (s.position_retention_days, s.eta_minutes_per_stop) == (90, 20)
+    assert (s.run_sheet_printer, s.pod_dir) == ("dispatch", "/data/pod")
+    assert (s.platen_key, s.manifest_printer) == ("", "")
+
+
+def test_an_empty_secret_key_in_env_still_refuses_to_start(monkeypatch):
+    monkeypatch.setenv("TMS_SECRET_KEY", "")
+    with pytest.raises(ValidationError, match=r"TMS_SECRET_KEY"):
+        Settings()
+
+
+def test_compose_gives_the_api_and_the_worker_every_setting():
+    """The Settings drawer shows what the api sees, and the worker reads them
+    too: a setting Compose leaves out of one of them is one .env can't set."""
+    import pathlib
+
+    import yaml
+
+    compose = yaml.safe_load(
+        (pathlib.Path(__file__).parents[2] / "docker-compose.yml").read_text())
+    wanted = {f"TMS_{name.upper()}" for name in Settings.model_fields}
+    for service in ("api", "worker"):
+        given = {n for n in compose["services"][service]["environment"] if n.startswith("TMS_")}
+        assert given == wanted, service

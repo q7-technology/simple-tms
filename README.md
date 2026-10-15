@@ -105,7 +105,9 @@ and **Use .env's** puts one back; the API and the worker take a change within
 The database, `TMS_SECRET_KEY`, the proof-of-delivery folder, the map tiles
 (Caddy builds the desktop's Content-Security-Policy from them when it
 starts), the ports and the domain stay in `.env` only. Each change is
-recorded with who made it (`docs/api.md`, "Settings").
+recorded with who made it (`docs/api.md`, "Settings"). Compose gives every
+`TMS_*` setting in `.env` to both the API and the worker; one left empty or
+out is Simple TMS's own default.
 
 **Live location.** From **Start run** until the run is finished, the driver's
 phone tells the office where it is about every 30 seconds, and its top bar

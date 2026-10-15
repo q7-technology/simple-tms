@@ -16,7 +16,9 @@ ORIGIN = re.compile(r"^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$")
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="TMS_", extra="ignore")
+    # A setting left empty (Compose hands the api and the worker every one,
+    # as "" when .env leaves it out) is the default here, not "".
+    model_config = SettingsConfigDict(env_prefix="TMS_", extra="ignore", env_ignore_empty=True)
 
     database_url: str = "postgresql+psycopg://tms:tms@127.0.0.1:5432/tms"
     # Signs session tokens. No usable default: start-up refuses a weak one.
