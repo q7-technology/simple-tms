@@ -1,6 +1,7 @@
 """The worker makes each ship call to Simple WMS, retrying after 1 min, 5, 30
 and 2 h; the same message_id goes every time, so Simple WMS ships it once."""
 import logging
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -39,7 +40,7 @@ def departed(client, db, dispatcher_headers):
 
 def _call(db) -> OutboundCall:
     db.expire_all()
-    return db.execute(select(OutboundCall)).scalar_one()
+    return db.execute(select(OutboundCall).order_by(OutboundCall.id).limit(1)).scalar_one()
 
 
 def test_the_ship_call_goes_with_our_key_and_its_message_id(db, http, departed):
@@ -87,6 +88,37 @@ def test_already_shipped_in_simple_wms_counts_as_done(db, http, departed):
                                "code": "already_shipped"}))
     worker.send_ship_calls(db, http.client, now=T0)
     assert (_call(db).status, _call(db).already_shipped) == ("done", True)
+
+
+def test_a_consignment_s_calls_go_in_the_order_they_were_queued(db, http, departed):
+    """A later call for a consignment waits while an earlier one isn't done,
+    even when it is due first: Simple WMS has to hear it went before it hears
+    it came back, and that before it went again."""
+    first = _call(db)
+    later_id = uuid.uuid4()
+    db.add(OutboundCall(message_id=later_id, kind="return", run_id=first.run_id,
+                        consignment_id=first.consignment_id,
+                        path="/v1/deliveries/0080034519/return",
+                        body={"message_id": str(later_id), "owner": "DEFAULT", "reason": "closed"},
+                        status="pending", attempts=0, next_attempt_at=T0 - timedelta(hours=1)))
+    first.next_attempt_at = T0 + timedelta(minutes=1)
+    db.commit()
+    assert worker.send_ship_calls(db, http.client, now=T0) == 0      # the first isn't due
+    first = _call_by(db, first.id)
+    first.status = "failed"
+    db.commit()
+    assert worker.send_ship_calls(db, http.client, now=T0) == 0      # nor done: it holds
+    first = _call_by(db, first.id)
+    first.status, first.next_attempt_at = "pending", T0
+    db.commit()
+    assert worker.send_ship_calls(db, http.client, now=T0) == 2
+    assert [r.url.path for r in http.requests] == ["/v1/deliveries/0080034519/ship",
+                                                   "/v1/deliveries/0080034519/return"]
+
+
+def _call_by(db, call_id) -> OutboundCall:
+    db.expire_all()
+    return db.get(OutboundCall, call_id)
 
 
 def test_a_key_without_the_scope_is_logged_as_an_error_and_retried(db, http, departed, caplog):

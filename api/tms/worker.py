@@ -1,5 +1,5 @@
-"""Drains the queues: ship calls to Simple WMS and print jobs to Platen. Run
-as `python -m tms.worker`.
+"""Drains the queues: calls to Simple WMS (it shipped, it came back) and
+print jobs to Platen. Run as `python -m tms.worker`.
 
 A failed try is tried again after 1 min, 5, 30 and 2 h. The try after the
 2 h wait is the last: if it fails too, the row is `failed` and waits for a
@@ -15,8 +15,8 @@ import time
 from datetime import UTC, datetime, timedelta
 
 import httpx
-from sqlalchemy import delete, select, update
-from sqlalchemy.orm import Session
+from sqlalchemy import delete, exists, select, update
+from sqlalchemy.orm import Session, aliased
 
 from tms.config import get_settings
 from tms.db import get_sessionmaker
@@ -39,12 +39,12 @@ def retry_later(row, now: datetime, error: str) -> None:
         row.next_attempt_at = now + timedelta(seconds=BACKOFF[row.attempts - 1])
 
 
-def _claim(session: Session, model, now: datetime):
+def _claim(session: Session, model, now: datetime, *only):
     """The next row due, locked so a second worker passes it by. One row per
     transaction, so a slow answer holds up only that row."""
     return session.execute(
         select(model)
-        .where(model.status == "pending", model.next_attempt_at <= now)
+        .where(model.status == "pending", model.next_attempt_at <= now, *only)
         .order_by(model.next_attempt_at, model.id)
         .limit(1)
         .with_for_update(skip_locked=True)
@@ -55,9 +55,19 @@ def clock() -> datetime:
     return datetime.now(UTC)
 
 
+def _in_turn():
+    """A call whose consignment has no earlier call still to make: Simple WMS
+    hears that a consignment shipped, came back and shipped again in that
+    order, however the retries fall. An earlier call that gave up holds the
+    later ones until someone tries it again."""
+    earlier = aliased(OutboundCall)
+    return ~exists().where(earlier.consignment_id == OutboundCall.consignment_id,
+                           earlier.id < OutboundCall.id, earlier.status != "done")
+
+
 def _ship_one(session: Session, http: httpx.Client, now: datetime | None) -> bool:
-    """Make the next ship call that is due, if there is one."""
-    row = _claim(session, OutboundCall, now or clock())
+    """Make the next call to Simple WMS that is due, if there is one."""
+    row = _claim(session, OutboundCall, now or clock(), _in_turn())
     if row is None:
         return False
     answer = wms_client.ship(http, row.path, row.body)
