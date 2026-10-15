@@ -126,3 +126,28 @@ def test_the_office_finishing_says_who_brought_it_back(client, db, dispatcher_he
                       .order_by(OutboundCall.id)).scalars().all()
     assert [(c.consignment_id, c.body["reason"], c.body["note"], c.body["returned_by"])
             for c in back] == [(a.id, "refused", None, "dee"), (b.id, "wrong_address", None, "dee")]
+
+
+def test_a_run_counts_what_it_handed_back_apart_from_what_it_shipped(client, db, dispatcher_headers):
+    from sqlalchemy import update
+
+    from tms.models import OutboundCall
+    run, (a, b), kim = on_the_road(client, db, dispatcher_headers)
+    lane = client.get(f"/v1/runs/{run['id']}", headers=dispatcher_headers).json()
+    assert lane["returns"] == {"pending": 0, "done": 0, "failed": 0, "last_error": None}
+    delivered(client, kim, run["id"], a)
+    failed(client, kim, run["id"], b)
+    _finish(client, kim, run["id"])
+    lane = client.get(f"/v1/runs/{run['id']}", headers=dispatcher_headers).json()
+    assert lane["shipping"] == {"pending": 2, "done": 0, "failed": 0, "last_error": None}
+    assert lane["returns"] == {"pending": 1, "done": 0, "failed": 0, "last_error": None}
+
+    db.execute(update(OutboundCall).where(OutboundCall.kind == "return")
+               .values(status="failed", attempts=5, last_error="HTTP 422: no returns zone"))
+    db.commit()
+    lane = client.get(f"/v1/runs/{run['id']}", headers=dispatcher_headers).json()
+    assert lane["returns"] == {"pending": 0, "done": 0, "failed": 1, "last_error": "HTTP 422: no returns zone"}
+    assert lane["shipping"]["failed"] == 0
+    # Try again starts both kinds again
+    lane = client.post(f"/v1/runs/{run['id']}/retry-ship", headers=dispatcher_headers).json()
+    assert lane["returns"] == {"pending": 1, "done": 0, "failed": 0, "last_error": None}

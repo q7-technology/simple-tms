@@ -97,8 +97,8 @@ class ShippingOut(BaseModel):
 
 
 def shipping_out(db, *where) -> ShippingOut:
-    """A run's or a manifest's ship calls by state, and the latest error of
-    one that gave up."""
+    """A run's or a manifest's calls to Simple WMS by state, and the latest
+    error of one that gave up."""
     calls = dict(db.execute(select(OutboundCall.status, func.count()).where(*where)
                             .group_by(OutboundCall.status)).all())
     error = db.execute(select(OutboundCall.last_error).where(*where, OutboundCall.status == "failed")
@@ -138,7 +138,11 @@ class RunOut(BaseModel):
     stops: list[StopOut]
     load: LoadOut
     run_sheet: RunSheetOut | None
+    # its ship calls to Simple WMS, made when it left
     shipping: ShippingOut
+    # its return calls to Simple WMS, made when it was finished with
+    # something that couldn't be delivered
+    returns: ShippingOut
     # the latest pre-start of its truck for it: { id, at, result }, or null
     prestart: dict | None = None
     # while it is on the road: when it should reach each stop left, and the depot
@@ -197,7 +201,8 @@ def run_out(db, run: Run) -> RunOut:
             job_id=sheet.job_id, status=sheet.status, printer=sheet.printer,
             last_error=sheet.last_error, created_at=sheet.created_at,
             printed_at=sheet.printed_at),
-        shipping=shipping_out(db, OutboundCall.run_id == run.id),
+        shipping=shipping_out(db, OutboundCall.run_id == run.id, OutboundCall.kind == "ship"),
+        returns=shipping_out(db, OutboundCall.run_id == run.id, OutboundCall.kind == "return"),
         estimate=run_estimate(run),
     )
 
@@ -294,8 +299,8 @@ def depart(id: int, db: DB, who: Principal = require("runs:write")):
 
 @router.post("/runs/{id}/retry-ship", response_model=RunOut)
 def retry_ship(id: int, db: DB, who: Principal = require("runs:write")):
-    """Ship calls that gave up are tried again from the start, with the same
-    message_id each, so Simple WMS still ships each delivery once."""
+    """Ship and return calls that gave up are tried again from the start,
+    with the same message_id each, so Simple WMS still acts on each once."""
     runs.get_run(db, id)
     db.execute(update(OutboundCall)
                .where(OutboundCall.run_id == id, OutboundCall.status == "failed")
