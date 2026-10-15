@@ -351,6 +351,26 @@ describe("Plan runs", () => {
     await waitFor(() => expect(calls.some((c) => path(c.url) === "/v1/runs/1/retry-ship")).toBe(true));
   });
 
+  it("says why each kind of call failed when ship and return calls both gave up", async () => {
+    const out = run(1, "Kim", "TMS041", [card(11, "Hillside Bakery", "84"), card(12, "Two Rivers Vet", "41")],
+                    { status: "done", departed_at: "2026-10-14T21:10:00Z", finished_at: "2026-10-15T05:12:00Z",
+                      shipping: { pending: 0, done: 1, failed: 1, last_error: "HTTP 503: down" },
+                      returns: { pending: 0, done: 0, failed: 1, last_error: "HTTP 422: BAL-WH01 has no returns zone" } });
+    out.stops[0].outcome = "delivered";
+    out.stops[1].outcome = "failed";
+    out.stops[1].reason = "closed";
+    const { calls } = board({ "GET /v1/runs": () => json(200, { items: [out, MEL], total: 2 }) });
+    renderApp("/plan");
+    const kim = await lane("Run R-0001");
+    expect(within(kim).getByText("1 not marked shipped in Simple WMS after five tries: HTTP 503: down")).toBeInTheDocument();
+    expect(within(kim).getByText("1 not marked back in Simple WMS after five tries: HTTP 422: BAL-WH01 has no returns zone"))
+      .toBeInTheDocument();
+    const again = within(kim).getAllByRole("button", { name: "Try again" });
+    expect(again).toHaveLength(1);
+    await userEvent.setup().click(again[0]);
+    await waitFor(() => expect(calls.some((c) => path(c.url) === "/v1/runs/1/retry-ship")).toBe(true));
+  });
+
   it("finishes a run the driver left open, once every stop is done", async () => {
     const out = run(1, "Kim", "TMS041", [card(11, "Hillside Bakery", "84"), card(12, "Two Rivers Vet", "41")],
                     { status: "departed", departed_at: "2026-10-14T21:10:00Z" });

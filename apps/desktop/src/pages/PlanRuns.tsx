@@ -498,14 +498,15 @@ export function PlanRuns() {
               {!open && <div className="small">{tripLine(run)}</div>}
               {!open && (
                 <div className="small">Marked shipped in Simple WMS: {run.shipping.done} of {run.shipping.done + run.shipping.pending + run.shipping.failed}.</div>)}
-              {run.shipping.failed > 0 && (
-                <div className="msg r"><span>{run.shipping.failed} not marked shipped in Simple WMS after five tries.</span>
-                  <button type="button" className="btn sm" disabled={busy}
-                          onClick={() => void act(() => api.post(`/v1/runs/${run.id}/retry-ship`), "Trying Simple WMS again.")}>Try again</button></div>)}
               {backTotal > 0 && (
                 <div className="small">Back in Simple WMS: {back.done} of {backTotal}.</div>)}
-              {back.failed > 0 && run.shipping.failed === 0 && (
-                <div className="msg r"><span>{back.failed} not marked back in Simple WMS after five tries{back.last_error ? `: ${back.last_error}` : "."}</span>
+              {(run.shipping.failed > 0 || back.failed > 0) && (
+                <div className="msg r"><span style={{ flex: 1 }}>
+                  {run.shipping.failed > 0 && (
+                    <span style={{ display: "block" }}>{run.shipping.failed} not marked shipped in Simple WMS after five tries{run.shipping.last_error ? `: ${run.shipping.last_error}` : "."}</span>)}
+                  {back.failed > 0 && (
+                    <span style={{ display: "block" }}>{back.failed} not marked back in Simple WMS after five tries{back.last_error ? `: ${back.last_error}` : "."}</span>)}
+                </span>
                   <button type="button" className="btn sm" disabled={busy}
                           onClick={() => void act(() => api.post(`/v1/runs/${run.id}/retry-ship`), "Trying Simple WMS again.")}>Try again</button></div>)}
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
