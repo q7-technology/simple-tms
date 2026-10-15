@@ -313,7 +313,9 @@ it: it comes back to the depot and waits in the tray to be planned again),
 `booked` (on a carrier's manifest, on the carrier bay) and `collected` (the
 carrier has it). The history has a row for each: `packed`, `assigned` and
 `unassigned` (with the run and who), `departed` (with the run, vehicle,
-driver and who), `delivered` and `failed` (see "The driver app"), `booked`
+driver and who), `delivered` and `failed` (see "The driver app"),
+`returned` (back at the depot when its run was finished, and Simple WMS told:
+with the run and who; the status stays `failed`), `booked`
 and `unbooked` (with the carrier, the manifest and who), `con_note` (each con
 note set, with the one it replaced in `was`, the carrier and who) and
 `collected` (with the carrier, the con note, the manifest and who). A
@@ -360,6 +362,7 @@ Each run:
             "unknown_weight": 0, "unknown_volume": 0, "state": "ok", "message": null },
   "run_sheet": null,
   "shipping": { "pending": 0, "done": 0, "failed": 0, "last_error": null },
+  "returns": { "pending": 0, "done": 0, "failed": 0, "last_error": null },
   "prestart": null,
   "estimate": null
 }
@@ -378,7 +381,8 @@ weight, or without all three sides, which add nothing. `run_sheet` is the
 latest print of it (see Run sheets), `null` until it is first printed:
 `{ "job_id", "status", "printer", "last_error", "created_at", "printed_at" }`.
 `shipping` counts its ship calls to Simple WMS by state, with `last_error`
-the latest answer of one that gave up (`null` when none has). `vehicle.blocked`
+the latest answer of one that gave up (`null` when none has); `returns`
+counts its return calls the same way (see `POST /v1/runs/{id}/finish`). `vehicle.blocked`
 is why its truck can't take it, on its day (see Vehicles), else `null`: a run
 planned for a truck that is then grounded stays as it is and says so.
 `prestart` is the run's pre-start as Start counts it, `{ "id", "at",
@@ -474,7 +478,9 @@ queues nothing more. Refused with `409`: `run_empty`, `vehicle_unavailable`,
 `over_capacity` (the detail is the run number and the load's message:
 "R-0007: 280 kg too heavy. Move a stop to another run before printing the run
 sheet."), `vehicle_grounded`, `vehicle_overdue`, `run_not_planned` for a
-cancelled run. Grounded and overdue are judged for the day it leaves: the
+cancelled run, and `not_back` for a stop that came back undelivered on a run
+that isn't finished yet ("Station Deli (0080034519) is still on R-0007:
+finish that run once the truck is back, then this one can leave"). Grounded and overdue are judged for the day it leaves: the
 run's own day, or today (UTC) if that is later, so a run planned for an
 earlier day can't leave on a rego that has run out since. It doesn't need a
 pre-start: the office sends a driver without a phone. The driver's
@@ -488,15 +494,22 @@ POST {TMS_WMS_URL}/v1/deliveries/{wms_ref}/ship      Authorization: Bearer {TMS_
 ```
 The Simple WMS key needs `tasks:write` (and `tasks:read` for step 1's read),
 with its warehouses and owner covering the delivery. Any `2xx` is done, and so
-is `409 already_shipped`. Anything else, or no answer within 10 s, is tried
-again after 1 min, 5, 30 and 2 h; if the try after the 2 h wait fails too the
-call is `failed`. The same `message_id` goes every time, so Simple WMS ships
-each delivery once however often it is asked. A `401`, `403` or `404` is also
-logged as an error naming the likely cause. Without `TMS_WMS_URL` and
-`TMS_WMS_API_KEY` the calls wait, untried.
+is `409 already_shipped` (Simple WMS did it, and the reply was lost past the
+24 hours it remembers a `message_id`). Anything else, or no answer within
+10 s, is tried again after 1 min, 5, 30 and 2 h; if the try after the 2 h
+wait fails too the call is `failed`. The same `message_id` goes every time,
+so Simple WMS ships each delivery once however often it is asked. A `401`,
+`403` or `404` is also logged as an error naming the likely cause. Without
+`TMS_WMS_URL` and `TMS_WMS_API_KEY` the calls wait, untried.
 
-- `POST /v1/runs/{id}/retry-ship` — calls that gave up start again from
-  scratch (no tries, no last error), each with its same `message_id`.
+A consignment's calls to Simple WMS (ship, return, ship again) are made in
+the order they were queued: a later one waits, untried, while an earlier one
+is pending or has given up, so Simple WMS always hears that it came back
+before it hears that it went again.
+
+- `POST /v1/runs/{id}/retry-ship` — calls that gave up, ship and return
+  alike, start again from scratch (no tries, no last error), each with its
+  same `message_id`.
 
 ### Run sheets
 
@@ -593,15 +606,12 @@ of runs, so a consignment is on one run or with one carrier, never both.
   "totals": { "consignments": 1, "packages": 5, "cartons": 5, "weight_kg": "72" },
   "needs_con_note": 0,
   "print_job": null,
-  "shipping": { "pending": 0, "done": 0, "failed": 0, "last_error": null },
-  "already_shipped": []
+  "shipping": { "pending": 0, "done": 0, "failed": 0, "last_error": null }
 }
 ```
 `status` is `open` or `collected`. `print_job` is its latest print (as a
-run's `run_sheet`), `shipping` its ship calls to Simple WMS by state (with
-`last_error`, as a run's), and
-`already_shipped` the consignments Simple WMS had shipped already when this
-carrier took them (see below).
+run's `run_sheet`), and `shipping` its ship calls to Simple WMS by state
+(with `last_error`, as a run's).
 
 - `GET /v1/manifests?date=2026-10-15` — that day's manifests with something
   on them, open or collected, oldest first, as `{ "items", "total" }`. With
@@ -661,6 +671,7 @@ answered as it is, and nothing more is queued.
 | `con_note_missing` | something on it has no con note: the detail names the first |
 | `manifest_empty` | nothing is on it |
 | `manifest_collected` | it was collected with something else on it |
+| `not_back` | something on it came back on a run that isn't finished: the detail names it and the run |
 
 The worker then makes, for each consignment, the same call as for a run
 (see `POST /v1/runs/{id}/depart`), with the carrier and its con note:
@@ -673,12 +684,8 @@ with the same retries, so Simple WMS ships each delivery once and fires
 `delivery.shipped` with that carrier and tracking number.
 
 A consignment that came back from its run (`failed`) and then went with a
-carrier was already shipped in Simple WMS when the run left. Simple WMS
-answers its ship call `409 already_shipped` and keeps `Own fleet` and the run
-number: Simple TMS allows this, counts the call `done`, and lists it in the
-manifest's `already_shipped` as
-`{ "consignment_id", "wms_ref", "customer", "carrier": "Own fleet", "tracking_no": "R-0007" }`
-(what Simple TMS first told Simple WMS for it; `null` if it never did).
+carrier is shipped again in Simple WMS with the carrier and con note: its
+return call, made when the run was finished, goes first.
 
 - `POST /v1/manifests/{id}/retry-ship` — calls that gave up start again from
   scratch, each with its same `message_id`.
@@ -866,9 +873,9 @@ not).
 ### POST /v1/runs/{id}/stops/{consignment_id}/fail
 `{ "message_id", "at", "reason": "closed" | "refused" | "damaged" | "wrong_address", "note"?, "photo_file"?, "position"? }`
 → as for deliver, with `"outcome": "failed"`. The consignment becomes
-`failed`: it comes back to the depot on the truck, and can be put on another
-run at once. History `failed` with `{ run, run_id, pod_id, reason, note,
-photo_file, by }`.
+`failed`: it comes back to the depot on the truck. It can be planned again
+at once, and leaves again once this run is finished (see finish). History
+`failed` with `{ run, run_id, pod_id, reason, note, photo_file, by }`.
 
 ### POST /v1/runs/{id}/finish
 `{ "message_id" }` →
@@ -878,11 +885,29 @@ for a driver who is back but didn't finish on the phone; the desktop's
 **Finish run** sends it with a `message_id` of its own. A finished run is
 left as it is.
 
+Each consignment that couldn't be delivered is now off the truck: it gets a
+`returned` history row (`{ run, run_id, by }`), and a return call to Simple
+WMS is queued for it, in the same transaction:
+```
+POST {TMS_WMS_URL}/v1/deliveries/{wms_ref}/return
+{ "message_id": "<its own uuid>", "owner": "DEFAULT", "reason": "closed",
+  "note": "Shop shut, sign on the door", "tracking_no": "R-0007", "returned_by": "kim" }
+```
+`reason` and `note` are the driver's; `tracking_no` is the run, the shipment
+that came back; `returned_by` is who finished it. It is made like a ship
+call (the same retries, the same key and scope) and counted in the run's
+`returns`; `409 already_returned` is done too. Simple WMS puts the
+delivery on its ledger at the returns dock and fires `delivery.returned`;
+it refuses the call (`422`) while the warehouse has no returns zone, and the
+call is tried again until it gives up and **Try again** on the run starts it
+again.
+
 | `409` code | When |
 | --- | --- |
 | `run_not_started` | deliver or fail before the run has left |
 | `run_done`, `run_cancelled` | the run is finished, or was cancelled |
 | `stop_done` | the stop already has an outcome, from another message |
+| `not_back` | start a run with a stop that came back on a run that isn't finished |
 | `stops_left` | finish while a stop has no outcome |
 | `message_id_taken` | someone else sent that `message_id` |
 | `message_id_reused` | that `message_id` was used for another confirmation |
@@ -1004,8 +1029,11 @@ POST /v1/subscribers   (on Simple WMS, with an integration:admin key)
 ```
 and give Simple TMS a Simple WMS key with `tasks:read` and `tasks:write` in
 `TMS_WMS_API_KEY` (`tasks:read` to read a packed delivery, `tasks:write` to say
-it shipped: see `POST /v1/runs/{id}/depart` and `POST /v1/manifests/{id}/collect`) and the WMS address in
-`TMS_WMS_URL`.
+it shipped or came back: see `POST /v1/runs/{id}/depart`, `POST /v1/runs/{id}/finish` and `POST /v1/manifests/{id}/collect`) and the WMS address in
+`TMS_WMS_URL`. Each Simple WMS warehouse needs a `returns` zone for what
+comes back. `delivery.*` also brings `delivery.returned`, and
+`delivery.shipped` again when it leaves again: Simple TMS answers both
+`ignored`, as it does every event but `delivery.packed`.
 
 The body is Simple WMS's event envelope, exactly as sent:
 `{ "event_id", "event_type", "occurred_at", "warehouse", "owner", "external_ref", "data" }`.

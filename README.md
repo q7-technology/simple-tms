@@ -309,7 +309,7 @@ Simple TMS is an ordinary subscriber to Simple WMS's signed events. In `.env`
 (or as an admin, in **Settings**) set `TMS_WMS_WEBHOOK_SECRET` (a long random string), `TMS_WMS_URL` (Simple
 WMS's address) and `TMS_WMS_API_KEY` (a Simple WMS key with `tasks:read` and
 `tasks:write`: `tasks:read` to read a packed delivery's ship-to, `tasks:write`
-to say it shipped), then register a subscriber in Simple WMS with the same
+to say it shipped or came back), then register a subscriber in Simple WMS with the same
 secret, pointing at `/v1/wms/events`. Each packed delivery becomes a
 consignment. Details are in `docs/api.md`.
 
@@ -318,6 +318,18 @@ consignment with carrier "Own fleet" and the run number as the tracking
 number, retrying after 1 min, 5, 30 and 2 h if Simple WMS is away; Simple WMS
 then fires `delivery.shipped` as usual. When a carrier collects, the same
 call goes with the carrier's name and the con note as the tracking number.
+
+What a driver couldn't deliver comes back on the truck. When the run is
+finished (by the driver, or **Finish run** in the office), Simple TMS calls
+`POST /v1/deliveries/{ref}/return` for each consignment that came back, with
+the driver's reason and the run number; Simple WMS puts it on its ledger at
+the warehouse's returns dock and fires `delivery.returned`. When it goes out
+again, on a run or with a carrier, it is shipped again with the new run
+number or con note, and Simple WMS fires `delivery.shipped` again. Each
+warehouse in Simple WMS needs a zone of kind `returns` (its Locations
+screen): without one, Simple WMS refuses the return and **Plan runs** says
+so beside **Try again**. A consignment's calls go in the order they were
+made, so Simple WMS never hears it went again before it hears it came back.
 
 ## Connecting Platen
 
@@ -574,23 +586,19 @@ stood in for by `fake-indexeddb`: `cd apps/driver && npm test`.
   consignment stays "Collected" in Simple TMS, and the carrier's own
   tracking says where it is. A carrier's own API can come later as an
   adapter (`api/tms/services/carrier_adapters.py`) without changing the data.
-- **Back from a run, then with a carrier: Simple WMS keeps the run.** A
-  consignment that couldn't be delivered can go with a carrier next, but
-  Simple WMS already has it as shipped by the run (`Own fleet`, `R-0007`)
-  and keeps that: the carrier's name and con note aren't recorded there.
-  **Carriers** says so on the collected manifest ("already shipped by its
-  run: Simple WMS still has R-0007"); give the carrier's con note to anyone
-  who asks Simple WMS.
 - **What a carrier brings back isn't recorded.** If a carrier returns
   freight it couldn't deliver, Simple TMS has no step for it: the
-  consignment stays collected, and shipped in Simple WMS.
+  consignment stays collected, and shipped in Simple WMS. (Simple WMS can
+  take it back through `POST /v1/deliveries/{ref}/return`; Simple TMS doesn't
+  call it for a carrier yet.)
 
-- **What came back is still shipped in Simple WMS.** When a driver can't
-  deliver, the consignment comes back to the depot and returns to the
-  dispatcher's tray to be planned again. Simple WMS still has it as shipped,
-  because Simple TMS tells it what shipped when the run starts. A proper
-  "came back" flow needs a design change on the Simple WMS side, and is noted
-  for later.
+- **What came back leaves again once its run is finished.** A consignment a
+  driver couldn't deliver is back in the tray at once and can be planned,
+  but it can't leave on another run, or go with a carrier, until the run it
+  came back on is finished: only then is it off the truck, and Simple WMS
+  told. Finish the run from the office if the driver didn't.
+- **All of it comes back.** A consignment is delivered whole or not at all,
+  so Simple WMS is told every package came back.
 
 ## Stack
 

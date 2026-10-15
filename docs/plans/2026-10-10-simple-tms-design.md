@@ -37,7 +37,12 @@ carrier — "own fleet, run R-…" or the carrier's name — and the tracking or
 number. Each call carries a `message_id`, so the WMS's duplicate handling
 makes a resend harmless. If the WMS is down the call waits in the TMS's queue
 and is retried after 1 min, 5, 30 and 2 h. The WMS then fires
-`delivery.shipped` to the ERP as it does today: nothing in the WMS changes.
+`delivery.shipped` to the ERP as it does today. *(Changed 15 Oct 2026:)*
+what a driver couldn't deliver comes back on the truck; when the run is
+finished the TMS calls `POST /v1/deliveries/{ref}/return`, the WMS puts it on
+its ledger at a returns dock and fires `delivery.returned`, and it ships
+again with the next run number or con note. A consignment's calls go in
+order. See `docs/plans/2026-10-15-came-back.md`.
 
 **Through Platen.** Run sheets, consignment notes, delivery dockets and
 carrier manifests are a template name and JSON, sent the way Simple WMS sends

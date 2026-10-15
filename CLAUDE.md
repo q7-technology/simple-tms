@@ -61,7 +61,9 @@ copy and states. Do not edit anything under `design/` unless asked.
 
 ## Conventions
 - Simple WMS: Simple TMS is an ordinary subscriber to its signed events, and
-  tells it what shipped through its API. Nothing in Simple WMS changes for it.
+  tells it what shipped, and what came back, through its API. Simple WMS's
+  return endpoint is an ordinary documented one any client may call; nothing
+  else in Simple WMS is there for Simple TMS.
 - Printing: Simple TMS never renders a document. It sends `template` + JSON
   `data` to Platen (or any print service) through the same queue.
 - Location: the driver app shares its position only during a run (from Start
