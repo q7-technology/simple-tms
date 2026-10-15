@@ -404,6 +404,24 @@ Simple TMS:
 5. When the carrier has been, **Mark collected**: each consignment is marked
    shipped in Simple WMS with the carrier's name and its con note.
 
+## Upgrading
+
+**From a version without the Settings drawer**, `.env` is checked more
+strictly when the API and the worker start, so a value the old version let
+by can now stop them starting. Check these before upgrading:
+
+- `TMS_WMS_URL` and `TMS_PLATEN_URL`: an `http://` or `https://` address
+  (with the scheme), or empty.
+- `TMS_WMS_TIMEOUT_SECONDS`: more than 0, at most 60.
+- `TMS_WORKER_POLL_SECONDS`: 1 to 300.
+- `TMS_WORKER_HTTP_TIMEOUT_SECONDS`: more than 0, at most 120.
+- A setting left empty (`TMS_RUN_SHEET_PRINTER=`) is now Simple TMS's own
+  default, not empty.
+
+If one is wrong, `docker compose logs api` shows a validation error that
+names the setting (`worker_poll_seconds` for `TMS_WORKER_POLL_SECONDS`) and
+says what it must be. Put it right in `.env` and `docker compose up -d`.
+
 ## Run the API outside Docker
 
 ```
