@@ -48,7 +48,8 @@ docker compose exec api tms create-user --username you --role admin
 ```
 
 The desktop is at `https://<TMS_DOMAIN>/` (default `https://localhost/`,
-self-signed): sign in, then **Plan runs**. The API runs its migrations each
+self-signed): sign in, add your trucks and drivers in **Fleet** and the
+carriers you use in **Carriers**, then **Plan runs**. The API runs its migrations each
 time it starts; it is at `/v1`, its interactive docs at `/docs`, and it is
 also published on `127.0.0.1:8022` (`TMS_API_PORT`) for local work. The
 `worker` makes the calls to Simple WMS and sends run sheets and carrier
@@ -58,8 +59,9 @@ past the retention period; it needs no port. Rebuild the desktop (`npm run build
 `apps/desktop`; Caddy serves `apps/desktop/dist` as it is.
 
 The driver app is at `https://<TMS_DOMAIN>/driver/`. A driver signs in with
-their code (in any case) and PIN (given when the driver is made, `POST /v1/drivers`, or
-changed by a manager, `PATCH /v1/drivers/{code}` with a new `pin`), starts
+their code (in any case) and PIN (given when a fleet manager adds them in
+**Fleet** → **Drivers**, and set again there, which also unlocks a driver
+locked out by five wrong PINs), starts
 the day's run, and works through it one stop at a time; it keeps working with
 no signal and sends what waited when the signal is back, each confirmation
 once however often it is sent. A consignment that couldn't be delivered goes
@@ -85,11 +87,25 @@ office gives the run another truck meanwhile, the check (and any grounding)
 stays with the truck inspected, and the phone asks for a fresh check of the
 run's new truck. In **Fleet** a fleet manager also records each new rego expiry and
 each service (with its odometer reading), and puts a wrong odometer reading
-right; set how often a truck is serviced with `service_every_months` and/or
-`service_every_km` on `PATCH /v1/vehicles/{rego}`. A truck with nothing
-recorded is never due, so record each truck's rego expiry and last service
-when you start. The checklists are the design's six items for each type of
-vehicle; change them with `PUT /v1/checklists/{type}` (see `docs/api.md`).
+right, and adds, changes (type, limits, how often it is serviced),
+deactivates and reactivates trucks. A truck with nothing recorded is never
+due, so record each truck's rego expiry and last service when you start. The
+checklists start as the design's six items for each type of vehicle; a fleet
+manager changes them in **Fleet** → **Pre-start checklists** (a line taken out
+is retired, and checks already done keep it). A truck or a driver with a run
+planned or on the road can't be deactivated: **Fleet** names the run to give
+another truck or driver, or to finish, first.
+
+**Settings.** An admin changes some of `.env`'s settings in **Settings**
+(the account menu, top right) without editing `.env` or restarting:
+printers, the Simple WMS and Platen addresses and keys, waits, how long
+positions are kept and the ETA's first guess. `.env` gives each its default
+and **Use .env's** puts one back; the API and the worker take a change within
+5 seconds. Keys and secrets can be replaced there but are never shown again.
+The database, `TMS_SECRET_KEY`, the proof-of-delivery folder, the map tiles
+(Caddy builds the desktop's Content-Security-Policy from them when it
+starts), the ports and the domain stay in `.env` only. Each change is
+recorded with who made it (`docs/api.md`, "Settings").
 
 **Live location.** From **Start run** until the run is finished, the driver's
 phone tells the office where it is about every 30 seconds, and its top bar
@@ -284,7 +300,7 @@ Windows).
 ## Connecting Simple WMS
 
 Simple TMS is an ordinary subscriber to Simple WMS's signed events. In `.env`
-set `TMS_WMS_WEBHOOK_SECRET` (a long random string), `TMS_WMS_URL` (Simple
+(or as an admin, in **Settings**) set `TMS_WMS_WEBHOOK_SECRET` (a long random string), `TMS_WMS_URL` (Simple
 WMS's address) and `TMS_WMS_API_KEY` (a Simple WMS key with `tasks:read` and
 `tasks:write`: `tasks:read` to read a packed delivery's ship-to, `tasks:write`
 to say it shipped), then register a subscriber in Simple WMS with the same
@@ -302,7 +318,8 @@ call goes with the carrier's name and the con note as the tracking number.
 Run sheets print through Platen (or any print service that takes the same
 job). In Platen, make a page template with the id `run-sheet` and publish it
 (the fields it binds to are in `docs/api.md` under "Run sheets"), and make an
-operator key under People → Keys. In Simple TMS's `.env` set
+operator key under People → Keys. In Simple TMS's `.env` (or as an admin, in
+**Settings**, with no restart) set
 `TMS_PLATEN_URL=https://<platen>/intake/jobs`, `TMS_PLATEN_KEY` to that key
 and `TMS_RUN_SHEET_PRINTER` to the Platen printer's id or name, then
 `docker compose up -d api worker`.
@@ -364,13 +381,11 @@ Freight going with outside carriers is booked by hand in this version: book
 with the carrier as you always have (its website or a phone call), then in
 Simple TMS:
 
-1. **Add the carriers** you use, once, as a fleet manager or admin (there is
-   no screen for it yet):
-   ```
-   curl -s -X POST https://tms.example.com/v1/carriers -H "Authorization: Bearer <token>" \
-     -H 'Content-Type: application/json' \
-     -d '{"name": "<the carrier, as Simple WMS should record it>", "account": "<your account no.>", "pickup_time": "15:30"}'
-   ```
+1. **Add the carriers** you use, once, as a fleet manager or admin: in
+   **Carriers** → **Your carriers**, **Add a carrier** with its name as Simple
+   WMS should record it, your account number and when it usually calls.
+   Rename or retire one there too (a retired carrier takes no new bookings;
+   what is on its bay stays, to be collected).
 2. In **Plan runs**, send a consignment **With a carrier…** (from the tray,
    or off a planned run with **Move to…**). It goes on that carrier's
    manifest for the day being planned, and waits on the carrier bay.
@@ -522,9 +537,9 @@ stood in for by `fake-indexeddb`: `cd apps/driver && npm test`.
   the desktop (for a driver without a phone, who does a paper check) sends it
   without one. **Plan runs** says "No pre-start yet" on such a run. A
   grounded or overdue truck is refused either way.
-- **Fleet doesn't add vehicles or drivers yet.** Add them, and set how often
-  each is serviced, through the API (`POST /v1/vehicles`, `POST /v1/drivers`,
-  `PATCH …`); the checklists too (`PUT /v1/checklists/{type}`).
+- **Desktop users are made on the command line.** Dispatchers, fleet
+  managers and admins are added with `tms create-user` (see Getting started);
+  there is no screen for them yet.
 - **Due dates are on screen only.** The `vehicle.due` event in the design, for
   another system to send email or SMS, comes with the first system that
   subscribes.
@@ -535,8 +550,6 @@ stood in for by `fake-indexeddb`: `cd apps/driver && npm test`.
   consignment stays "Collected" in Simple TMS, and the carrier's own
   tracking says where it is. A carrier's own API can come later as an
   adapter (`api/tms/services/carrier_adapters.py`) without changing the data.
-- **Carriers are added through the API.** There is no screen to add or
-  change a carrier yet (see "Carriers" above; `docs/api.md` has the rest).
 - **Back from a run, then with a carrier: Simple WMS keeps the run.** A
   consignment that couldn't be delivered can go with a carrier next, but
   Simple WMS already has it as shipped by the run (`Own fleet`, `R-0007`)
