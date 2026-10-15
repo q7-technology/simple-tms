@@ -162,9 +162,9 @@ export interface Run {
     unknown_weight: number; unknown_volume: number; state: "ok" | "near" | "over"; message: string | null;
   };
   run_sheet: RunSheet | null;
-  shipping: { pending: number; done: number; failed: number; last_error?: string | null };
+  shipping: Shipping;
   /** its return calls: Simple WMS told what came back when it was finished */
-  returns?: { pending: number; done: number; failed: number; last_error?: string | null };
+  returns?: Shipping;
   /** the run's pre-start as Start counts it: the latest check of its truck
    * for it that didn't ground it, made since the truck was last grounded
    * and last marked fixed; else null */
@@ -179,6 +179,25 @@ export interface Estimate {
   minutes_per_stop: number;
   stops: { consignment_id: number; sequence: number; at: string }[];
   back_at_depot: string;
+}
+
+/** An earlier call to Simple WMS, on another run or manifest, that holds
+ * later calls for its consignment until it is done. */
+export interface HeldBy {
+  kind: "ship" | "return";
+  run_no: string | null;
+  manifest_no: string | null;
+  wms_ref: string;
+  /** pending: still being tried; failed: gave up, and Try again starts it */
+  status: "pending" | "failed";
+  last_error: string | null;
+}
+
+/** A run's or a manifest's calls to Simple WMS by state. held: how many of
+ * the pending wait on an earlier call (held_by) on another run or manifest. */
+export interface Shipping {
+  pending: number; done: number; failed: number; last_error?: string | null;
+  held?: number; held_by?: HeldBy[];
 }
 
 /** A run on the road's latest position (GET /v1/positions). */
@@ -227,7 +246,7 @@ export interface Manifest {
   totals: { consignments: number; packages: number; cartons: number; weight_kg: string };
   needs_con_note: number;
   print_job: RunSheet | null;
-  shipping: { pending: number; done: number; failed: number; last_error?: string | null };
+  shipping: Shipping;
 }
 
 /** A line of what just happened (GET /v1/feed). */

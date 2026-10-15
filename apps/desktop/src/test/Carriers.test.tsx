@@ -240,6 +240,19 @@ describe("Carriers", () => {
     await waitFor(() => expect(calls.some((c) => path(c.url) === "/v1/manifests/3/retry-ship")).toBe(true));
   });
 
+  it("says which earlier call holds its ship calls, beside Try again", async () => {
+    const held = { ...PP, shipping: { pending: 1, done: 0, failed: 0, held: 1, held_by: [
+      { kind: "return" as const, run_no: "R-0007", manifest_no: null, wms_ref: "0080034519",
+        status: "failed" as const, last_error: "HTTP 422: BAL-WH01 has no returns zone" }] } };
+    const { calls } = bay([held]);
+    renderApp("/carriers");
+    const pp = await group(/Plains Parcels/);
+    expect(within(pp).getByText("Waiting on R-0007's return to Simple WMS, which failed: HTTP 422: BAL-WH01 has no returns zone"))
+      .toBeInTheDocument();
+    await userEvent.setup().click(within(pp).getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(calls.some((c) => path(c.url) === "/v1/manifests/3/retry-ship")).toBe(true));
+  });
+
   it("says plainly when nothing waits, and when there are no carriers yet", async () => {
     stubApi(() => json(200, { items: [], total: 0 }));
     renderApp("/carriers");

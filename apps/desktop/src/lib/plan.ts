@@ -1,6 +1,6 @@
 /** The plan board's own logic, kept out of the components so it can be
  * tested on its own: cards from consignments, and where a drop lands. */
-import type { Card, Consignment } from "../api/types";
+import type { Card, Consignment, HeldBy, Shipping } from "../api/types";
 import { plain, toMicro } from "./decimal";
 
 export function cardOf(c: Consignment): Card {
@@ -53,4 +53,20 @@ const RUN_COLOURS = ["#1F8A5B", "#2F6FB8", "#7B5CC4"];
 
 export function runColour(index: number): string {
   return RUN_COLOURS[index % RUN_COLOURS.length];
+}
+
+/** An earlier call to Simple WMS, in words: "R-0007's return to Simple WMS". */
+export function heldCall(h: HeldBy): string {
+  return `${h.run_no ?? h.manifest_no}'s ${h.kind === "return" ? "return" : "ship call"} to Simple WMS`;
+}
+
+/** What holds a run's or a manifest's calls to Simple WMS: the first
+ * earlier call they wait on, in words, and whether it gave up (so Try again
+ * starts it); null when nothing holds them. */
+export function waitingOn(shipping: Shipping[]): { text: string; failed: boolean } | null {
+  const h = shipping.flatMap((s) => (s.held ? s.held_by ?? [] : []))[0];
+  if (!h) return null;
+  return h.status === "failed"
+    ? { text: `Waiting on ${heldCall(h)}, which failed${h.last_error ? `: ${h.last_error}` : "."}`, failed: true }
+    : { text: `Waiting on ${heldCall(h)}, which is still being tried.`, failed: false };
 }

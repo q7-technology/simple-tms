@@ -1,5 +1,5 @@
 import type { Consignment } from "../api/types";
-import { cardOf, dropPosition, kg, m3, moved, packagesLabel, positionWithout, runColour } from "../lib/plan";
+import { cardOf, dropPosition, kg, m3, moved, packagesLabel, positionWithout, runColour, waitingOn } from "../lib/plan";
 import { dayLabel, dayOptions, isoDay } from "../lib/days";
 
 const consignment = (over: Partial<Consignment> = {}): Consignment => ({
@@ -60,5 +60,19 @@ describe("days", () => {
     expect(opts).toHaveLength(7);
     expect(isoDay(new Date(2026, 11, 31))).toBe("2026-12-31");
     expect(dayLabel(new Date(2027, 0, 1))).toBe("Fri 1 Jan");
+  });
+});
+
+describe("calls to Simple WMS", () => {
+  it("says which earlier call a run's or a manifest's waits on", () => {
+    const back = { kind: "return" as const, run_no: "R-0007", manifest_no: null, wms_ref: "0080034519",
+                   status: "failed" as const, last_error: "HTTP 422: no returns zone" };
+    const none = { pending: 0, done: 0, failed: 0 };
+    expect(waitingOn([none, { ...none, held: 0, held_by: [] }])).toBeNull();
+    expect(waitingOn([{ ...none, pending: 1, held: 1, held_by: [back] }, none]))
+      .toEqual({ text: "Waiting on R-0007's return to Simple WMS, which failed: HTTP 422: no returns zone", failed: true });
+    expect(waitingOn([none, { ...none, pending: 1, held: 1, held_by: [{ ...back, kind: "ship", run_no: null,
+                                                                       manifest_no: "M-0003", status: "pending" }] }]))
+      .toEqual({ text: "Waiting on M-0003's ship call to Simple WMS, which is still being tried.", failed: false });
   });
 });

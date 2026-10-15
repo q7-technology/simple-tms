@@ -56,6 +56,10 @@ describe("the carrier bay", () => {
       .toBe("Collected 10:15 am · manifest M-0003 printed by Platen · marked shipped in Simple WMS");
     expect(pickupLine({ ...PP, shipping: { pending: 1, done: 0, failed: 0 } }))
       .toBe("Collected 10:15 am · manifest M-0003 · telling Simple WMS");
+    expect(pickupLine({ ...PP, shipping: { pending: 1, done: 0, failed: 0, held: 1, held_by: [
+      { kind: "return", run_no: "R-0007", manifest_no: null, wms_ref: "0080034519", status: "failed",
+        last_error: "HTTP 422: no returns zone" }] } }))
+      .toBe("Collected 10:15 am · manifest M-0003 · waiting on R-0007's return to Simple WMS");
   });
 
 });

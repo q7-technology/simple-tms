@@ -7,6 +7,7 @@ import { useAuth } from "../auth/AuthContext";
 import { bayStats, conNoteProblem, nextNeedingConNote, normalConNote, pickupLine, type Needing } from "../lib/carriers";
 import { clock, dayLabel, fromIso, isoDay } from "../lib/days";
 import { plain, toMicro } from "../lib/decimal";
+import { waitingOn } from "../lib/plan";
 import { Drawer } from "../ui/Drawer";
 import { Icon } from "../ui/icons";
 
@@ -224,6 +225,7 @@ export function Carriers() {
         const ready = isOpen && m.needs_con_note === 0;
         const earlier = isOpen && m.date < today;
         const printed = printLine(m);
+        const held = waitingOn([m.shipping]);
         const why = `why-${m.id}`;
         return (
           <section key={m.id} className={`grp${isOpen ? "" : " done"}`} aria-label={`${m.carrier.name} · ${m.manifest_no}`}>
@@ -246,8 +248,13 @@ export function Carriers() {
                   Add the missing con {m.needs_con_note === 1 ? "note" : "notes"} to print this manifest.</span>)}
             </div>
             {printed && <div className={`msg ${printed.tone}`} style={{ margin: "0 16px 10px" }}>{printed.text}</div>}
-            {m.shipping.failed > 0 && (
-              <div className="msg r" style={{ margin: "0 16px 10px" }}><span>{m.shipping.failed} not marked shipped in Simple WMS after five tries{m.shipping.last_error ? `: ${m.shipping.last_error}` : "."}</span>
+            {held && !held.failed && <div className="msg a" style={{ margin: "0 16px 10px" }}><span>{held.text}</span></div>}
+            {(m.shipping.failed > 0 || held?.failed) && (
+              <div className="msg r" style={{ margin: "0 16px 10px" }}><span style={{ flex: 1 }}>
+                {m.shipping.failed > 0 && (
+                  <span style={{ display: "block" }}>{m.shipping.failed} not marked shipped in Simple WMS after five tries{m.shipping.last_error ? `: ${m.shipping.last_error}` : "."}</span>)}
+                {held?.failed && <span style={{ display: "block" }}>{held.text}</span>}
+              </span>
                 <button type="button" className="btn sm" disabled={busy}
                         onClick={() => void act(() => api.post(`/v1/manifests/${m.id}/retry-ship`), "Trying Simple WMS again.")}>Try again</button></div>)}
             {isOpen && (

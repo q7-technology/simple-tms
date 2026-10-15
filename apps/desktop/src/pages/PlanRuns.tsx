@@ -7,7 +7,7 @@ import { clock, dayOptions } from "../lib/days";
 import { leftOpen, stillOpenFrom } from "../lib/live";
 import { plain, toMicro } from "../lib/decimal";
 import { afterAdding, loadOf, type Gauge } from "../lib/load";
-import { cardOf, dropPosition, kg, m3, moved, packagesLabel, positionWithout, runColour } from "../lib/plan";
+import { cardOf, dropPosition, kg, m3, moved, packagesLabel, positionWithout, runColour, waitingOn } from "../lib/plan";
 import { ActionSelect } from "../ui/ActionSelect";
 import { Drawer } from "../ui/Drawer";
 import { Icon } from "../ui/icons";
@@ -408,6 +408,7 @@ export function PlanRuns() {
           // what came back, once the run is finished: Simple WMS has to hear it too
           const back = run.returns ?? { pending: 0, done: 0, failed: 0 };
           const backTotal = back.pending + back.done + back.failed;
+          const held = waitingOn([run.shipping, back]);
           const pill = open && blocked ? <span className="pill p-red"><Icon name="ban" size={13} width={2.4} />{blockedWord(blocked)}</span>
             : leftOpen(run) ? <span className="pill p-amber">{stillOpenFrom(run)}</span>
             : run.status === "done" ? <span className="pill p-grey">Done</span>
@@ -500,12 +501,14 @@ export function PlanRuns() {
                 <div className="small">Marked shipped in Simple WMS: {run.shipping.done} of {run.shipping.done + run.shipping.pending + run.shipping.failed}.</div>)}
               {backTotal > 0 && (
                 <div className="small">Back in Simple WMS: {back.done} of {backTotal}.</div>)}
-              {(run.shipping.failed > 0 || back.failed > 0) && (
+              {held && !held.failed && <div className="msg a"><span>{held.text}</span></div>}
+              {(run.shipping.failed > 0 || back.failed > 0 || held?.failed) && (
                 <div className="msg r"><span style={{ flex: 1 }}>
                   {run.shipping.failed > 0 && (
                     <span style={{ display: "block" }}>{run.shipping.failed} not marked shipped in Simple WMS after five tries{run.shipping.last_error ? `: ${run.shipping.last_error}` : "."}</span>)}
                   {back.failed > 0 && (
                     <span style={{ display: "block" }}>{back.failed} not marked back in Simple WMS after five tries{back.last_error ? `: ${back.last_error}` : "."}</span>)}
+                  {held?.failed && <span style={{ display: "block" }}>{held.text}</span>}
                 </span>
                   <button type="button" className="btn sm" disabled={busy}
                           onClick={() => void act(() => api.post(`/v1/runs/${run.id}/retry-ship`), "Trying Simple WMS again.")}>Try again</button></div>)}

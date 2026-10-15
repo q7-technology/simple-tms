@@ -371,6 +371,36 @@ describe("Plan runs", () => {
     await waitFor(() => expect(calls.some((c) => path(c.url) === "/v1/runs/1/retry-ship")).toBe(true));
   });
 
+  it("says which earlier call holds its calls to Simple WMS, and Try again starts it", async () => {
+    const out = run(1, "Kim", "TMS041", [card(12, "Two Rivers Vet", "41")],
+                    { status: "departed", departed_at: "2026-10-15T21:10:00Z",
+                      shipping: { pending: 1, done: 0, failed: 0, held: 1, held_by: [
+                        { kind: "return", run_no: "R-0007", manifest_no: null, wms_ref: "0080034519",
+                          status: "failed", last_error: "HTTP 422: BAL-WH01 has no returns zone" }] } });
+    const { calls } = board({ "GET /v1/runs": () => json(200, { items: [out, MEL], total: 2 }) });
+    renderApp("/plan");
+    const kim = await lane("Run R-0001");
+    expect(within(kim).getByText("Marked shipped in Simple WMS: 0 of 1.")).toBeInTheDocument();
+    expect(within(kim).getByText("Waiting on R-0007's return to Simple WMS, which failed: HTTP 422: BAL-WH01 has no returns zone"))
+      .toBeInTheDocument();
+    await userEvent.setup().click(within(kim).getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(calls.some((c) => path(c.url) === "/v1/runs/1/retry-ship")).toBe(true));
+  });
+
+  it("says a held call is waiting on one still being tried, with no Try again", async () => {
+    const out = run(1, "Kim", "TMS041", [card(12, "Two Rivers Vet", "41")],
+                    { status: "departed", departed_at: "2026-10-15T21:10:00Z",
+                      shipping: { pending: 1, done: 0, failed: 0, held: 1, held_by: [
+                        { kind: "return", run_no: "R-0007", manifest_no: null, wms_ref: "0080034519",
+                          status: "pending", last_error: "HTTP 503: down" }] } });
+    board({ "GET /v1/runs": () => json(200, { items: [out, MEL], total: 2 }) });
+    renderApp("/plan");
+    const kim = await lane("Run R-0001");
+    expect(within(kim).getByText("Waiting on R-0007's return to Simple WMS, which is still being tried."))
+      .toBeInTheDocument();
+    expect(within(kim).queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+  });
+
   it("finishes a run the driver left open, once every stop is done", async () => {
     const out = run(1, "Kim", "TMS041", [card(11, "Hillside Bakery", "84"), card(12, "Two Rivers Vet", "41")],
                     { status: "departed", departed_at: "2026-10-14T21:10:00Z" });

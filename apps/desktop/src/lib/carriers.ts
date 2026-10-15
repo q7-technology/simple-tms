@@ -3,6 +3,7 @@
 import type { Card, Consignment, Manifest } from "../api/types";
 import { clock, isoDay } from "./days";
 import { plain, toMicro } from "./decimal";
+import { heldCall } from "./plan";
 
 /** As the API reads it: spaces around it off, letters made capitals. */
 export function normalConNote(raw: string): string {
@@ -73,7 +74,9 @@ export function pickupLine(m: Manifest): string {
     const parts = [`Collected ${clock(new Date(m.collected_at!))}`,
                    `manifest ${m.manifest_no}${m.print_job?.status === "printed" ? " printed by Platen" : ""}`];
     const s = m.shipping;
+    const first = s.held ? s.held_by?.[0] : undefined;
     if (s.failed) parts.push(`${s.failed} not marked shipped in Simple WMS`);
+    else if (first) parts.push(`waiting on ${heldCall(first)}`);
     else if (s.pending) parts.push("telling Simple WMS");
     else parts.push("marked shipped in Simple WMS");
     return parts.join(" · ");
