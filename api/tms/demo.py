@@ -33,7 +33,7 @@ from sqlalchemy import func, select
 
 from tms import demo_pictures
 from tms.db import get_sessionmaker
-from tms.models import Carrier, Consignment, Driver, Run, User, Vehicle
+from tms.models import Carrier, ChecklistItem, Consignment, Driver, Run, User, Vehicle
 from tms.services import access
 from tms.services.fleet import add_months
 
@@ -56,6 +56,11 @@ VEHICLES = [
     ("TMS-052", "van", "1200", "8.5", 6, 15000, 301, (6, -18), 39875),
     ("TMS-027", "ute", "800", "2.5", 12, 20000, 96, (4, 0), 30120),
 ]
+
+# what migration 0005 gives a fresh database for each type of vehicle; a list
+# changed from it is a business's own, which the demo's must not replace
+FRESH_CHECKLIST = [("Tyres", False), ("Lights", True), ("Brakes", True), ("Mirrors", False),
+                   ("Load restraints", False), ("Damage", False)]
 
 # the rigid also has its tail lift checked
 RIGID_CHECKLIST = [("Tyres", False), ("Lights", True), ("Brakes", True), ("Mirrors", False),
@@ -643,6 +648,13 @@ def check_empty() -> None:
                                          ("carriers", Carrier), ("runs", Run),
                                          ("consignments", Consignment))
                  if db.execute(select(func.count()).select_from(model)).scalar_one()]
+        lists = sorted(db.execute(select(
+            ChecklistItem.vehicle_type, ChecklistItem.position, ChecklistItem.label,
+            ChecklistItem.critical, ChecklistItem.retired_at.is_(None))).all())
+        fresh = sorted((t, i, label, critical, True) for t in ("van", "rigid", "ute")
+                       for i, (label, critical) in enumerate(FRESH_CHECKLIST, start=1))
+        if [tuple(row) for row in lists] != fresh:
+            there.append("checklists")
         taken = sorted(db.execute(select(User.username).where(
             User.username.in_([u for u, _, _ in USERS]))).scalars())
     if there or taken:
@@ -663,7 +675,8 @@ def seed_demo(wms: Wms, *, at: datetime | None = None, sleep: Callable[[float], 
               pace_minutes: float = 3, wait_seconds: float = 120, position_gap: float = 11,
               progress: Progress | None = None) -> Made:
     """Fill an empty database with a demo day. Refuses one with any fleet,
-    carriers, runs or consignments in it, or the demo's desk users. What it
+    carriers, runs or consignments in it, a checklist changed from a fresh
+    database's, or the demo's desk users. What it
     made goes in `progress` as it goes, to say what is left if it stops."""
     import warnings
 

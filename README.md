@@ -177,7 +177,8 @@ filled with `wms seed-demo`. It creates all 19 deliveries before picking any,
 which reserves their stock: if a SKU is short or unknown, it cancels each one
 it made and stops, naming the SKU, with nothing picked and nothing made in
 Simple TMS. It refuses a database with any trucks, drivers,
-carriers, runs or consignments in it. It makes the desk users `dee`
+carriers, runs or consignments in it, or a pre-start checklist changed from
+a fresh install's (the demo sets the rigid's). It makes the desk users `dee`
 (dispatcher) and `sam` (manager) with the password `demo-password-1`; the
 drivers `tom`, `kim`, `ana` and `raj` sign in with PIN `2468`. These are
 public, here: deactivate them before the system is used for real. It prints

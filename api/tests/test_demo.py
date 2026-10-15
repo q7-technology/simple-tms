@@ -357,10 +357,32 @@ def test_a_database_with_anything_in_it_is_refused(db, client, wms, quick):
     assert fake.created == {} and fake.packed == []
 
 
+@pytest.mark.parametrize("change", ["a line added", "a line retired", "a line now critical"])
+def test_a_checklist_changed_from_a_fresh_one_is_refused(db, client, wms, quick, change):
+    from tms.models import ChecklistItem
+    from tms.services import checklists
+
+    lines = [(i.label, i.critical) for i in checklists.live(db, "van")]
+    if change == "a line added":
+        lines.append(("Fire extinguisher", False))
+    elif change == "a line retired":
+        lines.pop()
+    else:
+        lines[0] = (lines[0][0], True)
+    checklists.replace(db, "van", lines)
+    db.commit()
+    assert db.execute(select(func.count()).select_from(ChecklistItem)).scalar_one() > 0
+
+    fake = FakeWms(wms)
+    with pytest.raises(demo.SeedError, match="already here: checklists"):
+        demo.seed_demo(fake, at=AT, **quick)
+    assert fake.created == {}
+
+
 def test_a_second_demo_day_is_refused(db, client, wms, quick):
     demo.seed_demo(FakeWms(wms), at=AT, **quick)
     with pytest.raises(demo.SeedError, match="already here: vehicles, drivers, carriers, runs, "
-                                             "consignments, user dee, user sam"):
+                                             "consignments, checklists, user dee, user sam"):
         demo.seed_demo(FakeWms(wms), at=AT, **quick)
 
 
@@ -599,3 +621,14 @@ def test_a_position_too_soon_is_sent_again_once_after_a_wait():
     seeder, api, slept = driving({"/v1/runs/7/position": [too_soon, too_soon]}, takes=0)
     with pytest.raises(demo.SeedError, match="429.*too_often"):
         seeder.drive({"id": 7}, "kim", [("-37.1", "143.1")], 0)
+
+
+def test_the_fresh_checklist_is_the_one_a_fresh_database_gets():
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).parent.parent / "alembic" / "versions" / "0005_fleet_care.py"
+    spec = importlib.util.spec_from_file_location("fleet_care", path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    assert migration.DEFAULT_CHECKLIST == demo.FRESH_CHECKLIST
