@@ -17,7 +17,7 @@ def test_a_dispatcher_makes_a_run_for_a_day(client, db, dispatcher_headers):
                            "unknown_weight": 0, "unknown_volume": 0, "state": "ok",
                            "message": None}
     assert run["run_sheet"] is None
-    assert run["shipping"] == {"pending": 0, "done": 0, "failed": 0, "last_error": None}
+    assert run["shipping"] == {"pending": 0, "done": 0, "failed": 0, "last_error": None, "held": 0, "held_by": []}
     assert run["prestart"] is None
 
 

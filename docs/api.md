@@ -362,8 +362,10 @@ Each run:
   "load": { "weight_kg": "72", "volume_m3": "0.5", "max_kg": "4500", "max_m3": "22",
             "unknown_weight": 0, "unknown_volume": 0, "state": "ok", "message": null },
   "run_sheet": null,
-  "shipping": { "pending": 0, "done": 0, "failed": 0, "last_error": null },
-  "returns": { "pending": 0, "done": 0, "failed": 0, "last_error": null },
+  "shipping": { "pending": 0, "done": 0, "failed": 0, "last_error": null,
+                "held": 0, "held_by": [] },
+  "returns": { "pending": 0, "done": 0, "failed": 0, "last_error": null,
+               "held": 0, "held_by": [] },
   "prestart": null,
   "estimate": null
 }
@@ -383,7 +385,18 @@ latest print of it (see Run sheets), `null` until it is first printed:
 `{ "job_id", "status", "printer", "last_error", "created_at", "printed_at" }`.
 `shipping` counts its ship calls to Simple WMS by state, with `last_error`
 the latest answer of one that gave up (`null` when none has); `returns`
-counts its return calls the same way (see `POST /v1/runs/{id}/finish`). `vehicle.blocked`
+counts its return calls the same way (see `POST /v1/runs/{id}/finish`).
+Each also has `held`, how many of its `pending` calls wait, untried, on an
+earlier call for their consignment on another run or manifest, and
+`held_by`, those earlier calls, oldest first (`[]` when none):
+```json
+"held": 1,
+"held_by": [{ "kind": "return", "run_no": "R-0007", "manifest_no": null,
+              "wms_ref": "0080034519", "status": "failed",
+              "last_error": "HTTP 422: …no returns zone" }]
+```
+`status` is `pending` (still being tried) or `failed` (gave up: Try again
+on this run starts it again). `vehicle.blocked`
 is why its truck can't take it, on its day (see Vehicles), else `null`: a run
 planned for a truck that is then grounded stays as it is and says so.
 `prestart` is the run's pre-start as Start counts it, `{ "id", "at",
@@ -510,7 +523,10 @@ before it hears that it went again.
 
 - `POST /v1/runs/{id}/retry-ship` — calls that gave up, ship and return
   alike, start again from scratch (no tries, no last error), each with its
-  same `message_id`.
+  same `message_id`. So do the earlier calls that gave up and hold this
+  run's calls (its `held_by` with `status` `failed`), on whatever run or
+  manifest they are, so one Try again lets them through. Calls that are
+  done, or still being tried, are left as they are.
 
 ### Run sheets
 
@@ -607,12 +623,13 @@ of runs, so a consignment is on one run or with one carrier, never both.
   "totals": { "consignments": 1, "packages": 5, "cartons": 5, "weight_kg": "72" },
   "needs_con_note": 0,
   "print_job": null,
-  "shipping": { "pending": 0, "done": 0, "failed": 0, "last_error": null }
+  "shipping": { "pending": 0, "done": 0, "failed": 0, "last_error": null,
+                "held": 0, "held_by": [] }
 }
 ```
 `status` is `open` or `collected`. `print_job` is its latest print (as a
 run's `run_sheet`), and `shipping` its ship calls to Simple WMS by state
-(with `last_error`, as a run's).
+(with `last_error`, `held` and `held_by`, as a run's).
 
 - `GET /v1/manifests?date=2026-10-15` — that day's manifests with something
   on them, open or collected, oldest first, as `{ "items", "total" }`. With
@@ -689,7 +706,9 @@ carrier is shipped again in Simple WMS with the carrier and con note: its
 return call, made when the run was finished, goes first.
 
 - `POST /v1/manifests/{id}/retry-ship` — calls that gave up start again from
-  scratch, each with its same `message_id`.
+  scratch, each with its same `message_id`, and so do the earlier calls that
+  gave up and hold this manifest's (as a run's Try again). Calls that are
+  done, or still being tried, are left as they are.
 
 ### Manifests
 

@@ -7,12 +7,13 @@ import uuid
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select, update
+from sqlalchemy import exists, func, or_, select, update
+from sqlalchemy.orm import aliased
 
 from tms.api.deps import DB, Principal, require
 from tms.api.schemas import Dec, Page
 from tms.config import get_settings
-from tms.models import Consignment, OutboundCall, Pod, PrintJob, Run
+from tms.models import Consignment, Manifest, OutboundCall, Pod, PrintJob, Run
 from tms.services import eta, fleet, records, runs
 from tms.services.load import consignment_totals
 
@@ -88,23 +89,81 @@ class RunSheetOut(BaseModel):
     printed_at: dt.datetime | None
 
 
+class HeldByOut(BaseModel):
+    """An earlier call, on another run or manifest, that holds later calls
+    for its consignment until it is done."""
+    kind: str
+    run_no: str | None
+    manifest_no: str | None
+    wms_ref: str
+    # pending (still being tried) or failed (gave up: Try again starts it)
+    status: str
+    last_error: str | None
+
+
 class ShippingOut(BaseModel):
     pending: int = 0
     done: int = 0
     failed: int = 0
     # why the latest call that gave up did, or null
     last_error: str | None = None
+    # how many of the pending wait, untried, on an earlier call for their
+    # consignment on another run or manifest; and those calls, oldest first
+    held: int = 0
+    held_by: list[HeldByOut] = []
+
+
+def _first_open():
+    """The earliest call not yet done for the same consignment, before this
+    one: the one the worker waits on (see the worker's _in_turn)."""
+    earlier = aliased(OutboundCall)
+    return (select(func.min(earlier.id))
+            .where(earlier.consignment_id == OutboundCall.consignment_id,
+                   earlier.id < OutboundCall.id, earlier.status != "done")
+            .scalar_subquery())
 
 
 def shipping_out(db, *where) -> ShippingOut:
-    """A run's or a manifest's calls to Simple WMS by state, and the latest
-    error of one that gave up."""
+    """A run's or a manifest's calls to Simple WMS by state, the latest
+    error of one that gave up, and what holds those waiting their turn."""
     calls = dict(db.execute(select(OutboundCall.status, func.count()).where(*where)
                             .group_by(OutboundCall.status)).all())
     error = db.execute(select(OutboundCall.last_error).where(*where, OutboundCall.status == "failed")
                        .order_by(OutboundCall.id.desc())
                        .limit(1)).scalar_one_or_none()
-    return ShippingOut(**calls, last_error=error)
+    waiting = db.execute(select(OutboundCall.run_id, OutboundCall.manifest_id, _first_open())
+                         .where(*where, OutboundCall.status == "pending")).all()
+    firsts = {first for _, _, first in waiting if first is not None}
+    holders = {call.id: (call, run, manifest, ref) for call, run, manifest, ref in db.execute(
+        select(OutboundCall, Run, Manifest, Consignment.wms_ref)
+        .join(Consignment, Consignment.id == OutboundCall.consignment_id)
+        .outerjoin(Run, Run.id == OutboundCall.run_id)
+        .outerjoin(Manifest, Manifest.id == OutboundCall.manifest_id)
+        .where(OutboundCall.id.in_(firsts)))} if firsts else {}
+    # one held by an earlier call of its own run or manifest is shown there already
+    held = [first for run_id, manifest_id, first in waiting if first is not None
+            and (holders[first][0].run_id, holders[first][0].manifest_id) != (run_id, manifest_id)]
+    return ShippingOut(**calls, last_error=error, held=len(held), held_by=[
+        HeldByOut(kind=call.kind, run_no=run and run.number,
+                  manifest_no=manifest and manifest.number, wms_ref=ref,
+                  status=call.status, last_error=call.last_error)
+        for call, run, manifest, ref in (holders[i] for i in sorted(set(held)))])
+
+
+def retry_calls(db, owner: str, owner_id: int) -> None:
+    """Start again, from scratch and with the same message_id each, the calls
+    of a run or manifest (`owner` run_id or manifest_id) that gave up, and
+    the earlier calls that gave up and hold its calls still to make. Done
+    and pending calls are left as they are."""
+    later = aliased(OutboundCall)
+    holds_ours = exists().where(later.consignment_id == OutboundCall.consignment_id,
+                                later.id > OutboundCall.id, later.status != "done",
+                                getattr(later, owner) == owner_id)
+    db.execute(update(OutboundCall)
+               .where(OutboundCall.status == "failed",
+                      or_(getattr(OutboundCall, owner) == owner_id, holds_ours))
+               .values(status="pending", attempts=0, last_error=None,
+                       next_attempt_at=func.now()))
 
 
 class StopEta(BaseModel):
@@ -300,10 +359,8 @@ def depart(id: int, db: DB, who: Principal = require("runs:write")):
 @router.post("/runs/{id}/retry-ship", response_model=RunOut)
 def retry_ship(id: int, db: DB, who: Principal = require("runs:write")):
     """Ship and return calls that gave up are tried again from the start,
-    with the same message_id each, so Simple WMS still acts on each once."""
+    with the same message_id each, so Simple WMS still acts on each once;
+    and so are earlier calls that gave up and hold this run's."""
     runs.get_run(db, id)
-    db.execute(update(OutboundCall)
-               .where(OutboundCall.run_id == id, OutboundCall.status == "failed")
-               .values(status="pending", attempts=0, last_error=None,
-                       next_attempt_at=func.now()))
+    retry_calls(db, "run_id", id)
     return _fresh(db, id)

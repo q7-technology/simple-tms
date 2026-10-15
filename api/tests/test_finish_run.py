@@ -134,23 +134,23 @@ def test_a_run_counts_what_it_handed_back_apart_from_what_it_shipped(client, db,
     from tms.models import OutboundCall
     run, (a, b), kim = on_the_road(client, db, dispatcher_headers)
     lane = client.get(f"/v1/runs/{run['id']}", headers=dispatcher_headers).json()
-    assert lane["returns"] == {"pending": 0, "done": 0, "failed": 0, "last_error": None}
+    assert lane["returns"] == {"pending": 0, "done": 0, "failed": 0, "last_error": None, "held": 0, "held_by": []}
     delivered(client, kim, run["id"], a)
     failed(client, kim, run["id"], b)
     _finish(client, kim, run["id"])
     lane = client.get(f"/v1/runs/{run['id']}", headers=dispatcher_headers).json()
-    assert lane["shipping"] == {"pending": 2, "done": 0, "failed": 0, "last_error": None}
-    assert lane["returns"] == {"pending": 1, "done": 0, "failed": 0, "last_error": None}
+    assert lane["shipping"] == {"pending": 2, "done": 0, "failed": 0, "last_error": None, "held": 0, "held_by": []}
+    assert lane["returns"] == {"pending": 1, "done": 0, "failed": 0, "last_error": None, "held": 0, "held_by": []}
 
     db.execute(update(OutboundCall).where(OutboundCall.kind == "return")
                .values(status="failed", attempts=5, last_error="HTTP 422: no returns zone"))
     db.commit()
     lane = client.get(f"/v1/runs/{run['id']}", headers=dispatcher_headers).json()
-    assert lane["returns"] == {"pending": 0, "done": 0, "failed": 1, "last_error": "HTTP 422: no returns zone"}
+    assert lane["returns"] == {"pending": 0, "done": 0, "failed": 1, "last_error": "HTTP 422: no returns zone", "held": 0, "held_by": []}
     assert lane["shipping"]["failed"] == 0
     # Try again starts both kinds again
     lane = client.post(f"/v1/runs/{run['id']}/retry-ship", headers=dispatcher_headers).json()
-    assert lane["returns"] == {"pending": 1, "done": 0, "failed": 0, "last_error": None}
+    assert lane["returns"] == {"pending": 1, "done": 0, "failed": 0, "last_error": None, "held": 0, "held_by": []}
 
 
 def test_one_planned_again_before_the_finish_stays_on_its_new_run(client, db, dispatcher_headers):

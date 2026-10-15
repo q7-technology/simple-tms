@@ -59,7 +59,8 @@ def _in_turn():
     """A call whose consignment has no earlier call still to make: Simple WMS
     hears that a consignment shipped, came back and shipped again in that
     order, however the retries fall. An earlier call that gave up holds the
-    later ones until someone tries it again."""
+    later ones until someone tries it again: Try again on the run or
+    manifest of either starts it."""
     earlier = aliased(OutboundCall)
     return ~exists().where(earlier.consignment_id == OutboundCall.consignment_id,
                            earlier.id < OutboundCall.id, earlier.status != "done")

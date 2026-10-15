@@ -41,7 +41,7 @@ def test_from_the_tray_onto_the_carriers_manifest_for_the_day(
     assert line["con_note"] is None
     assert m["totals"] == {"consignments": 1, "packages": 1, "cartons": 1, "weight_kg": "24"}
     assert m["needs_con_note"] == 1 and m["print_job"] is None
-    assert m["shipping"] == {"pending": 0, "done": 0, "failed": 0, "last_error": None}
+    assert m["shipping"] == {"pending": 0, "done": 0, "failed": 0, "last_error": None, "held": 0, "held_by": []}
     assert _history(client, dispatcher_headers, c.id)[-1] == ("booked", {
         "carrier": RIDGELINE, "carrier_id": rx["id"], "manifest": m["manifest_no"],
         "manifest_id": m["id"], "by": "dee"})

@@ -187,7 +187,7 @@ def test_failed_calls_are_tried_again_on_request(client, db, http, departed,
     row.status, row.attempts, row.last_error = "failed", 5, "HTTP 503: down"
     db.commit()
     r = client.post(f"/v1/runs/{departed['id']}/retry-ship", headers=dispatcher_headers)
-    assert r.status_code == 200 and r.json()["shipping"] == {"pending": 1, "done": 0, "failed": 0, "last_error": None}
+    assert r.status_code == 200 and r.json()["shipping"] == {"pending": 1, "done": 0, "failed": 0, "last_error": None, "held": 0, "held_by": []}
     row = _call(db)
     assert row.attempts == 0 and row.status == "pending" and row.last_error is None
     worker.send_ship_calls(db, http.client, now=datetime.now(UTC) + timedelta(seconds=1))

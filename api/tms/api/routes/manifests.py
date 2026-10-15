@@ -7,13 +7,13 @@ import uuid
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select, union, update
+from sqlalchemy import select, union
 
 from tms.api.deps import DB, Principal, require
 from tms.api.errors import FieldError
 from tms.api.routes.carriers import CarrierOut, carrier_out
 from tms.api.routes.runs import (
-    RunSheetOut, ShippingOut, StopConsignment, shipping_out, stop_consignment,
+    RunSheetOut, ShippingOut, StopConsignment, retry_calls, shipping_out, stop_consignment,
 )
 from tms.api.schemas import Dec, Page
 from tms.models import Booking, Manifest, OutboundCall, PrintJob
@@ -173,10 +173,8 @@ def collect(id: int, body: CollectIn, db: DB, who: Principal = require("runs:wri
 @router.post("/manifests/{id}/retry-ship", response_model=ManifestOut)
 def retry_ship(id: int, db: DB, who: Principal = require("runs:write")):
     """Ship calls that gave up are tried again from the start, with the same
-    message_id each, so Simple WMS still ships each delivery once."""
+    message_id each, so Simple WMS still ships each delivery once; and so
+    are earlier calls that gave up and hold this manifest's."""
     carriers.get_manifest(db, id)
-    db.execute(update(OutboundCall)
-               .where(OutboundCall.manifest_id == id, OutboundCall.status == "failed")
-               .values(status="pending", attempts=0, last_error=None,
-                       next_attempt_at=func.now()))
+    retry_calls(db, "manifest_id", id)
     return _fresh(db, id)

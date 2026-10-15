@@ -26,7 +26,7 @@ def test_departing_queues_one_ship_call_per_consignment(client, db, dispatcher_h
     out = r.json()
     assert out["status"] == "departed" and out["departed_at"] is not None
     assert [s["consignment"]["status"] for s in out["stops"]] == ["departed", "departed"]
-    assert out["shipping"] == {"pending": 2, "done": 0, "failed": 0, "last_error": None}
+    assert out["shipping"] == {"pending": 2, "done": 0, "failed": 0, "last_error": None, "held": 0, "held_by": []}
 
     calls = db.execute(select(OutboundCall).order_by(OutboundCall.id)).scalars().all()
     assert [c.path for c in calls] == ["/v1/deliveries/0080034519/ship",
