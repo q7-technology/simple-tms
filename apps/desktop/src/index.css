@@ -210,6 +210,7 @@
   .grp tr.sel .rowbtn { border-color: var(--color-green); background: var(--color-tint); }
 
   /* the admin forms: no drawn design, so the drawers' own fields and boxes */
+  .tabpanel { display: flex; flex-direction: column; gap: 16px; }
   .tools { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
   .adminform { padding: 16px; border-radius: 16px; border: 1px solid var(--color-card-line); background: #fff; display: flex; flex-direction: column; gap: 12px; }
   .adminform .row { display: flex; flex-wrap: wrap; gap: 12px; }

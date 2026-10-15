@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useOutletContext } from "react-router-dom";
+import { Drivers } from "../admin/Drivers";
 import { VehicleForm } from "../admin/VehicleForm";
 import { api, ApiError, Unreachable } from "../api/client";
 import type { HistoryItem, Page, PrestartDetail, Run, Vehicle } from "../api/types";
@@ -239,6 +240,8 @@ function VehicleAside({ v, vehicles, driverName, onChanged }: {
   );
 }
 
+type Tab = "vehicles" | "drivers" | "checklists";
+
 /** Fleet.html: the trucks, whether each can go, the pre-start that
  * grounded one, and what a fleet manager records. */
 export function Fleet() {
@@ -254,6 +257,8 @@ export function Fleet() {
   const [chosen, setChosen] = useState<string | null>(null);
   const [note, setNote] = useState<Note>(null);
   const [adding, setAdding] = useState(false);
+  const [tab, setTab] = useState<Tab>("vehicles");
+  const tabs: [Tab, string][] = [["vehicles", "Vehicles"], ["drivers", "Drivers"]];
   const addButton = useRef<HTMLButtonElement>(null);
 
   const load = useCallback(async () => {
@@ -303,66 +308,79 @@ export function Fleet() {
       <div style={{ flex: 1, minWidth: 200 }}>
         <div className="eyebrow" style={{ color: "var(--color-green)" }}>Own fleet</div>
         <h1>Fleet</h1>
-        <div className="sub">Your trucks, pre-start checks, and when rego and service fall due.</div>
+        <div className="sub">Your trucks, who drives them, pre-start checks, and when rego and service fall due.</div>
       </div>
     }>
-      <div className="tools">
-        <label className="search" style={{ flex: "0 1 420px" }}><Icon name="search" />
-          <span className="sr">Search vehicles</span>
-          <input type="search" placeholder="Rego or driver" value={q} onChange={(e) => setQ(e.target.value)} /></label>
-        {manager && (
-          <button ref={addButton} type="button" className="btn primary" aria-expanded={adding} onClick={() => setAdding((a) => !a)}>
-            <Icon name="plus" size={16} width={2.6} />Add a vehicle</button>)}
+      <div className="tabs" role="tablist" aria-label="Fleet">
+        {tabs.map(([key, label]) => (
+          <button key={key} type="button" className="tab" role="tab" id={`fleet-tab-${key}`} aria-selected={tab === key}
+                  aria-controls={`fleet-${key}`} onClick={() => { setTab(key); setNote(null); }}>{label}</button>))}
       </div>
-      {adding && (
-        <VehicleForm vehicles={all} onCancel={closeAdd}
-                     onDone={async (text, rego) => { closeAdd(); setChosen(rego); await changed({ tone: "g", text }); }} />)}
       {note && <div className={`msg ${note.tone}`} role={note.tone === "r" ? "alert" : "status"}>{note.text}</div>}
-      <div className="stats">
-        <div className="stat"><div className="eyebrow">VEHICLES</div><div className="v num">{active.length}</div>
-          <div className="d">{types.map(([t, n]) => `${n} ${t}`).join(" · ")}</div></div>
-        <div className={`stat${grounded.length ? " red" : ""}`}><div className="eyebrow">GROUNDED</div><div className="v num">{grounded.length}</div>
-          <div className="d">{grounded.map((v) => `${v.rego} · ${v.grounded?.failed.join(", ").toLowerCase()}`).join("; ") || "None"}</div></div>
-        {overdue.length > 0 && (
-          <div className="stat red"><div className="eyebrow">OVERDUE</div><div className="v num">{overdue.length}</div>
-            <div className="d">{overdue.map((v) => v.rego).join(", ")}</div></div>)}
-        <div className={`stat${due.length ? " amber" : ""}`}><div className="eyebrow">DUE SOON</div><div className="v num">{due.length}</div>
-          <div className="d">{due.map((v) => `${v.rego} ${v.rego_due?.state === "due" ? "rego" : "service"}`).join(" · ") || "Nothing in the next 30 days"}</div></div>
-        <div className="stat"><div className="eyebrow">PRE-STARTS TODAY</div><div className="v num">{checked.length}</div>
-          <div className="d">{checked.filter((v) => v.last_prestart!.result === "passed").length} passed · {checked.filter((v) => v.last_prestart!.result !== "passed").length} failed</div></div>
-      </div>
-      <div className="split">
-        <div className="tablewrap">
-          <table style={{ minWidth: 720 }}>
-            <thead><tr><th>REGO</th><th>TYPE</th><th>DRIVER</th><th>REGO EXPIRY</th><th>NEXT SERVICE</th><th>LAST PRE-START</th><th>STATUS</th></tr></thead>
-            <tbody>
-              {shown.map((v) => {
-                const run = runOf(v.rego);
-                const pill = statusPill(v, run?.status === "departed");
-                const on = selected?.rego === v.rego;
-                return (
-                  <tr key={v.rego} className={on ? `sel${v.state === "grounded" || v.state === "overdue" ? " bad" : ""}` : undefined}>
-                    <td><button type="button" className="rowbtn" aria-pressed={on} aria-label={`Show ${v.rego}`} onClick={() => setChosen(v.rego)}>{v.rego}</button></td>
-                    <td style={{ textTransform: "capitalize" }}>{v.type}</td>
-                    <td>{run?.driver.name ?? <span className="small">No run today</span>}</td>
-                    <CellOut c={regoCell(v)} />
-                    <CellOut c={serviceCell(v)} />
-                    <CellOut c={checkCell(v)} />
-                    <td><span className={`pill p-${pill.tone}`}>{pill.text}</span></td>
-                  </tr>
-                );
-              })}
-              {vehicles?.length === 0 && (
-                <tr><td colSpan={7} className="small">{manager ? "No vehicles yet. Add your trucks with Add a vehicle." : "No vehicles yet. A fleet manager adds them here."}</td></tr>)}
-            </tbody>
-          </table>
+      {tab === "drivers" && (
+        <div role="tabpanel" id="fleet-drivers" aria-labelledby="fleet-tab-drivers" className="tabpanel">
+          <Drivers manager={manager} say={setNote} />
+        </div>)}
+      {tab === "vehicles" && (
+        <div role="tabpanel" id="fleet-vehicles" aria-labelledby="fleet-tab-vehicles" className="tabpanel">
+          <div className="tools">
+            <label className="search" style={{ flex: "0 1 420px" }}><Icon name="search" />
+              <span className="sr">Search vehicles</span>
+              <input type="search" placeholder="Rego or driver" value={q} onChange={(e) => setQ(e.target.value)} /></label>
+            {manager && (
+              <button ref={addButton} type="button" className="btn primary" aria-expanded={adding} onClick={() => setAdding((a) => !a)}>
+                <Icon name="plus" size={16} width={2.6} />Add a vehicle</button>)}
+          </div>
+          {adding && (
+            <VehicleForm vehicles={all} onCancel={closeAdd}
+                         onDone={async (text, rego) => { closeAdd(); setChosen(rego); await changed({ tone: "g", text }); }} />)}
+          <div className="stats">
+            <div className="stat"><div className="eyebrow">VEHICLES</div><div className="v num">{active.length}</div>
+              <div className="d">{types.map(([t, n]) => `${n} ${t}`).join(" · ")}</div></div>
+            <div className={`stat${grounded.length ? " red" : ""}`}><div className="eyebrow">GROUNDED</div><div className="v num">{grounded.length}</div>
+              <div className="d">{grounded.map((v) => `${v.rego} · ${v.grounded?.failed.join(", ").toLowerCase()}`).join("; ") || "None"}</div></div>
+            {overdue.length > 0 && (
+              <div className="stat red"><div className="eyebrow">OVERDUE</div><div className="v num">{overdue.length}</div>
+                <div className="d">{overdue.map((v) => v.rego).join(", ")}</div></div>)}
+            <div className={`stat${due.length ? " amber" : ""}`}><div className="eyebrow">DUE SOON</div><div className="v num">{due.length}</div>
+              <div className="d">{due.map((v) => `${v.rego} ${v.rego_due?.state === "due" ? "rego" : "service"}`).join(" · ") || "Nothing in the next 30 days"}</div></div>
+            <div className="stat"><div className="eyebrow">PRE-STARTS TODAY</div><div className="v num">{checked.length}</div>
+              <div className="d">{checked.filter((v) => v.last_prestart!.result === "passed").length} passed · {checked.filter((v) => v.last_prestart!.result !== "passed").length} failed</div></div>
+          </div>
+          <div className="split">
+            <div className="tablewrap">
+              <table style={{ minWidth: 720 }}>
+                <thead><tr><th>REGO</th><th>TYPE</th><th>DRIVER</th><th>REGO EXPIRY</th><th>NEXT SERVICE</th><th>LAST PRE-START</th><th>STATUS</th></tr></thead>
+                <tbody>
+                  {shown.map((v) => {
+                    const run = runOf(v.rego);
+                    const pill = statusPill(v, run?.status === "departed");
+                    const on = selected?.rego === v.rego;
+                    return (
+                      <tr key={v.rego} className={on ? `sel${v.state === "grounded" || v.state === "overdue" ? " bad" : ""}` : undefined}>
+                        <td><button type="button" className="rowbtn" aria-pressed={on} aria-label={`Show ${v.rego}`} onClick={() => setChosen(v.rego)}>{v.rego}</button></td>
+                        <td style={{ textTransform: "capitalize" }}>{v.type}</td>
+                        <td>{run?.driver.name ?? <span className="small">No run today</span>}</td>
+                        <CellOut c={regoCell(v)} />
+                        <CellOut c={serviceCell(v)} />
+                        <CellOut c={checkCell(v)} />
+                        <td><span className={`pill p-${pill.tone}`}>{pill.text}</span></td>
+                      </tr>
+                    );
+                  })}
+                  {vehicles?.length === 0 && (
+                    <tr><td colSpan={7} className="small">{manager ? "No vehicles yet. Add your trucks with Add a vehicle." : "No vehicles yet. A fleet manager adds them here."}</td></tr>)}
+                </tbody>
+              </table>
+            </div>
+            {/* stay on the truck it changed: once fixed, it's no longer the grounded one shown by default */}
+            {selected && <VehicleAside key={selected.rego} v={selected} vehicles={all} driverName={runOf(selected.rego)?.driver.name ?? null}
+                                       onChanged={(n) => { setChosen(selected.rego); return changed(n); }} />}
+          </div>
+          <div className="small">Amber 30 days or 1,000 km before it's due, red once it's overdue. A grounded or overdue truck can't take a run.
+            Due dates show here only.</div>
         </div>
-        {/* stay on the truck it changed: once fixed, it's no longer the grounded one shown by default */}
-        {selected && <VehicleAside key={selected.rego} v={selected} vehicles={all} driverName={runOf(selected.rego)?.driver.name ?? null}
-                                   onChanged={(n) => { setChosen(selected.rego); return changed(n); }} />}
-      </div>
-      <div className="small">Amber 30 days or 1,000 km before it's due, red once it's overdue. A grounded or overdue truck can't take a run.
-        Due dates show here only.</div>
+      )}
     </Drawer>
   );
 }
