@@ -164,7 +164,7 @@ nothing back-dated: the run on the road drives for about 7 minutes, sending
 its position as the driver's phone would (`--pace`, minutes a stop, 3 unless
 given).
 
-    docker compose exec api tms seed-demo --yes --skus JKL012,FG-900
+    docker compose exec api tms seed-demo --yes
 
 Without `--yes` it does nothing but say what it would do: the Simple WMS
 address and warehouse it uses, that the Simple TMS worker then ships 11 of the
@@ -172,20 +172,24 @@ address and warehouse it uses, that the Simple TMS worker then ships 11 of the
 run sheets and manifests go to, and the sign-ins it adds.
 
 `--skus` names Simple WMS SKUs with stock in `BAL-WH01` (`--warehouse`),
-picked and packed by `op-017` (`--operator`); the defaults suit a Simple WMS
-filled with `wms seed-demo`. It creates all 19 deliveries before picking any,
-which reserves their stock: if a SKU is short or unknown, it cancels each one
-it made and stops, naming the SKU, with nothing picked and nothing made in
-Simple TMS. It refuses a database with any trucks, drivers,
-carriers, runs or consignments in it, or a pre-start checklist changed from
-a fresh install's (the demo sets the rigid's). It makes the desk users `dee`
-(dispatcher) and `sam` (manager) with the password `demo-password-1`; the
-drivers `tom`, `kim`, `ana` and `raj` sign in with PIN `2468`. These are
-public, here: deactivate them before the system is used for real. It prints
-what it made and never a key. With printing set up, the run sheets and manifests
-go to Platen. If it stops after it has started making the day, it says what
-it left behind in both. To start again, empty the database and the `pod_files`
-volume.
+picked and packed by `op-017` (`--operator`). The defaults suit a Simple WMS
+filled with `wms seed-demo`; for one with other stock, name SKUs it has. For
+example, for a Simple WMS with `JKL012` and `FG-900` on hand at `BAL-WH01`:
+
+    docker compose exec api tms seed-demo --yes --skus JKL012,FG-900
+
+It creates all 19 deliveries before picking any, which reserves their stock:
+if a SKU is short or unknown, it cancels each one it made and stops, naming
+the SKU, with nothing picked and nothing made in Simple TMS. It refuses a
+database with any trucks, drivers, carriers, runs or consignments in it, or a
+pre-start checklist changed from a fresh install's (the demo sets the
+rigid's). It makes the desk users `dee` (dispatcher) and `sam` (manager) with
+the password `demo-password-1`; the drivers `tom`, `kim`, `ana` and `raj` sign
+in with PIN `2468`. These are public, here: deactivate them before the system
+is used for real. It prints what it made and never a key. With printing set
+up, the run sheets and manifests go to Platen. If it stops after it has
+started making the day, it says what it left behind in both. To start again,
+empty the database and the `pod_files` volume.
 
 ## Map tiles
 
