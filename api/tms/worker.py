@@ -79,11 +79,11 @@ def _ship_one(session: Session, http: httpx.Client, now: datetime | None) -> boo
         row.done_at = answered
         row.last_error = None
         row.already_shipped = answer.already_shipped
-        log.info("ship call %s (%s) done%s", row.message_id, row.path,
+        log.info("%s call %s (%s) done%s", row.kind, row.message_id, row.path,
                  "; Simple WMS had it shipped already" if answer.already_shipped else "")
     else:
         retry_later(row, answered, answer.error)
-        log.warning("ship call %s (%s) try %d failed%s: %s", row.message_id, row.path,
+        log.warning("%s call %s (%s) try %d failed%s: %s", row.kind, row.message_id, row.path,
                     row.attempts, "; given up" if row.status == "failed" else "", answer.error)
     session.commit()
     return True

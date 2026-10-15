@@ -28,9 +28,12 @@ class InboundEvent(Base):
 
 class OutboundCall(Base):
     """A call to Simple WMS, waiting or made: the ship call when a run
-    departs, or when a carrier collects. The worker makes it, retrying after
-    1 min, 5, 30 and 2 h; the same message_id goes with every try, so Simple
-    WMS acts on it once. It belongs to a run or to a manifest, never both."""
+    departs, or when a carrier collects; the return call when a run is
+    finished with something that couldn't be delivered. The worker makes it,
+    retrying after 1 min, 5, 30 and 2 h, and a consignment's calls in the
+    order they were queued; the same message_id goes with every try, so
+    Simple WMS acts on it once. It belongs to a run or to a manifest, never
+    both."""
 
     __tablename__ = "outbound_call"
     __table_args__ = (Index("ix_outbound_call_due", "status", "next_attempt_at"),
@@ -39,7 +42,7 @@ class OutboundCall(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     message_id: Mapped[uuid.UUID] = mapped_column(Uuid, unique=True)
-    # ship
+    # ship, return
     kind: Mapped[str] = mapped_column(String(16))
     # the Simple WMS path, e.g. /v1/deliveries/0080012345/ship, and the body
     path: Mapped[str] = mapped_column(String(200))
@@ -54,8 +57,9 @@ class OutboundCall(Base):
     last_error: Mapped[str | None] = mapped_column(String(500))
     done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # done, but Simple WMS answered 409 already_shipped: it had the delivery
-    # shipped already (a consignment back from its run, then collected by a
-    # carrier) and kept what it had, not this call's carrier and tracking no.
+    # shipped already, by this call (a reply lost past its 24 hours of
+    # remembering the message_id), or, before Simple WMS took deliveries
+    # back, by the run a consignment came back from.
     already_shipped: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     created_at: Mapped[datetime] = created_at_column()
 

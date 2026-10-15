@@ -63,8 +63,9 @@ class ConsignmentEvent(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     consignment_id: Mapped[int] = mapped_column(ForeignKey("consignment.id"), index=True)
-    # packed, assigned, unassigned, departed, delivered, failed, booked,
-    # unbooked, con_note, collected
+    # packed, assigned, unassigned, departed, delivered, failed, returned
+    # (off the truck at the depot, and Simple WMS told), booked, unbooked,
+    # con_note, collected
     kind: Mapped[str] = mapped_column(String(16))
     at: Mapped[datetime] = created_at_column()
     detail: Mapped[dict] = mapped_column(JSONB, default=dict)

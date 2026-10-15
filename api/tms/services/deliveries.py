@@ -1,20 +1,22 @@
 """The driver's side of a run: start it, deliver each stop or say why it
-couldn't be, and finish it. Each change locks its run's row first, so two
-confirmations for one run (two phones, or a retry racing the original) take
-turns, and a stop is recorded once."""
+couldn't be, and finish it, when what came back is handed back to Simple
+WMS. Each change locks its run's row first, so two confirmations for one run
+(two phones, or a retry racing the original) take turns, and a stop is
+recorded once."""
 from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from urllib.parse import quote
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from tms.api.errors import Conflict, FieldError, NotFound, violated_constraint
-from tms.models import ConsignmentEvent, Pod, PodFile, PrestartItem, Run, Stop
+from tms.models import ConsignmentEvent, OutboundCall, Pod, PodFile, PrestartItem, Run, Stop
 from tms.services import runs
 from tms.services.envelope import sender_of
 
@@ -194,9 +196,32 @@ def tally(db: Session, run_id: int) -> dict[str | None, int]:
     return {outcome: n for outcome, n in rows}
 
 
+def _came_back(db: Session, run: Run, by: str, now: datetime) -> None:
+    """The truck is back, so what couldn't be delivered is off it, at the
+    depot: each such consignment gets a `returned` history row, and a return
+    call to Simple WMS waits in the queue for it, in the same transaction,
+    so none is lost and none is made twice. Its tracking number is the run's,
+    the shipment that came back. It stays `failed`, in the tray."""
+    for stop, pod in db.execute(
+            select(Stop, Pod).join(Pod, Pod.stop_id == Stop.id)
+            .where(Stop.run_id == run.id, Stop.removed_at.is_(None), Stop.outcome == "failed")
+            .order_by(Stop.sequence, Stop.id)).all():
+        c = stop.consignment
+        c.events.append(ConsignmentEvent(kind="returned", at=now, detail={
+            "run": run.number, "run_id": run.id, "by": by}))
+        message_id = uuid.uuid4()
+        db.add(OutboundCall(
+            message_id=message_id, kind="return", run_id=run.id, consignment_id=c.id,
+            path=f"/v1/deliveries/{quote(c.wms_ref, safe='')}/return",
+            body={"message_id": str(message_id), "owner": c.owner, "reason": pod.reason,
+                  "note": pod.note, "tracking_no": run.number, "returned_by": by[:64]},
+            status="pending", attempts=0, next_attempt_at=now))
+
+
 def finish(db: Session, who, run_id: int) -> Run:
-    """Back at the depot: every stop is delivered or has a reason it wasn't.
-    Finishing a finished run changes nothing."""
+    """Back at the depot: every stop is delivered or has a reason it wasn't,
+    and Simple WMS is told what came back. Finishing a finished run changes
+    nothing."""
     run = _locked(db, who, run_id)
     if run.status == "done":
         return run
@@ -207,5 +232,6 @@ def finish(db: Session, who, run_id: int) -> Run:
                                      f"{'stop' if left == 1 else 'stops'} to deliver or explain")
     run.status = "done"
     run.finished_at = datetime.now(UTC)
+    _came_back(db, run, who.name, run.finished_at)
     db.flush()
     return run

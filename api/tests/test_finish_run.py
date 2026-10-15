@@ -65,3 +65,64 @@ def test_finishing_takes_a_driver_or_runs_write(client, db, dispatcher_headers, 
     assert main(["create-api-key", "--name", "viewer", "--scopes", "runs:read"]) == 0
     raw = capsys.readouterr().out.strip().splitlines()[-1]
     assert _finish(client, bearer(raw), run["id"]).status_code == 403
+
+
+# --- what came back ----------------------------------------------------------------
+
+def test_finishing_tells_simple_wms_what_came_back(client, db, dispatcher_headers):
+    """Back at the depot, the cartons that couldn't be delivered are off the
+    truck: a return call to Simple WMS waits in the queue for each, in the
+    same transaction as the finish, so none is lost and none is made twice."""
+    from sqlalchemy import select
+
+    from tms.models import OutboundCall
+    run, (a, b), kim = on_the_road(client, db, dispatcher_headers)
+    delivered(client, kim, run["id"], a)
+    failed(client, kim, run["id"], b, reason="closed", note="Shop shut, sign on the door")
+    # not while the truck is still out
+    assert [c.kind for c in db.execute(select(OutboundCall)).scalars()] == ["ship", "ship"]
+
+    assert _finish(client, kim, run["id"]).status_code == 200
+    db.expire_all()
+    back = db.execute(select(OutboundCall).where(OutboundCall.kind == "return")).scalars().all()
+    assert [(c.path, c.run_id, c.manifest_id, c.consignment_id, c.status) for c in back] == [
+        (f"/v1/deliveries/{b.wms_ref}/return", run["id"], None, b.id, "pending")]
+    assert back[0].body == {"message_id": str(back[0].message_id), "owner": "DEFAULT",
+                            "reason": "closed", "note": "Shop shut, sign on the door",
+                            "tracking_no": run["run_no"], "returned_by": "kim"}
+    # finishing again queues nothing more
+    _finish(client, dispatcher_headers, run["id"])
+    assert db.execute(select(OutboundCall).where(OutboundCall.kind == "return")).scalars().all() == back
+
+    history = client.get(f"/v1/consignments/{b.id}", headers=dispatcher_headers).json()["history"]
+    assert (history[-1]["kind"], history[-1]["detail"]) == (
+        "returned", {"run": run["run_no"], "run_id": run["id"], "by": "kim"})
+    assert client.get(f"/v1/consignments/{b.id}", headers=dispatcher_headers).json()["status"] == "failed"
+    kinds = [h["kind"] for h in client.get(f"/v1/consignments/{a.id}",
+                                           headers=dispatcher_headers).json()["history"]]
+    assert "returned" not in kinds
+
+
+def test_a_run_that_delivered_everything_queues_no_return(client, db, dispatcher_headers):
+    from sqlalchemy import select
+
+    from tms.models import OutboundCall
+    run, (a, b), kim = on_the_road(client, db, dispatcher_headers)
+    delivered(client, kim, run["id"], a)
+    delivered(client, kim, run["id"], b)
+    _finish(client, kim, run["id"])
+    assert db.execute(select(OutboundCall).where(OutboundCall.kind == "return")).first() is None
+
+
+def test_the_office_finishing_says_who_brought_it_back(client, db, dispatcher_headers):
+    from sqlalchemy import select
+
+    from tms.models import OutboundCall
+    run, (a, b), kim = on_the_road(client, db, dispatcher_headers)
+    failed(client, kim, run["id"], a, reason="refused")
+    failed(client, kim, run["id"], b, reason="wrong_address")
+    _finish(client, dispatcher_headers, run["id"])
+    back = db.execute(select(OutboundCall).where(OutboundCall.kind == "return")
+                      .order_by(OutboundCall.id)).scalars().all()
+    assert [(c.consignment_id, c.body["reason"], c.body["note"], c.body["returned_by"])
+            for c in back] == [(a.id, "refused", None, "dee"), (b.id, "wrong_address", None, "dee")]
