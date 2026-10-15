@@ -387,11 +387,13 @@ def test_the_command_makes_the_day_and_prints_no_key(db, client, wms, quick, mon
     monkeypatch.setattr(demo, "Wms", fake_wms)
     real = demo.seed_demo
     monkeypatch.setattr(demo, "seed_demo", lambda w, **kw: real(w, at=AT, **{**kw, **quick}))
-    assert main(["seed-demo", "--skus", "JKL012,LUB-05:KG"]) == 0
+    assert main(["seed-demo", "--yes", "--skus", "JKL012,LUB-05:KG"]) == 0
     out = capsys.readouterr().out
     assert "R-0002 TMS-041 Kim: on the road, 2 of 5 delivered" in out
     assert "driver app: tom, kim, ana or raj with PIN 2468" in out
     assert "wms_test-key-for-the-tms" not in out
+    assert out.rstrip().splitlines()[-1] == ("These demo sign-ins are public: deactivate dee, sam "
+                                             "and the drivers before real use.")
     assert made_with["key"] == "wms_test-key-for-the-tms"
     assert made_with["skus"] == [("JKL012", "EA"), ("LUB-05", "KG")]
     assert made_with["warehouse"] == "BAL-WH01" and made_with["operator"] == "op-017"
@@ -400,8 +402,42 @@ def test_the_command_makes_the_day_and_prints_no_key(db, client, wms, quick, mon
 def test_the_command_refuses_a_database_in_use(db, admin, capsys):
     db.add(Vehicle(rego="ABC123", type="van", max_kg=1, max_m3=1, active=True))
     db.commit()
-    assert main(["seed-demo"]) == 1
+    assert main(["seed-demo", "--yes"]) == 1
     assert "seed-demo: already here: vehicles" in capsys.readouterr().err
+
+
+def test_the_command_says_what_it_will_do_and_does_nothing_without_yes(db, monkeypatch, capsys):
+    from tms.config import get_settings
+    from tms.models import User
+
+    def no_wms(*args, **kw):
+        raise AssertionError("Simple WMS touched")
+
+    monkeypatch.setattr(demo, "Wms", no_wms)
+    monkeypatch.setattr(demo, "seed_demo", no_wms)
+    monkeypatch.setattr(get_settings(), "wms_url", "http://wms.example:8011")
+    assert main(["seed-demo", "--warehouse", "MEL-WH02"]) == 1
+    said = capsys.readouterr()
+    assert said.out.splitlines()[1:] == [
+        "- uses Simple WMS at http://wms.example:8011, warehouse MEL-WH02",
+        "- creates and packs 19 deliveries; the Simple TMS worker then ships 11 of them out of "
+        "that warehouse's stock and returns 1",
+        "- prints run sheets and manifests on dispatch if Platen is set up",
+        "- adds sign-ins dee and sam (password demo-password-1) and four drivers (PIN 2468), "
+        "which are public in the README"]
+    assert "--yes" in said.err
+    assert "wms_test-key-for-the-tms" not in said.out + said.err
+    assert db.execute(select(func.count()).select_from(User)).scalar_one() == 0
+
+
+def test_the_command_names_each_printer(db, monkeypatch, capsys):
+    from tms.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "run_sheet_printer", "office")
+    monkeypatch.setattr(get_settings(), "manifest_printer", "bay")
+    assert main(["seed-demo"]) == 1
+    assert ("- prints run sheets on office and manifests on bay if Platen is set up"
+            in capsys.readouterr().out)
 
 
 
@@ -409,7 +445,7 @@ def run_command(monkeypatch, wms_for_it, quick, *args):
     monkeypatch.setattr(demo, "Wms", lambda url, key, **kw: wms_for_it)
     real = demo.seed_demo
     monkeypatch.setattr(demo, "seed_demo", lambda w, **kw: real(w, **{**kw, "at": AT, **quick}))
-    return main(["seed-demo", *args])
+    return main(["seed-demo", "--yes", *args])
 
 
 def test_a_day_stopped_partway_says_it_is_half_made(db, client, wms, quick, monkeypatch, capsys):

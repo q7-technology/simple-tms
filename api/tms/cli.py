@@ -74,6 +74,12 @@ def cmd_seed_demo(args) -> int:
         logging.getLogger(name).setLevel(logging.WARNING)
 
     settings = get_settings()
+    if not args.yes:
+        for line in demo.what_it_does(settings.wms_url, args.warehouse, settings.run_sheet_printer,
+                                      settings.manifest_printer_or_default):
+            print(line)
+        print("seed-demo: nothing done. Run it again with --yes to go ahead.", file=sys.stderr)
+        return 1
     skus = []
     for part in args.skus.split(","):
         sku, _, uom = part.strip().partition(":")
@@ -98,6 +104,7 @@ def cmd_seed_demo(args) -> int:
         return 1
     for line in demo.summary(made):
         print(line)
+    print(demo.PUBLIC)
     return 0
 
 
@@ -133,6 +140,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="minutes the run on the road takes to each of its first two stops")
     p.add_argument("--wait", type=float, default=120,
                    help="seconds to wait for Simple WMS's delivery.packed events")
+    p.add_argument("--yes", action="store_true",
+                   help="go ahead: without it, it says what it would do and does nothing")
     p.set_defaults(func=cmd_seed_demo)
 
     args = parser.parse_args(argv)

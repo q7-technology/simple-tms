@@ -164,7 +164,12 @@ nothing back-dated: the run on the road drives for about 7 minutes, sending
 its position as the driver's phone would (`--pace`, minutes a stop, 3 unless
 given).
 
-    docker compose exec api tms seed-demo --skus JKL012,FG-900
+    docker compose exec api tms seed-demo --yes --skus JKL012,FG-900
+
+Without `--yes` it does nothing but say what it would do: the Simple WMS
+address and warehouse it uses, that the Simple TMS worker then ships 11 of the
+19 deliveries out of that warehouse's stock and returns 1, the printers the
+run sheets and manifests go to, and the sign-ins it adds.
 
 `--skus` names Simple WMS SKUs with stock in `BAL-WH01` (`--warehouse`),
 picked and packed by `op-017` (`--operator`); the defaults suit a Simple WMS
@@ -174,8 +179,9 @@ it made and stops, naming the SKU, with nothing picked and nothing made in
 Simple TMS. It refuses a database with any trucks, drivers,
 carriers, runs or consignments in it. It makes the desk users `dee`
 (dispatcher) and `sam` (manager) with the password `demo-password-1`; the
-drivers `tom`, `kim`, `ana` and `raj` sign in with PIN `2468`. It prints what
-it made and never a key. With printing set up, the run sheets and manifests
+drivers `tom`, `kim`, `ana` and `raj` sign in with PIN `2468`. These are
+public, here: deactivate them before the system is used for real. It prints
+what it made and never a key. With printing set up, the run sheets and manifests
 go to Platen. If it stops after it has started making the day, it says what
 it left behind in both. To start again, empty the database and the `pod_files`
 volume.

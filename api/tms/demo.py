@@ -662,6 +662,31 @@ def seed_demo(wms: Wms, *, at: datetime | None = None, sleep: Callable[[float], 
         return seeder.run(refs)
 
 
+# what the Simple TMS worker ships from Simple WMS once the day is made: the
+# two runs that left and Valley Freight's pickup; and what it returns
+SHIPPED = len(MORNING) + len(ROAD) + len(VALLEY)
+RETURNED = 1
+
+PUBLIC = "These demo sign-ins are public: deactivate dee, sam and the drivers before real use."
+
+
+def what_it_does(wms_url: str, warehouse: str, run_sheet_printer: str,
+                 manifest_printer: str) -> list[str]:
+    """What a demo day does beyond this database, said before it does it."""
+    printers = (f"run sheets and manifests on {run_sheet_printer}"
+                if run_sheet_printer == manifest_printer else
+                f"run sheets on {run_sheet_printer} and manifests on {manifest_printer}")
+    return [
+        "tms seed-demo makes a demo day in this Simple TMS, which must be empty. It:",
+        f"- uses Simple WMS at {wms_url or '(not set: TMS_WMS_URL)'}, warehouse {warehouse}",
+        f"- creates and packs {len(ALL)} deliveries; the Simple TMS worker then ships {SHIPPED} "
+        f"of them out of that warehouse's stock and returns {RETURNED}",
+        f"- prints {printers} if Platen is set up",
+        f"- adds sign-ins dee and sam (password {PASSWORD}) and four drivers (PIN {PIN}), "
+        "which are public in the README",
+    ]
+
+
 def summary(made: Made) -> list[str]:
     """What was made, a line each. Never a key."""
     def run_line(r: dict, what: str) -> str:
