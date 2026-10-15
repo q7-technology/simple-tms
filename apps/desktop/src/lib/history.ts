@@ -22,6 +22,7 @@ export function historyLine(h: HistoryRow): { title: string; more: string; from:
       return { title: "Delivered", more: join(packages(d.packages),
                                               text(d.signed_name) ? `signed by ${d.signed_name}` : null), from: "tms" };
     case "failed": return { title: "Not delivered", more: REASONS[String(d.reason)] ?? String(d.reason ?? ""), from: "tms" };
+    case "returned": return { title: "Back at the depot", more: join(`off ${d.run}`, "Simple WMS told", by), from: "tms" };
     case "booked": return { title: `Booked with ${d.carrier}`, more: join(text(d.manifest), by), from: "tms" };
     case "unbooked": return { title: `Off ${d.carrier}'s manifest`, more: join(by), from: "tms" };
     case "con_note":

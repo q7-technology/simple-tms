@@ -219,7 +219,7 @@ describe("Carriers", () => {
     await user.click(within(vf).getByRole("button", { name: /Print manifest/ }));
     expect(await screen.findByText("M-0002 sent to Platen.")).toBeInTheDocument();
     await user.click(within(vf).getByRole("button", { name: /Mark collected/ }));
-    expect(confirm).toHaveBeenCalledWith(`${VALLEY} has collected 2 consignments? Simple WMS is told each has shipped with its con note, unless its run already shipped it.`);
+    expect(confirm).toHaveBeenCalledWith(`${VALLEY} has collected 2 consignments? Simple WMS is told each has shipped with its con note.`);
     const collect = calls.find((c) => path(c.url) === "/v1/manifests/2/collect")!;
     expect(collect.body).toEqual({ message_id: expect.stringMatching(/^[0-9a-f-]{36}$/), consignment_ids: [24, 28] });
     expect(await screen.findByText(`${VALLEY} has collected M-0002. Simple WMS is being told.`)).toBeInTheDocument();

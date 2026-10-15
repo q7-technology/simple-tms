@@ -405,6 +405,9 @@ export function PlanRuns() {
           const ids = run.stops.map((s) => s.consignment.id);
           const others = planned.filter((r) => r.id !== run.id);
           const sheet = sheetLine(run);
+          // what came back, once the run is finished: Simple WMS has to hear it too
+          const back = run.returns ?? { pending: 0, done: 0, failed: 0 };
+          const backTotal = back.pending + back.done + back.failed;
           const pill = open && blocked ? <span className="pill p-red"><Icon name="ban" size={13} width={2.4} />{blockedWord(blocked)}</span>
             : leftOpen(run) ? <span className="pill p-amber">{stillOpenFrom(run)}</span>
             : run.status === "done" ? <span className="pill p-grey">Done</span>
@@ -497,6 +500,12 @@ export function PlanRuns() {
                 <div className="small">Marked shipped in Simple WMS: {run.shipping.done} of {run.shipping.done + run.shipping.pending + run.shipping.failed}.</div>)}
               {run.shipping.failed > 0 && (
                 <div className="msg r"><span>{run.shipping.failed} not marked shipped in Simple WMS after five tries.</span>
+                  <button type="button" className="btn sm" disabled={busy}
+                          onClick={() => void act(() => api.post(`/v1/runs/${run.id}/retry-ship`), "Trying Simple WMS again.")}>Try again</button></div>)}
+              {backTotal > 0 && (
+                <div className="small">Back in Simple WMS: {back.done} of {backTotal}.</div>)}
+              {back.failed > 0 && run.shipping.failed === 0 && (
+                <div className="msg r"><span>{back.failed} not marked back in Simple WMS after five tries{back.last_error ? `: ${back.last_error}` : "."}</span>
                   <button type="button" className="btn sm" disabled={busy}
                           onClick={() => void act(() => api.post(`/v1/runs/${run.id}/retry-ship`), "Trying Simple WMS again.")}>Try again</button></div>)}
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>

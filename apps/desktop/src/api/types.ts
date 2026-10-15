@@ -163,6 +163,8 @@ export interface Run {
   };
   run_sheet: RunSheet | null;
   shipping: { pending: number; done: number; failed: number; last_error?: string | null };
+  /** its return calls: Simple WMS told what came back when it was finished */
+  returns?: { pending: number; done: number; failed: number; last_error?: string | null };
   /** the run's pre-start as Start counts it: the latest check of its truck
    * for it that didn't ground it, made since the truck was last grounded
    * and last marked fixed; else null */
@@ -226,11 +228,7 @@ export interface Manifest {
   needs_con_note: number;
   print_job: RunSheet | null;
   shipping: { pending: number; done: number; failed: number; last_error?: string | null };
-  /** what Simple WMS had shipped already (back from its run): it kept what it had */
-  already_shipped: AlreadyShipped[];
 }
-
-export interface AlreadyShipped { consignment_id: number; wms_ref: string; customer: string; carrier: string | null; tracking_no: string | null }
 
 /** A line of what just happened (GET /v1/feed). */
 export interface FeedItem {
