@@ -403,3 +403,97 @@ def test_the_command_refuses_a_database_in_use(db, admin, capsys):
     assert main(["seed-demo"]) == 1
     assert "seed-demo: already here: vehicles" in capsys.readouterr().err
 
+
+
+def run_command(monkeypatch, wms_for_it, quick, *args):
+    monkeypatch.setattr(demo, "Wms", lambda url, key, **kw: wms_for_it)
+    real = demo.seed_demo
+    monkeypatch.setattr(demo, "seed_demo", lambda w, **kw: real(w, **{**kw, "at": AT, **quick}))
+    return main(["seed-demo", *args])
+
+
+def test_a_day_stopped_partway_says_it_is_half_made(db, client, wms, quick, monkeypatch, capsys):
+    class Silent(FakeWms):
+        def pick_and_pack(self, ref, drop, n):
+            self.packed.append(ref)     # packed, but delivery.packed never comes
+
+    quick["wait_seconds"] = 0
+    assert run_command(monkeypatch, Silent(wms), quick) == 1
+    err = capsys.readouterr().err
+    first, last = demo.refs_for(AT)[0], demo.refs_for(AT)[-1]
+    assert "seed-demo: Simple WMS packed 19 deliveries but 0 reached" in err
+    assert ("Simple TMS now holds part of a demo day (and Simple WMS 19 deliveries made by it: "
+            f"{first} to {last}, 19 of them packed): empty the Simple TMS database and pod_files "
+            "before trying again.") in err
+
+
+def test_any_failure_partway_says_it_is_half_made(db, client, wms, quick, monkeypatch, capsys):
+    class Breaks(FakeWms):
+        def pick_and_pack(self, ref, drop, n):
+            if n == 2:
+                raise RuntimeError("the cable came out")
+            super().pick_and_pack(ref, drop, n)
+
+    assert run_command(monkeypatch, Breaks(wms), quick) == 1
+    err = capsys.readouterr().err
+    assert "RuntimeError: the cable came out" in err
+    assert "Simple TMS now holds part of a demo day (and Simple WMS 19 deliveries made by it: " in err
+    assert "19, 2 of them packed): empty the Simple TMS database and pod_files" in err
+
+
+def test_a_day_refused_at_the_start_says_nothing_of_half_made(db, client, wms, quick, monkeypatch,
+                                                              capsys):
+    db.add(Vehicle(rego="ABC123", type="van", max_kg=1, max_m3=1, active=True))
+    db.commit()
+    assert run_command(monkeypatch, FakeWms(wms), quick) == 1
+    assert "part of a demo day" not in capsys.readouterr().err
+
+
+class Answers:
+    """Simple TMS's API as the seed sees it: a reply for each path."""
+
+    def __init__(self, replies):
+        self.replies = replies
+
+    def request(self, method, url, **kw):
+        return self.replies[url]
+
+
+def seeder_over(replies):
+    return demo.Seeder(Answers(replies), None, today=AT.date(), sleep=lambda s: None,
+                       pace_minutes=0, wait_seconds=0, position_gap=0)
+
+
+def test_an_answer_that_isnt_json_is_a_seed_error():
+    seeder = seeder_over({"/v1/carriers": httpx.Response(200, text="<html>proxy</html>")})
+    with pytest.raises(demo.SeedError, match="GET /carriers -> 200, not JSON: <html>proxy"):
+        seeder.call("GET", "/carriers", {})
+
+    def handler(request):
+        return httpx.Response(202, text="<html>proxy</html>")
+
+    with pytest.raises(demo.SeedError, match="Simple WMS: POST /deliveries -> 202, not JSON"):
+        wms_over(handler).create("DEMO-261015-123000-01", demo.TRAY[1], AT.date(), 0)
+
+
+def test_something_missing_from_an_answer_is_a_seed_error():
+    seeder = seeder_over({
+        "/v1/auth/login": httpx.Response(200, json={"token": "t"}),
+        "/v1/carriers": httpx.Response(200, json={"items": [{"id": 1, "name": "Other"}]})})
+    with pytest.raises(demo.SeedError, match="no carrier Valley Freight \\(sample\\) in GET /carriers"):
+        seeder.book("Valley Freight (sample)", [1], "VF-", collect=False)
+
+
+def test_a_delivery_that_wont_cancel_is_named():
+    class Stuck:
+        warehouse = "BAL-WH01"
+
+        def cancel(self, ref):
+            if ref.endswith("-02"):
+                raise demo.SeedError("Simple WMS at http://wms.test didn't answer")
+
+    made = ["DEMO-1-01", "DEMO-1-02", "DEMO-1-03"]
+    said = demo.undo(Stuck(), made)
+    assert made == ["DEMO-1-02"]
+    assert said.startswith("Couldn't cancel 1 of the 3 deliveries it made in Simple WMS, so their "
+                           "stock is still reserved: cancel them there: DEMO-1-02 (Simple WMS at")

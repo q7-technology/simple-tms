@@ -24,7 +24,7 @@ import time
 import uuid
 from urllib.parse import quote
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -167,6 +167,47 @@ def now() -> datetime:
     return datetime.now(UTC)
 
 
+def body_of(r: httpx.Response, what: str) -> dict:
+    """The JSON of an answer, or a SeedError that says what came instead."""
+    if not r.content:
+        return {}
+    try:
+        return r.json()
+    except ValueError:
+        raise SeedError(f"{what} -> {r.status_code}, not JSON: {r.text[:200]}") from None
+
+
+def find(items: list[dict], what: str, where: str, test: Callable[[dict], bool]) -> dict:
+    """The one item that passes, or a SeedError that says what was missing."""
+    for item in items:
+        if test(item):
+            return item
+    raise SeedError(f"no {what} in {where}")
+
+
+@dataclass
+class Progress:
+    """What the seed has made so far, to say what is left if it stops."""
+    wms_made: list[str] = field(default_factory=list)
+    wms_packed: int = 0
+    tms_started: bool = False
+
+    def half_made(self) -> str | None:
+        """What to do about a day that stopped partway, or None if nothing
+        is in Simple TMS."""
+        if not self.tms_started:
+            return None
+        made = self.wms_made
+        if made:
+            refs = made[0] if len(made) == 1 else f"{made[0]} to {made[-1]}"
+            wms = (f" (and Simple WMS {len(made)} deliveries made by it: {refs}, "
+                   f"{self.wms_packed} of them packed)")
+        else:
+            wms = ""
+        return (f"Simple TMS now holds part of a demo day{wms}: empty the Simple TMS database "
+                "and pod_files before trying again.")
+
+
 def iso(t: datetime) -> str:
     return t.isoformat().replace("+00:00", "Z")
 
@@ -199,7 +240,7 @@ class Wms:
                             f"Name SKUs it has, with stock at {self.warehouse}, in --skus.")
         if r.status_code >= 300:
             raise SeedError(f"Simple WMS: {method} {path} -> {r.status_code}: {r.text}")
-        return r.json() if r.content else {}
+        return body_of(r, f"Simple WMS: {method} {path}")
 
     def _post(self, path: str, body: dict) -> dict:
         return self._call("POST", path, json={"message_id": str(uuid.uuid4()), **body})
@@ -256,12 +297,12 @@ class Wms:
                          for i, ((kind, kg, dims), line) in enumerate(zip(drop.cartons, lines), 1)]})
 
 
-def reserve(wms: Wms, refs: list[str], today: date) -> None:
+def reserve(wms: Wms, refs: list[str], today: date, progress: Progress) -> None:
     """Create every delivery in Simple WMS before picking any, so the stock
     for the whole day is reserved, or none of it: on a short line or an
     unknown SKU, each delivery made is cancelled and the seed stops."""
     tomorrow = today + timedelta(days=1)
-    made: list[str] = []
+    made = progress.wms_made
     try:
         for n, (ref, drop) in enumerate(zip(refs, ALL)):
             short = wms.create(ref, drop, tomorrow if drop in TRAY else today, n)
@@ -279,22 +320,26 @@ def reserve(wms: Wms, refs: list[str], today: date) -> None:
 
 
 def undo(wms: Wms, made: list[str]) -> str:
-    """Cancel each delivery made, and say so."""
+    """Cancel each delivery made, newest first, and say so. What couldn't be
+    cancelled stays in `made`."""
     if not made:
         return "Nothing was made in Simple WMS or Simple TMS."
-    left = []
+    first, last, count = made[0], made[-1], len(made)
+    failed: dict[str, str] = {}
     for ref in reversed(made):
         try:
             wms.cancel(ref)
         except Exception as e:  # noqa: BLE001: say which, and go on with the rest
-            left.append(f"{ref} ({e})")
-    if left:
-        return (f"Couldn't cancel {len(left)} of the {len(made)} deliveries it made in Simple WMS, "
-                f"so their stock is still reserved: cancel them there: {'; '.join(reversed(left))}. "
+            failed[ref] = str(e)
+    made[:] = [ref for ref in made if ref in failed]
+    if failed:
+        which = "; ".join(f"{ref} ({why})" for ref, why in failed.items())
+        return (f"Couldn't cancel {len(failed)} of the {count} deliveries it made in Simple WMS, "
+                f"so their stock is still reserved: cancel them there: {which}. "
                 "Nothing was made in Simple TMS.")
-    return (f"So it cancelled the {len(made)} deliveries it made in Simple WMS "
-            f"({made[0]}{f' to {made[-1]}' if len(made) > 1 else ''}), and nothing is reserved "
-            "or picked. Nothing was made in Simple TMS.")
+    refs = first if count == 1 else f"{first} to {last}"
+    return (f"So it cancelled the {count} deliveries it made in Simple WMS ({refs}), and nothing "
+            "is reserved or picked. Nothing was made in Simple TMS.")
 
 
 @dataclass
@@ -312,8 +357,10 @@ class Made:
 
 class Seeder:
     def __init__(self, client, wms, *, today: date, sleep: Callable[[float], None],
-                 pace_minutes: float, wait_seconds: float, position_gap: float):
+                 pace_minutes: float, wait_seconds: float, position_gap: float,
+                 progress: Progress | None = None):
         self.c, self.wms, self.today = client, wms, today
+        self.progress = progress or Progress()
         self.sleep, self.pace, self.wait, self.gap = sleep, pace_minutes, wait_seconds, position_gap
         self.drivers: dict[str, dict] = {}
         self.last_position: dict[int, float] = {}
@@ -325,7 +372,7 @@ class Seeder:
         r = self.c.request(method, f"/v1{path}", headers=headers, **kw)
         if r.status_code not in ok:
             raise SeedError(f"{method} {path} -> {r.status_code}: {r.text}")
-        return r.json() if r.content else {}
+        return body_of(r, f"{method} {path}")
 
     def desk(self, username: str) -> dict:
         """A fresh sign-in each time: a desk token lasts 15 minutes."""
@@ -368,6 +415,7 @@ class Seeder:
         consignment."""
         for n, (ref, drop) in enumerate(zip(refs, ALL)):
             self.wms.pick_and_pack(ref, drop, n)
+            self.progress.wms_packed += 1
         h = self.desk("dee")
         prefix = refs[0].rsplit("-", 1)[0]
         deadline = time.monotonic() + self.wait
@@ -397,7 +445,7 @@ class Seeder:
 
     def print(self, path: str, h: dict) -> None:
         r = self.c.post(f"/v1{path}", headers=h)
-        if r.status_code == 409 and r.json().get("code") == "printing_not_set_up":
+        if r.status_code == 409 and body_of(r, f"POST {path}").get("code") == "printing_not_set_up":
             self.printed = False
         elif r.status_code != 202:
             raise SeedError(f"POST {path} -> {r.status_code}: {r.text}")
@@ -405,7 +453,8 @@ class Seeder:
     def prestart(self, run: dict, code: str, odometer_km: int, *, fail: str | None = None) -> dict:
         h = self.driver(code)
         mine = self.call("GET", "/driver/runs", h, params={"date": self.today.isoformat()})
-        listed = next(r for r in mine if r["id"] == run["id"])
+        listed = find(mine, f"run {run['run_no']}", f"{code}'s runs",
+                      lambda r: r["id"] == run["id"])
         photo = None
         if fail:
             photo = self.upload(h, "photo", demo_pictures.tail_light_photo(run["id"]))
@@ -434,7 +483,8 @@ class Seeder:
                 photo: bool, seed: int) -> None:
         h = self.driver(code)
         stops = self.call("GET", f"/runs/{run['id']}/stops", h)["stops"]
-        stop = next(s for s in stops if s["consignment_id"] == cid)
+        stop = find(stops, f"stop for consignment {cid}", f"{run['run_no']}'s stops",
+                    lambda s: s["consignment_id"] == cid)
         body = {"message_id": str(uuid.uuid4()), "at": iso(now()),
                 "packages": [{"package_no": p["package_no"], "how": "scan" if i % 2 == 0 else "tick"}
                              for i, p in enumerate(stop["packages"])],
@@ -475,7 +525,8 @@ class Seeder:
     def book(self, carrier: str, ids: list[int], prefix: str, *, collect: bool) -> dict:
         h = self.desk("dee")
         carriers = self.call("GET", "/carriers", h)["items"]
-        carrier_id = next(c["id"] for c in carriers if c["name"] == carrier)
+        carrier_id = find(carriers, f"carrier {carrier}", "GET /carriers",
+                          lambda c: c["name"] == carrier)["id"]
         manifest = None
         for cid in ids:
             manifest = self.call("POST", f"/carriers/{carrier_id}/book", h, json={
@@ -582,9 +633,11 @@ def make_users() -> None:
 
 
 def seed_demo(wms: Wms, *, at: datetime | None = None, sleep: Callable[[float], None] = time.sleep,
-              pace_minutes: float = 3, wait_seconds: float = 120, position_gap: float = 11) -> Made:
+              pace_minutes: float = 3, wait_seconds: float = 120, position_gap: float = 11,
+              progress: Progress | None = None) -> Made:
     """Fill an empty database with a demo day. Refuses one with any fleet,
-    carriers, runs or consignments in it, or the demo's desk users."""
+    carriers, runs or consignments in it, or the demo's desk users. What it
+    made goes in `progress` as it goes, to say what is left if it stops."""
     import warnings
 
     with warnings.catch_warnings():
@@ -598,12 +651,14 @@ def seed_demo(wms: Wms, *, at: datetime | None = None, sleep: Callable[[float], 
     at = at or now()
     today, refs = at.astimezone(DEPOT_TZ).date(), refs_for(at)
     # the stock for the whole day, before anything is picked or made here
-    reserve(wms, refs, today)
+    progress = progress if progress is not None else Progress()
+    reserve(wms, refs, today, progress)
+    progress.tms_started = True
     make_users()
     with TestClient(app) as client:
         seeder = Seeder(client, wms, today=today, sleep=sleep,
                         pace_minutes=pace_minutes, wait_seconds=wait_seconds,
-                        position_gap=position_gap)
+                        position_gap=position_gap, progress=progress)
         return seeder.run(refs)
 
 

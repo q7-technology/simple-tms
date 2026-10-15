@@ -176,7 +176,9 @@ carriers, runs or consignments in it. It makes the desk users `dee`
 (dispatcher) and `sam` (manager) with the password `demo-password-1`; the
 drivers `tom`, `kim`, `ana` and `raj` sign in with PIN `2468`. It prints what
 it made and never a key. With printing set up, the run sheets and manifests
-go to Platen. To start again, empty the database and the `pod_files` volume.
+go to Platen. If it stops after it has started making the day, it says what
+it left behind in both. To start again, empty the database and the `pod_files`
+volume.
 
 ## Map tiles
 

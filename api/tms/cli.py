@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import sys
+import traceback
 
 from sqlalchemy import select
 
@@ -77,6 +78,7 @@ def cmd_seed_demo(args) -> int:
     for part in args.skus.split(","):
         sku, _, uom = part.strip().partition(":")
         skus.append((sku, uom or "EA"))
+    progress = demo.Progress()
     try:
         demo.check_empty()
         wms = demo.Wms(settings.wms_url, settings.wms_api_key, warehouse=args.warehouse,
@@ -84,9 +86,15 @@ def cmd_seed_demo(args) -> int:
         print(f"creating {len(demo.ALL)} deliveries in Simple WMS at {settings.wms_url}, and "
               "packing them once the stock for all is reserved, then the day; the run on the "
               f"road drives for about {args.pace * 2.5:g} min")
-        made = demo.seed_demo(wms, pace_minutes=args.pace, wait_seconds=args.wait)
-    except demo.SeedError as e:
-        print(f"seed-demo: {e}", file=sys.stderr)
+        made = demo.seed_demo(wms, pace_minutes=args.pace, wait_seconds=args.wait,
+                              progress=progress)
+    except Exception as e:
+        if isinstance(e, demo.SeedError):
+            print(f"seed-demo: {e}", file=sys.stderr)
+        else:
+            traceback.print_exc()
+        if half_made := progress.half_made():
+            print(half_made, file=sys.stderr)
         return 1
     for line in demo.summary(made):
         print(line)
