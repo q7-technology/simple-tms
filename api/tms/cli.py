@@ -62,6 +62,36 @@ def cmd_revoke_api_key(args) -> int:
     return 0
 
 
+def cmd_seed_demo(args) -> int:
+    import logging
+
+    from tms import demo
+    from tms.config import get_settings
+
+    # each request the seed makes would be a line of its own
+    for name in ("httpx", "httpx2"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+    settings = get_settings()
+    skus = []
+    for part in args.skus.split(","):
+        sku, _, uom = part.strip().partition(":")
+        skus.append((sku, uom or "EA"))
+    try:
+        demo.check_empty()
+        wms = demo.Wms(settings.wms_url, settings.wms_api_key, warehouse=args.warehouse,
+                       operator=args.operator, skus=skus)
+        print(f"packing {len(demo.ALL)} deliveries in Simple WMS at {settings.wms_url}, "
+              f"then the day; the run on the road drives for about {args.pace * 2.5:g} min")
+        made = demo.seed_demo(wms, pace_minutes=args.pace, wait_seconds=args.wait)
+    except demo.SeedError as e:
+        print(f"seed-demo: {e}", file=sys.stderr)
+        return 1
+    for line in demo.summary(made):
+        print(line)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="tms")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -82,6 +112,19 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("revoke-api-key", help="stop a key working (it is kept, not deleted)")
     p.add_argument("--name", required=True)
     p.set_defaults(func=cmd_revoke_api_key)
+
+    p = sub.add_parser("seed-demo", help="fill an empty database with a demo day, through the API, "
+                                          "with freight packed in Simple WMS")
+    p.add_argument("--skus", default="GLV-L:PR,VST-HV,HAT-WH,TIE-300:PK",
+                   help="Simple WMS SKUs with stock in the warehouse, as SKU or SKU:UOM "
+                        "(EA unless given), comma separated; the default is wms seed-demo's")
+    p.add_argument("--warehouse", default="BAL-WH01", help="the Simple WMS warehouse it ships from")
+    p.add_argument("--operator", default="op-017", help="the Simple WMS operator who picks and packs")
+    p.add_argument("--pace", type=float, default=3,
+                   help="minutes the run on the road takes to each of its first two stops")
+    p.add_argument("--wait", type=float, default=120,
+                   help="seconds to wait for Simple WMS's delivery.packed events")
+    p.set_defaults(func=cmd_seed_demo)
 
     args = parser.parse_args(argv)
     return args.func(args)

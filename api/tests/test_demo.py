@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 
 from conftest import WEBHOOK_SECRET, fresh_client
 from tms import demo, demo_pictures
+from tms.cli import main
 from tms.models import Consignment, OutboundCall, PodFile, PrintJob, Vehicle
 from wms_samples import post_event
 
@@ -284,3 +285,32 @@ def test_refs_are_new_each_minute():
     assert len(one) == 19 and len(set(one)) == 19
     assert all(len(r) == 10 and r.startswith("008") for r in one)
     assert not set(one) & set(two)
+
+
+# --- the command ---------------------------------------------------------------------
+
+def test_the_command_makes_the_day_and_prints_no_key(db, client, wms, quick, monkeypatch, capsys):
+    made_with = {}
+
+    def fake_wms(url, key, **kw):
+        made_with.update(url=url, key=key, **kw)
+        return FakeWms(wms)
+
+    monkeypatch.setattr(demo, "Wms", fake_wms)
+    real = demo.seed_demo
+    monkeypatch.setattr(demo, "seed_demo", lambda w, **kw: real(w, at=AT, **{**kw, **quick}))
+    assert main(["seed-demo", "--skus", "JKL012,LUB-05:KG"]) == 0
+    out = capsys.readouterr().out
+    assert "R-0002 TMS-041 Kim: on the road, 2 of 5 delivered" in out
+    assert "driver app: tom, kim, ana or raj with PIN 2468" in out
+    assert "wms_test-key-for-the-tms" not in out
+    assert made_with["key"] == "wms_test-key-for-the-tms"
+    assert made_with["skus"] == [("JKL012", "EA"), ("LUB-05", "KG")]
+    assert made_with["warehouse"] == "BAL-WH01" and made_with["operator"] == "op-017"
+
+
+def test_the_command_refuses_a_database_in_use(db, admin, capsys):
+    db.add(Vehicle(rego="ABC123", type="van", max_kg=1, max_m3=1, active=True))
+    db.commit()
+    assert main(["seed-demo"]) == 1
+    assert "seed-demo: already here: vehicles" in capsys.readouterr().err
