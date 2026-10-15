@@ -6,6 +6,7 @@ import { Consignments } from "./pages/Consignments";
 import { Fleet } from "./pages/Fleet";
 import { MapHome } from "./pages/MapHome";
 import { PlanRuns } from "./pages/PlanRuns";
+import { Settings } from "./pages/Settings";
 import { SignIn } from "./pages/SignIn";
 import { WhereIsIt } from "./pages/WhereIsIt";
 
@@ -22,6 +23,7 @@ export function AppRoutes() {
           <Route path="/carriers" element={<Carriers />} />
           <Route path="/fleet" element={<Fleet />} />
           <Route path="/where" element={<WhereIsIt />} />
+          <Route path="/settings" element={<Settings />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -254,3 +254,30 @@ export interface FeedItem {
   manifest_no?: string | null;
   count?: number | null;
 }
+
+/** A TMS_* setting (GET /v1/settings): `screen` changed on screen, `secret`
+ * replaced but never shown, `file` in .env only. */
+export interface SettingRow {
+  name: string;
+  env: string;
+  kind: "screen" | "secret" | "file";
+  value: string | number | null;
+  default: string | number | null;
+  is_set: boolean;
+  on_screen: boolean;
+  changed_by: string | null;
+  changed_at: string | null;
+  why_file_only: string | null;
+}
+
+/** One change to a setting (GET /v1/settings/history): a secret's value never. */
+export interface SettingChange {
+  id: number;
+  name: string;
+  env: string;
+  action: "set" | "reset";
+  value: string | null;
+  secret: boolean;
+  changed_by: string;
+  changed_at: string;
+}

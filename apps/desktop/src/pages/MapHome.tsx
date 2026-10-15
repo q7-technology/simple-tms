@@ -118,7 +118,11 @@ export function MapHome() {
               <div className="panel" style={{ position: "absolute", right: 0, top: 52, zIndex: 20, background: "#fff",
                                                borderRadius: 14, boxShadow: "var(--shadow-lift)", padding: 12, minWidth: 180 }}>
                 <div className="small" style={{ marginBottom: 8 }}>{user?.display_name} · {user?.role}</div>
-                <button type="button" className="btn sm" onClick={() => void signOut()}>Sign out</button>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {can("settings:write") && (
+                    <NavLink to="/settings" className="btn sm" onClick={() => setMenu(false)}>Settings</NavLink>)}
+                  <button type="button" className="btn sm" onClick={() => void signOut()}>Sign out</button>
+                </div>
               </div>
             )}
           </div>
