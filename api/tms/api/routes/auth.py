@@ -157,14 +157,15 @@ def driver_login(body: DriverLoginIn, db: DB):
         access.verify_password(body.pin, access.DUMMY_HASH)
         return _refused(WRONG_PIN, "wrong_pin")
     if driver.locked:
-        return _refused(f"{driver.code} is locked after too many wrong PINs; a manager can unlock it",
-                        "locked")
+        # never the code first: the driver app capitalises the message's first letter
+        return _refused(f"driver {driver.code} is locked after too many wrong PINs; a manager "
+                        f"can unlock it", "locked")
     if not access.verify_password(body.pin, driver.pin_hash):
         driver.failed_attempts += 1
         if driver.failed_attempts >= PIN_TRIES:
             driver.locked = True
             db.commit()
-            return _refused(f"wrong PIN {PIN_TRIES} times; {driver.code} is locked until a "
+            return _refused(f"wrong PIN {PIN_TRIES} times; driver {driver.code} is locked until a "
                             f"manager unlocks it", "locked")
         db.commit()
         # no tries_left: an unknown code could not say it without giving itself away

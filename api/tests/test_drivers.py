@@ -85,9 +85,14 @@ def test_five_wrong_pins_lock_the_driver_until_a_manager_unlocks(client, manager
         r = client.post("/v1/auth/driver-login", json={"code": "drv-01", "pin": "0000"})
         assert r.status_code == 401 and r.json() == WRONG_PIN
     r = client.post("/v1/auth/driver-login", json={"code": "drv-01", "pin": "0000"})
-    assert r.status_code == 401 and r.json()["code"] == "locked"
+    assert r.status_code == 401 and r.json() == {
+        "detail": "wrong PIN 5 times; driver drv-01 is locked until a manager unlocks it",
+        "code": "locked"}
     r = client.post("/v1/auth/driver-login", json={"code": "drv-01", "pin": "2468"})
-    assert r.json()["code"] == "locked"
+    # the code is never first: an app that capitalises the message leaves it as it is
+    assert r.json() == {
+        "detail": "driver drv-01 is locked after too many wrong PINs; a manager can unlock it",
+        "code": "locked"}
 
     r = client.post("/v1/drivers/drv-01/unlock", headers=manager_headers)
     assert r.json()["locked"] is False and r.json()["failed_attempts"] == 0

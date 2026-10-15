@@ -34,4 +34,16 @@ describe("signing in", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Wrong driver code or PIN.");
     await waitFor(() => expect(screen.getByRole("img", { name: "PIN, 0 numbers entered" })).toBeInTheDocument());
   });
+
+  it("says a driver is locked, with their code as it is", async () => {
+    stubApi(() => json(401, {
+      detail: "driver chk-161330 is locked after too many wrong PINs; a manager can unlock it", code: "locked" }));
+    renderApp("/sign-in");
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Driver code"), "chk-161330");
+    for (const d of ["1", "1", "1", "1"]) await user.click(screen.getByRole("button", { name: d }));
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Driver chk-161330 is locked after too many wrong PINs; a manager can unlock it.");
+  });
 });
